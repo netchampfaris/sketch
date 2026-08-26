@@ -166,3 +166,30 @@ Three things Sketch must add rather than copy:
 Consequence for ticket 10: there is no SSE and no server-initiated stream,
 so `check` cannot send progress notifications. It must either return fast
 synchronously or become a job plus a poll tool.
+
+### 2026-08-26 — amendment: URLs move behind `/u/`, reserved list dropped
+
+From ticket 12. Two statements above are now wrong.
+
+**Public URL is `sketch.netchamp.dev/u/<username>/<slug>`**, not root level.
+
+The root cannot be held. Frappe's `app.py:96-113` handles `/api/`,
+`/backups`, `/private/files/` and `/.well-known/` before the website router,
+so Sketch can never serve a username there. Everything else reaches
+`PathResolver.resolve()`, where custom `page_renderer` hooks run **first**,
+ahead of every core renderer (`path_resolver.py:55-64`).
+
+That inverts the risk this ticket recorded. A new core route does not shadow
+an existing user. An existing user shadows a new core route: a user named
+`dashboard` takes `/dashboard` away from the whole site, silently, for
+everyone. Frappe runs on `develop` here, so new routes will appear.
+
+**The reserved username list is dropped.** Its only job was defending the
+site root. Behind a prefix there is no root to defend. A username format
+rule replaces it: 3-30 characters, `[a-z0-9-]`, starts with a letter, no
+doubled or trailing hyphen, lowercase-normalised.
+
+`/u/` also keeps `/<username>` free for the browse page already deferred.
+
+Rejected: `/@faris/dashboard`. Reads better, but `@` in a path segment trips
+link parsers and copy-paste.

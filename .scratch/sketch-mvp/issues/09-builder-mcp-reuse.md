@@ -18,3 +18,20 @@ Read /home/faris/benches/builder-bench/apps/builder/builder/ai/mcp (branch forge
 - Works on Frappe version-16 and develop. All APIs used are present in both. Verified by live curl on both benches.
 
 Findings: /home/faris/benches/.scratch/sketch-mvp/research/09-builder-mcp-reuse.md
+
+### 2026-08-26 — amendment: auth is Sketch's, not core's
+
+From ticket 12. This ticket recorded "auth is Frappe core". It is not.
+
+`/mcp` authenticates a `Sketch Token` sent as `Authorization: Bearer sk_...`,
+resolved by one function registered in `auth_hooks` (`auth.py:772-774`).
+The function refuses any path except `/mcp`.
+
+Frappe's `api_key`/`api_secret` was rejected because it authenticates every
+Frappe endpoint, so a leaked Sketch token would be a site-wide REST API
+credential, and signup is open to anyone. Core also cannot take a Bearer
+API key: `validate_auth` routes `Bearer` to the OAuth path and accepts API
+keys only as `token <key>:<secret>` or `Basic` (`auth.py:640-741`).
+
+OAuth stays deferred, unchanged. The 401 with the `WWW-Authenticate` header
+copied from Builder's `http.py` is still correct and still wanted.

@@ -35,9 +35,10 @@ repo to land in. Building the MVP is a separate effort.
 - [Route sketch.netchamp.dev through the tunnel](issues/02-tunnel-route.md): done 2026-08-26. `https://sketch.netchamp.dev` serves `sketch.localhost`; SPA at `/sketch`; `/socket.io` → 9007, rest → 8007. Site `host_name` set.
 - [Run sketch-bench as a service](issues/16-sketch-bench-service.md): done 2026-08-26. `sketch-bench.service` user unit, enabled, linger on. `Procfile` has no `watch`; rebuild the frontend with `yarn build`. Scheduler enabled.
 - [How do prototype Tailwind classes get styles at runtime](issues/06-runtime-tailwind.md): self-host the MIT `tailwindcss@3.4` engine in the browser with the frappe-ui preset (145 KB gzip, ~300 ms first compile, handles classes added after first paint). Ship precompiled frappe-ui internals CSS first. Reject Play CDN, safelist, twind, UnoCSS.
-- [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is Frappe core (token and OAuth Bearer both work on develop), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
+- [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is a Sketch `auth_hooks` function reading a `Sketch Token` Bearer header (amended by ticket 12; was Frappe core `api_key`/OAuth), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
 - [Pick the in-browser SFC compiler and TypeScript stripper](issues/05-sfc-compiler-and-ts.md): hand-roll `@vue/compiler-sfc` (esm-browser) + `sucrase` for type stripping, the `@vue/repl` pair. 295 KB gzip, 2.8 ms per SFC. Reject `vue3-sfc-loader` (unmaintained, pins compiler-sfc 3.4.15, swallows parse errors) and `esbuild-wasm` (3.7 MB wasm, 4.7x slower). Check `parse().errors` before `compileScript`.
-- [Define the MCP tool surface and server instructions](issues/08-mcp-tool-surface.md): 11 tools. `list_prototypes`, `create_prototype(name)`, `list_files`, `read_files`, `write_files`, `edit_file`, `delete_file`, `check(screenshot)`, `get_skill`, `set_public`, `set_name`. No `delete_prototype`; deletion is a UI act. Destructive: `delete_file`, `set_public`. Users pick a unique Username; URLs are `sketch.netchamp.dev/<username>/<slug>` at the site root, slug frozen at creation. Short `INSTRUCTIONS` (~1.2k chars) always in context, full ~9k-token skill behind `get_skill`.
+- [Define the MCP tool surface and server instructions](issues/08-mcp-tool-surface.md): 11 tools. `list_prototypes`, `create_prototype(name)`, `list_files`, `read_files`, `write_files`, `edit_file`, `delete_file`, `check(screenshot)`, `get_skill`, `set_public`, `set_name`. No `delete_prototype`; deletion is a UI act. Destructive: `delete_file`, `set_public`. Users pick a unique Username; URLs are `sketch.netchamp.dev/u/<username>/<slug>`, slug frozen at creation (amended by ticket 12; was root level). Short `INSTRUCTIONS` (~1.2k chars) always in context, full ~9k-token skill behind `get_skill`.
+- [Define the doctypes and permission model](issues/12-data-model.md): two doctypes only. `Sketch Prototype` (hash name, `title`/`slug`/`pin`/`is_public`, unique `(owner, slug)`) and `Sketch Token` (Bearer, `auth_hooks`, refused outside `/mcp`, one retrievable token per user). Prototype files and Runtimes live on disk, not in the DB. Username is Frappe's `User.username`, enforced by a Sketch `User.validate` hook that runs after core's. URLs move to `/u/<username>/<slug>` and the reserved list is dropped. Role `Sketch User` with `if_owner`; Guest gets nothing, and the Viewer serves public links with `ignore_permissions` after checking `is_public`.
 
 Decisions made while charting (no ticket, recorded here once):
 
@@ -52,7 +53,7 @@ Decisions made while charting (no ticket, recorded here once):
 - Signup is email + password with a verification email.
 - Prototypes are private by default with a public toggle. Every user picks
   a unique Username. A Prototype renders in a same-origin iframe (the
-  Viewer) at `sketch.netchamp.dev/<username>/<slug>`.
+  Viewer) at `sketch.netchamp.dev/u/<username>/<slug>`.
 - Data: plain `ref`s in prototype files. No backend, no stubs. (Revised
   2026-08-26; see the Out of scope entry for the Fixture API.)
 - Sketch UI: prototypes list, fullscreen viewer with no Sketch chrome,
@@ -84,14 +85,12 @@ Decisions made while charting (no ticket, recorded here once):
   `parent` and Sketch's cookies, and signup is open to anyone. Revisit
   whether the iframe needs `sandbox="allow-scripts"` without
   `allow-same-origin`, and what that costs the Runtime.
-- Keeping the reserved-username list correct as Frappe adds routes. A new
-  core route can shadow an existing user at the site root.
 - Onboarding copy: what a new user sees before any prototype exists.
 
 ## Out of scope
 
 - Browsing other users' public Prototypes. Usernames are in the MVP, so
-  `/<username>` and a discovery surface can be added later without moving a
+  `/u/<username>` and a discovery surface can be added later without moving a
   single URL. The browse page itself is a separate effort.
 - [Design the Fixture API and the stubbed resources](issues/07-fixtures-and-stubs.md):
   ruled out 2026-08-26. No frappe-ui component fetches its own data, so a
