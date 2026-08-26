@@ -93,3 +93,32 @@ Prototype is forbidden from touching it. The Sketch UI needs a `light | dark |
 system` control, and frappe-ui ships `ThemeSwitcher` and `useColorScheme` for
 it. It writes `localStorage['theme']`, which the Viewer reads. Decide where the
 control sits: the sidebar footer next to the User, or the settings screen.
+
+### 2026-08-27 — amendment: the recipe set, and where the theme control sits
+
+From ticket 17's session. Both open items above are closed.
+
+**The theme control sits in the sidebar footer**, next to the User. It is a
+display preference, not an account setting, and frappe-ui's `ThemeSwitcher` is
+built for that spot. It writes `localStorage['theme']`, which the Viewer reads.
+
+**The recipe set is the `ui.frappe.io/recipes` set: eight recipes, plus Blank.**
+Source is `docs/components/recipes/*.vue` in the frappe-ui repo: Discussions,
+Compose, Deals, Tickets, Mail, Files, Tasks, Accounting.
+
+- **Desktop variants only.** The Viewer and `check` are a 1280x800 frame, and a
+  mobile recipe renders wrong in it. Mobile recipes are a later effort.
+- **Vendored into Sketch**, at `sketch/recipes/<slug>/src/…`, checked into git.
+  They must be adapted anyway: each recipe is one component, and a Prototype is
+  a tree with `src/App.vue`, `src/router.ts` and `src/pages/`. Fetching them at
+  build time would make the build need network, and the docs are not on npm.
+- **Compose needs `@vueuse/core`**, which is now the Runtime's ninth specifier.
+  See the ticket 11 amendment.
+
+Cost, plainly: vendored recipes drift from upstream, the same trade ticket 11
+took for the skill. Adapting them is a day, not an hour. Tasks is 1323 lines
+and Discussions is 1121.
+
+**Must be built: a test that every recipe boots clean through `check`.** The
+only local checkout of the recipes is frappe-ui `1.0.0-beta.28`, 27 versions
+behind the Pin. Nothing else would catch a recipe that no longer compiles.

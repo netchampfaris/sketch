@@ -44,6 +44,7 @@ repo to land in. Building the MVP is a separate effort.
 - [How Frappe develop handles open signup and email verification](issues/13-signup-on-develop.md): done 2026-08-26. Open signup is Website Settings `disable_signup = 0` plus the `max_signups_allowed_per_hour` throttle. Verification is the password-reset link, and signup returns 200 even when the mail fails, so SMTP is not optional. Role comes from Portal Settings `default_role`, and `Sketch User` must set `desk_access = 0` or the user is flipped to System User. `website_route_rules` cannot claim `/`; use the `home_page` hook. No hook adds a field to `sign_up`, so use `override_whitelisted_methods`. version-16 is identical on all of it.
 - [Prototype the three Sketch screens](issues/14-sketch-ui-prototype.md): Faris chose B — Studio: persistent sidebar, visual Prototype gallery with UI-only management and visible Public URLs, structured profile/agent settings, and a fullscreen Viewer with no Sketch chrome. Prototype preserved on `forge/proto/14-sketch-ui` at `4d9536d`.
 - [What the served frappe-ui skill contains](issues/11-served-skill.md): done 2026-08-27. A Sketch-owned rewrite, not a trim of the box skill, at `sketch/skill/frappe-ui.md` in app source, **not** in the Runtime folder, so an edit reaches Prototypes made before it. One file for every Pin. `get_skill()` takes no arguments. 2,900 words, one blob, eight sections. Every lucide icon works. Eight specifiers resolve and nothing else. `dayjs` is frappe-ui's instance with nine plugins. Sketch owns the theme, and dark mode is in the MVP. Runtime work folded in and committed at `a4a932d`: the icon map, `frappe-ui/editor`, `frappe-ui/charts`, `frappe-ui/icons`, `dayjs`, and `FrappeUIProvider` in the mount. 320 KB gzip to render, 543 KB for the compilers, 426 ms boot. `sketch/tests/test_skill_names.py` keeps the skill honest.
+- [How the Viewer and the checker read a private Prototype's files](issues/17-viewer-file-access.md): done 2026-08-27. **There is no files endpoint.** The `page_renderer` on `/u/<username>/<slug>` serves the pinned Runtime's own `viewer.html` from disk with the source tree substituted into a `sketch-data` slot, so one authorisation guards everything. Ticket 04's `files.json` is gone. The serialiser must escape `<` as `\u003c`, or the `</script>` in any Vue file breaks the Viewer. `check` mints a 60-second signature over the hash id and `sketch-checkd` opens `127.0.0.1:8007` with a `Host` header; a planted session and the Sketch Token were both rejected. Usernames are frozen at signup. Response carries `no-store` and `frame-ancestors 'self'`. Four Runtime changes: read the DOM, a module registry so import cycles work, `.css` imports injected, and an `empty` status. Nine specifiers now, not eight: `@vueuse/core` joins for the Compose recipe. Recipes are the eight from `ui.frappe.io/recipes`, desktop only, plus Blank, vendored in Sketch. Inter italic dropped. Theme control in the sidebar footer.
 
 Decisions made while charting (no ticket, recorded here once):
 
@@ -93,23 +94,32 @@ Decisions made while charting (no ticket, recorded here once):
 - Adding a second frappe-ui version and moving a prototype's pin.
 - Snapshots or revert history for a prototype.
 - Live reload of the viewer when the agent writes files (socketio).
-- Whether a Prototype needs the Inter italic face. It is 297 KB, half the
-  font payload. Handed over by ticket 04; ticket 10 did not settle it.
 - Type checking (`vue-tsc`) inside `check`.
 - A skill per Pin. One file serves every Pin today. At a second Pin it
   describes one frappe-ui version while some Prototypes render with
   another, and nothing tells the agent. Ticket 11 accepted the cost.
 - Dark-mode screenshots in `check`. It renders light only. A raw colour
   that shows up only in dark is invisible to the agent.
-- Whether `2025-06-18` is still the current MCP protocol revision. Builder
-  knows no later one. Not verified against the spec.
 - Iframe sandboxing. The Viewer is same-origin, so Prototype code can reach
   `parent` and Sketch's cookies, and signup is open to anyone. Revisit
   whether the iframe needs `sandbox="allow-scripts"` without
   `allow-same-origin`, and what that costs the Runtime.
 - Onboarding copy: what a new user sees before any prototype exists.
+- Mobile recipe variants. Ticket 14 took the eight desktop recipes only,
+  because the Viewer and `check` are a 1280x800 frame.
 
 ## Out of scope
+
+- A real Vite dev server in the browser, in a WebContainer. Ruled out
+  2026-08-27 by ticket 17's session. Verified: Vite 8.2.2 has one entry
+  point, `dist/node/index.js`, and depends on `rolldown` and `lightningcss`,
+  both native `.node` binaries. So it means Node in the browser. It would buy
+  real fidelity (`main.ts`, history routing, asset imports, any npm package)
+  and real HMR, and it would cost Node boot plus `npm install` per Prototype
+  against a measured 426 ms, void ticket 10's 913 ms, boot a Node VM to show
+  a public read-only link, move previews to `*.webcontainer.io`, and raise a
+  licence question on an open-signup public site. It voids tickets 04, 05, 06
+  and 10, so it is a separate effort, not a ticket.
 
 - Browsing other users' public Prototypes. Usernames are in the MVP, so
   `/u/<username>` and a discovery surface can be added later without moving a

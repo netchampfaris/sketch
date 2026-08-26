@@ -197,3 +197,32 @@ theme between runs is not a signal the agent can read.
 the measured 913 ms and the payload, and a Prototype that used semantic tokens
 has nothing for the agent to fix in the dark shot. Dark screenshots are on the
 map under Not yet specified.
+
+### 2026-08-27 — amendment: how `check` opens a private Prototype
+
+From ticket 17. This ticket's "Left open" is closed.
+
+The MCP `check` handler signs `<hash id>:<exp>`, 60 seconds, with Frappe's own
+secret, and hands `sketch-checkd` a URL:
+
+```
+http://127.0.0.1:8007/u/<username>/<slug>?theme=light&exp=<ts>&sig=<hex>
+```
+
+`sketch-checkd` is unchanged. It already takes a URL and navigates it. It
+reaches **`127.0.0.1:8007` with a `Host: sketch.localhost` header**, never the
+public hostname: the tunnel goes out to Cloudflare and back on every route in
+the walk, and the 913 ms above was measured against localhost:8007. Those
+numbers stand.
+
+The signature covers the hash id, not the URL, so it does not survive a slug
+or username change. `theme` is outside the signature, so `check` forces light
+without re-signing.
+
+Two knock-ons from the same ticket:
+
+- **The cycle case goes away.** The blob-URL linker becomes a module registry,
+  so import cycles work. The `link-failed` cycle measurement above no longer
+  describes the Runtime.
+- **New status `empty`**, for a Prototype with no files. `check` passes it
+  through like any other status.

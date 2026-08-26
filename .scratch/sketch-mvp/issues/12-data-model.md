@@ -257,3 +257,37 @@ those are gitignored.
 Cost accepted: one file serves every Pin, so at a second Pin the skill
 describes one frappe-ui version while some Prototypes render with another. The
 per-Pin skill question is on the map under Not yet specified.
+
+### 2026-08-27 — amendment: usernames are frozen, and the renderer gains one line
+
+From ticket 17.
+
+**`User.username` is read-only after signup.** It is an ordinary editable field
+in Frappe, nothing freezes it, and nothing rewrites links when it changes, and
+the username is in every public URL. The case this kills: a user renames, a
+stranger takes the old name, and the old public link keeps working while
+showing **their** Prototype. That is worse than a 404.
+
+Rejected: rename with the old name retired forever. It fixes the takeover but
+needs a table of retired names, the third doctype this ticket turned down, to
+buy a rename in a product with three screens.
+
+Cost: a typo at signup is permanent and the fix is a manual database edit. The
+mitigation is showing the live URL shape under the field as the user types it.
+
+**The Viewer renderer rule gains a fourth branch:**
+
+```
+path does not resolve to a Prototype  -> 404
+is_public                             -> serve
+caller is the owner                   -> serve
+valid unexpired signature             -> serve      <- new
+otherwise                             -> 404
+```
+
+The signature is how `check` opens a private Prototype. A bad or expired one is
+not an error; it falls through to the rules above. Details in ticket 17.
+
+**The disk path stands, and two facts back it:** Frappe's `/private/files/`
+route refuses Guests outright and then refuses any path with no `File` doc
+(`response.py:296`), and no scheduled job sweeps `private/files` for orphans.

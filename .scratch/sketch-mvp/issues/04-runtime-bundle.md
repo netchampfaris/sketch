@@ -223,3 +223,34 @@ Measured numbers above are superseded:
 | plain boot to painted | 398 ms | 426 ms |
 
 The Inter font question this ticket handed over is still open.
+
+### 2026-08-27 — amendment: the Viewer reads the DOM, and four Runtime changes
+
+From ticket 17. The `files.json` this ticket fetched is gone.
+
+- **`boot.js` reads the source tree from the DOM**, not `fetch('./files.json')`.
+  The renderer puts it in a `<script id="sketch-data" type="application/json">`
+  slot with `name`, `title`, `pin`, `is_public`, owner-or-not, and the theme.
+- **`build.sh` gains a second placeholder.** Step 5 already stamps a per-Pin
+  `viewer.html` with `sed "s#RUNTIME#$BASE#g"`. It now stamps the empty data
+  slot too. The renderer substitutes it per request.
+- **The blob-URL linker becomes a module registry.** Import cycles work. The
+  `cycle` error this ticket introduced goes away, and so does ticket 10's
+  cycle case.
+- **`.css` imports are injected as a stylesheet.** Today `import './style.css'`
+  resolves to a blob that does not exist and the import rewrites to
+  `undefined`.
+- **A precondition check on `src/App.vue`**, and a new status **`empty`** for a
+  Prototype with no files. Today a missing `App.vue` becomes `import(undefined)`
+  and the agent gets a message about `undefined`, not about the file.
+
+Unchanged on purpose: the Runtime still owns the mount. A Prototype that owns
+`createApp` can skip `FrappeUIProvider`, skip the error handler, or never call
+`mount`, and then `check` reports nothing useful.
+
+**The Inter italic question is closed: drop it.** 297 KB gzip, half the font
+payload, to render text almost no Prototype sets in italic. Adding it back is
+one file and one line in `inter.css`.
+
+**Nine specifiers, not eight.** `@vueuse/core` is added; see the ticket 11
+amendment.

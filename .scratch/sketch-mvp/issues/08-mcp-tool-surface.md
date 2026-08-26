@@ -271,3 +271,18 @@ document.
 
 **The skill is not in the Runtime folder.** It ships in app source, so ticket
 12's comment on ticket 11 is superseded. `get_skill` reads one file.
+
+### 2026-08-27 — amendment: seeding is UI-only, `create_prototype` keeps `(name)`
+
+From ticket 17's session. The open item above is closed.
+
+**`create_prototype(name)` takes no recipe argument.** Recipes are chosen in
+the Sketch UI and nowhere else. The agent has no recipe tool by design
+(ticket 11), so a recipe argument would re-open what that ticket closed: it
+would make the agent name a recipe it cannot list or read.
+
+The tool list stays at 11 and every signature above stands.
+
+The Sketch UI creating Prototypes still holds. Creation is now both a human
+act (with a recipe) and an agent act (`create_prototype`, which produces an
+`empty` Prototype).

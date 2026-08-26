@@ -183,3 +183,29 @@ tickets 14 and 08.
   has no review and no diff.
 - **`check` screenshotting both themes.** It doubles ticket 10's measured time
   for failures the agent mostly cannot act on.
+
+### 2026-08-27 — amendment: nine specifiers, not eight
+
+From ticket 17's session. `@vueuse/core` is added to the Runtime import map.
+
+Reason: the recipe set comes from `ui.frappe.io/recipes`, and the **Compose**
+recipe, both variants, imports `@vueuse/core`. Every other recipe stays inside
+the existing eight.
+
+Cost, measured: `@vueuse/core` **14.4.0**, whole barrel, minified ESM with
+`vue` external: **135 KB raw, 49 KB gzip**. Two things make the real cost
+lower:
+
+- frappe-ui `1.0.0-beta.55` already depends on `@vueuse/core ^14.1.0`, so part
+  of it is already inside the Runtime's frappe-ui chunk and Rollup shares it,
+  as it does for `Button`, `Tooltip` and `dayjs`. The marginal number is not
+  measured.
+- It downloads only when a Prototype imports it, like `frappe-ui/editor` and
+  `frappe-ui/charts`. Zero for Prototypes that do not.
+
+Version tracks frappe-ui's own dependency, not a separately chosen one.
+
+**This touches four places, and `sketch/tests/test_skill_names.py` exists to
+catch exactly this drift:** the Runtime build entry, `manifest.json`, the
+`viewer.html` import map, and the skill's own list of what resolves. Read
+"eight specifiers" above as nine.
