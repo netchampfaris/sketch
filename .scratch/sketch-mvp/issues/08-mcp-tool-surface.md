@@ -140,3 +140,29 @@ check returns compile errors, console errors, and one image per route when scree
 (`tools.py:78-137`). Dropped: `ctx.py`, `pages.py`, the block model, the
 confirm-gate machinery, and the injected `page` param (Sketch tools declare
 `prototype` directly).
+
+### 2026-08-26 — amendment: transport and structured output
+
+Builder's transport is already stateless streamable HTTP (SEP-2575, see the
+`rpc.py` docstring): no session ids, no handshake state, `server/discover`
+implemented, batching rejected, GET answered 405 with `Allow: POST`,
+notifications dropped with 202. `PROTOCOL_VERSIONS = ("2025-06-18",
+"2025-03-26")`. Sketch keeps all of this.
+
+Three things Sketch must add rather than copy:
+
+- **`outputSchema` and `structuredContent`.** Builder flattens every result
+  to one text blob (`dispatch.py:80`) and decides `isError` by testing
+  whether that text starts with `"FAILED"` (`dispatch.py:18`). The decision
+  above says `create_prototype` returns structured fields, never prose, so
+  it needs the 2025-06-18 structured-output fields. Applies to
+  `create_prototype`, `list_prototypes`, `list_files`, `read_files`,
+  `check` and `set_public`.
+- **Validate the `MCP-Protocol-Version` request header.** The string appears
+  nowhere in Builder's `mcp/`.
+- **Confirm the current protocol revision** before the copy lands.
+  `2025-06-18` is the newest Builder knows. Not verified against the spec.
+
+Consequence for ticket 10: there is no SSE and no server-initiated stream,
+so `check` cannot send progress notifications. It must either return fast
+synchronously or become a job plus a poll tool.

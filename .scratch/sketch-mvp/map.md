@@ -44,6 +44,7 @@ Decisions made while charting (no ticket, recorded here once):
 - Each prototype pins one frappe-ui version. Launch supports only the newest
   `1.0.0-beta.x`.
 - MCP auth is a per-user Bearer token on a streamable-HTTP `/mcp` endpoint.
+  Transport is stateless (SEP-2575): no session ids, POST only, no SSE.
 - The frappe-ui skill is served through MCP, versioned with the pin.
 - Signup is email + password with a verification email.
 - Prototypes are private by default with a public toggle. Every user picks
@@ -74,6 +75,8 @@ Decisions made while charting (no ticket, recorded here once):
 - Snapshots or revert history for a prototype.
 - Live reload of the viewer when the agent writes files (socketio).
 - Type checking (`vue-tsc`) inside `check`.
+- Whether `2025-06-18` is still the current MCP protocol revision. Builder
+  knows no later one. Not verified against the spec.
 - Iframe sandboxing. The Viewer is same-origin, so Prototype code can reach
   `parent` and Sketch's cookies, and signup is open to anyone. Revisit
   whether the iframe needs `sandbox="allow-scripts"` without
