@@ -1,7 +1,7 @@
 # Prototype the three Sketch screens
 
 Type: prototype
-Status: open
+Status: resolved
 Blocked by: 12
 
 ## Question
@@ -33,3 +33,47 @@ URL layout is decided: the SPA serves at the site root `/`, Prototypes at
   scaffold still serves `/sketch`; moving it is implementation work.
 - Settings shows one Token, always readable, with a Regenerate button. It is
   not a token list: one user, one token.
+
+## Answer
+
+Resolved 2026-08-27 with Faris. Faris chose **B — Studio**.
+
+### Agreed layout
+
+- Desktop uses a persistent 14 rem sidebar. It holds the Sketch identity,
+  Prototypes and Settings navigation, a small agent-connection status, and the
+  signed-in User at the bottom.
+- The Prototypes screen header says **Your studio**, shows the Prototype count,
+  and has one solid **New prototype** action.
+- Prototypes use a responsive visual gallery. Each item has a rendered-preview
+  area, name, short description, updated time, Public/Private switch, and an
+  overflow menu. Rename and Delete live in that menu because they are UI-only
+  actions. Delete uses a destructive confirmation.
+- When Public is on, the item shows a Public badge and the copyable
+  `/u/<username>/<slug>` URL. Turning Public off hides the URL.
+- Settings keeps the same app sidebar and header. Its body has a narrow local
+  navigation column and a content column with **Profile** followed by
+  **Agent connection**.
+- Profile shows Username with this help text: **3–30 characters. Use lowercase
+  letters, numbers, and hyphens. Start with a letter.**
+- Agent connection shows one readable Token with **Copy token** and
+  **Regenerate** actions, followed by the `https://sketch.netchamp.dev/mcp`
+  endpoint and a **Copy config** action.
+- The Viewer is the Prototype document at `/u/<username>/<slug>`. It fills the
+  viewport and has no Sketch sidebar, header, account controls, or other Sketch
+  chrome. Everything visible there belongs to the Prototype.
+
+### frappe-ui components
+
+Use `Button`, `Dropdown`, `Switch`, `FormControl`, `Avatar`, `Badge`, the
+imperative `dialog` and `toast` APIs, and the modern `List`, `ListRow`, and
+`ListCell` family from `frappe-ui/list`. Use semantic surface, ink, and outline
+tokens throughout.
+
+### Prototype asset
+
+The complete A/B/C prototype is preserved on branch
+`forge/proto/14-sketch-ui` at commit `4d9536d`. Run it with `yarn dev` from
+`apps/sketch/frontend`; the review route is
+`/sketch/prototype/sketch-ui/list?variant=B`. The prototype is a primary source,
+not implementation code; `/implement` must rewrite the chosen direction.
