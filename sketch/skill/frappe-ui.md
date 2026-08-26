@@ -403,7 +403,7 @@ import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, ScrollArea } from 'f
 </template>
 ```
 
-### `src/pages/Issues.vue` — a list page with a form in a Dialog
+### `src/pages/Issues.vue`: a list page with a form in a Dialog
 
 ```vue
 <script setup lang="ts">
