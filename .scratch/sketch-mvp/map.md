@@ -23,6 +23,9 @@ repo to land in. Building the MVP is a separate effort.
   Branches from this box use the `forge/` prefix.
 - Glossary lives in `CONTEXT.md` at the app repo root
   (`apps/sketch/CONTEXT.md`).
+- SMTP for signup verification mail is ordinary deploy-time config, not a
+  decision. Ticket 03 was removed 2026-08-26. The spec names it as a setup
+  step and stops there.
 
 ## Decisions so far
 
