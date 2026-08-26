@@ -29,6 +29,8 @@ repo to land in. Building the MVP is a separate effort.
 <!-- one line per closed ticket: gist, then link -->
 
 - [Scaffold sketch-bench and the sketch app](issues/01-scaffold-bench-and-app.md): done 2026-08-26. Bench `/home/faris/benches/sketch-bench` on Frappe develop `0219b22`, site `sketch.localhost` (web 8007), app `apps/sketch` on branch `forge/mvp`, frappe-ui `1.0.0-beta.55` with Vite 8, SPA served at `/sketch`. Passwords in `sites/sketch.localhost/site_config.json`. Tracker now lives in `apps/sketch/.scratch/sketch-mvp/`.
+- [Route sketch.netchamp.dev through the tunnel](issues/02-tunnel-route.md): done 2026-08-26. `https://sketch.netchamp.dev` serves `sketch.localhost`; SPA at `/sketch`; `/socket.io` → 9007, rest → 8007. Site `host_name` set.
+- [Run sketch-bench as a service](issues/16-sketch-bench-service.md): done 2026-08-26. `sketch-bench.service` user unit, enabled, linger on. `Procfile` has no `watch`; rebuild the frontend with `yarn build`. Scheduler enabled.
 - [How do prototype Tailwind classes get styles at runtime](issues/06-runtime-tailwind.md): self-host the MIT `tailwindcss@3.4` engine in the browser with the frappe-ui preset (145 KB gzip, ~300 ms first compile, handles classes added after first paint). Ship precompiled frappe-ui internals CSS first. Reject Play CDN, safelist, twind, UnoCSS.
 - [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is Frappe core (token and OAuth Bearer both work on develop), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
 
