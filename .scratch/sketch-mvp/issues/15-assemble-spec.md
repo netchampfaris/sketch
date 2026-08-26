@@ -2,7 +2,7 @@
 
 Type: task
 Status: open
-Blocked by: 18 (01, 02, 04, 05, 06, 08, 09, 10, 11, 12, 13, 14, 16, 17 resolved; 03 removed; 07 closed out of scope)
+Blocked by: nothing (01, 02, 04, 05, 06, 08, 09, 10, 11, 12, 13, 14, 16, 17, 18 resolved; 03 removed; 07 closed out of scope)
 
 ## Question
 
@@ -56,3 +56,31 @@ The spec must carry these. Several supersede the tickets they amend:
 
 Ticket 18 must land first: it decides the MCP protocol revision, and tickets 08
 and 09 are written against one that is two revisions old.
+
+### 2026-08-27 — from ticket 18
+
+The spec must carry these. They supersede the tickets they amend:
+
+- **`/mcp` is dual-era.** It serves legacy `2025-06-18` and modern
+  `2026-07-28` on the one endpoint, branching on the presence of
+  `params._meta["io.modelcontextprotocol/protocolVersion"]`. Ticket 08's
+  `PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26")` is superseded.
+  `2025-11-25` is not served.
+- **`rpc.handle` must be able to return HTTP 400.** Builder returns 200 for
+  every protocol error. This is the single most likely thing to be missed in
+  the port.
+- **Modern requires three headers and two `_meta` keys**: `MCP-Protocol-Version`,
+  `Mcp-Method`, `Mcp-Name`; `io.modelcontextprotocol/protocolVersion` and
+  `io.modelcontextprotocol/clientCapabilities`. Builder reads none of them.
+- **Two new error codes**: `-32020` header mismatch or missing, `-32022`
+  `UnsupportedProtocolVersionError` with `data: {supported, requested}`.
+- **`server/discover` must be rewritten**, not copied. Builder's body is wrong
+  in four fields: no `resultType`, no `ttlMs`, no `cacheScope`, and `serverInfo`
+  is not in `_meta`.
+- **Every modern result carries `resultType`.** `tools/list` also carries
+  `ttlMs` and `cacheScope`. Legacy results carry none of them.
+- **Legacy keeps `initialize` and `ping`. Modern deletes them.**
+- `Mcp-Name` needs no Base64 sentinel decode, because Sketch slugs are
+  `[a-z0-9-]`. Record the limit in the spec.
+- Ticket 08's `outputSchema` and `structuredContent` work is separate and
+  still needed.
