@@ -40,6 +40,7 @@ repo to land in. Building the MVP is a separate effort.
 - [Define the MCP tool surface and server instructions](issues/08-mcp-tool-surface.md): 11 tools. `list_prototypes`, `create_prototype(name)`, `list_files`, `read_files`, `write_files`, `edit_file`, `delete_file`, `check(screenshot)`, `get_skill`, `set_public`, `set_name`. No `delete_prototype`; deletion is a UI act. Destructive: `delete_file`, `set_public`. Users pick a unique Username; URLs are `sketch.netchamp.dev/u/<username>/<slug>`, slug frozen at creation (amended by ticket 12; was root level). Short `INSTRUCTIONS` (~1.2k chars) always in context, full ~9k-token skill behind `get_skill`.
 - [Define the doctypes and permission model](issues/12-data-model.md): two doctypes only. `Sketch Prototype` (hash name, `title`/`slug`/`pin`/`is_public`, unique `(owner, slug)`) and `Sketch Token` (Bearer, `auth_hooks`, refused outside `/mcp`, one retrievable token per user). Prototype files and Runtimes live on disk, not in the DB. Username is Frappe's `User.username`, enforced by a Sketch `User.validate` hook that runs after core's. URLs move to `/u/<username>/<slug>` and the reserved list is dropped. Role `Sketch User` with `if_owner`; Guest gets nothing, and the Viewer serves public links with `ignore_permissions` after checking `is_public`.
 - [Build the browser Runtime for frappe-ui 1.0.0-beta](issues/04-runtime-bundle.md): built and measured 2026-08-26. `sketch/public/runtimes/1.0.0-beta.55/` with a `manifest.json`, served through Frappe's existing assets symlink; ticket 12's layout stands. Static import map for `vue`, `vue-router`, `frappe-ui`, `frappe-ui/list`; every frappe-ui subpath needs its own asset. A hand-written 2-page Prototype renders with Sidebar, List, Dialog and a form, zero errors. 313 KB gzip to render, 443 KB for the two compilers, 559 KB Inter fonts. 398 ms boot to painted, of which Tailwind is 286 ms. The Runtime owns the mount, so `src/router.ts` exports routes. `upload_file` goes over XHR, not `fetch`. Prototype on `forge/proto/04-runtime-bundle`.
+- [Prototype the check step: compile, render, screenshot](issues/10-check-step.md): done 2026-08-27. `check` is one synchronous MCP call: the Frappe worker proxies to `sketch-checkd`, a Node service holding one Chromium, which opens the Viewer and reads `window.__sketch`. No server-side compile, no RQ job, no poll tool. 913 ms end to end for 7 files and 2 routes; 2.6 s for 30 files and 12 routes. Chromium launches in 45 ms, so the daemon buys Node boot, not browser warmth. Keep the production Runtime: unresolved components are rebuilt from `_resolveComponent` names filtered against `app._context.components`, and prop type warnings stay lost. One PNG per static route, 28-35 KB. Three Runtime defects fixed on the way.
 - [How Frappe develop handles open signup and email verification](issues/13-signup-on-develop.md): done 2026-08-26. Open signup is Website Settings `disable_signup = 0` plus the `max_signups_allowed_per_hour` throttle. Verification is the password-reset link, and signup returns 200 even when the mail fails, so SMTP is not optional. Role comes from Portal Settings `default_role`, and `Sketch User` must set `desk_access = 0` or the user is flipped to System User. `website_route_rules` cannot claim `/`; use the `home_page` hook. No hook adds a field to `sign_up`, so use `override_whitelisted_methods`. version-16 is identical on all of it.
 
 Decisions made while charting (no ticket, recorded here once):
@@ -81,12 +82,16 @@ Decisions made while charting (no ticket, recorded here once):
 ## Not yet specified
 
 - Abuse controls for open signup: prototype count, file size, `check`
-  rate, storage per user. Depends on the data model and the check design.
+  rate, storage per user. Ticket 10 gives the numbers to rate-limit
+  against: one check holds a Chromium context for about a second, and
+  eight at once take 3.1 s each.
 - OAuth for claude.ai connectors. Builder's `/mcp` gets it almost free from
   Frappe's OAuth provider; revisit after the MCP server ticket.
 - Adding a second frappe-ui version and moving a prototype's pin.
 - Snapshots or revert history for a prototype.
 - Live reload of the viewer when the agent writes files (socketio).
+- Whether a Prototype needs the Inter italic face. It is 297 KB, half the
+  font payload. Handed over by ticket 04; ticket 10 did not settle it.
 - Type checking (`vue-tsc`) inside `check`.
 - Whether `2025-06-18` is still the current MCP protocol revision. Builder
   knows no later one. Not verified against the spec.
