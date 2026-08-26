@@ -238,3 +238,22 @@ The role name and `user_type = Website User` are unchanged.
 Also: core auto-derives `User.username` from `first_name` when none is given.
 The Sketch `User.validate` hook must not read an auto-derived value as user
 intent.
+
+### 2026-08-27 — amendment: the skill is not in the Runtime folder
+
+From ticket 11. This ticket's comment on ticket 11 said the skill ships in
+`sketch/public/runtimes/<version>/`, so it is versioned with the Pin by
+construction. Faris overruled it.
+
+The skill lives at **`sketch/skill/frappe-ui.md`**, in app source. The reason
+is reach: a skill inside a Runtime folder is frozen for every Prototype already
+pinned to that Runtime, so a correction never arrives. In app source, editing
+the skill is an app deploy and every Prototype sees the new text at once.
+
+Nothing else in this ticket changes. There is still no skill doctype, and the
+two doctypes stand. The Runtime folder keeps holding only build artifacts, and
+those are gitignored.
+
+Cost accepted: one file serves every Pin, so at a second Pin the skill
+describes one frappe-ui version while some Prototypes render with another. The
+per-Pin skill question is on the map under Not yet specified.

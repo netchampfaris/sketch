@@ -77,3 +77,19 @@ The complete A/B/C prototype is preserved on branch
 `apps/sketch/frontend`; the review route is
 `/sketch/prototype/sketch-ui/list?variant=B`. The prototype is a primary source,
 not implementation code; `/implement` must rewrite the chosen direction.
+
+### 2026-08-27 — amendment: recipe picker and theme control
+
+From ticket 11. Two screens this ticket's answer does not cover.
+
+**A "Select a Recipe" picker when a Prototype is created.** Faris asked for it.
+It means the Sketch UI creates Prototypes, which the resolved layout above does
+not show: creation was an agent act. Ticket 08 owns the `create_prototype`
+change; this ticket owns the screen. The agent has no recipe tool, so the
+picker is the only place a recipe is chosen.
+
+**A theme control.** Dark mode is in the MVP. Sketch owns the theme, and a
+Prototype is forbidden from touching it. The Sketch UI needs a `light | dark |
+system` control, and frappe-ui ships `ThemeSwitcher` and `useColorScheme` for
+it. It writes `localStorage['theme']`, which the Viewer reads. Decide where the
+control sits: the sidebar footer next to the User, or the settings screen.

@@ -43,6 +43,7 @@ repo to land in. Building the MVP is a separate effort.
 - [Prototype the check step: compile, render, screenshot](issues/10-check-step.md): done 2026-08-27. `check` is one synchronous MCP call: the Frappe worker proxies to `sketch-checkd`, a Node service holding one Chromium, which opens the Viewer and reads `window.__sketch`. No server-side compile, no RQ job, no poll tool. 913 ms end to end for 7 files and 2 routes; 2.6 s for 30 files and 12 routes. Chromium launches in 45 ms, so the daemon buys Node boot, not browser warmth. Keep the production Runtime: unresolved components are rebuilt from `_resolveComponent` names filtered against `app._context.components`, and prop type warnings stay lost. One PNG per static route, 28-35 KB. Three Runtime defects fixed on the way.
 - [How Frappe develop handles open signup and email verification](issues/13-signup-on-develop.md): done 2026-08-26. Open signup is Website Settings `disable_signup = 0` plus the `max_signups_allowed_per_hour` throttle. Verification is the password-reset link, and signup returns 200 even when the mail fails, so SMTP is not optional. Role comes from Portal Settings `default_role`, and `Sketch User` must set `desk_access = 0` or the user is flipped to System User. `website_route_rules` cannot claim `/`; use the `home_page` hook. No hook adds a field to `sign_up`, so use `override_whitelisted_methods`. version-16 is identical on all of it.
 - [Prototype the three Sketch screens](issues/14-sketch-ui-prototype.md): Faris chose B — Studio: persistent sidebar, visual Prototype gallery with UI-only management and visible Public URLs, structured profile/agent settings, and a fullscreen Viewer with no Sketch chrome. Prototype preserved on `forge/proto/14-sketch-ui` at `4d9536d`.
+- [What the served frappe-ui skill contains](issues/11-served-skill.md): done 2026-08-27. A Sketch-owned rewrite, not a trim of the box skill, at `sketch/skill/frappe-ui.md` in app source, **not** in the Runtime folder, so an edit reaches Prototypes made before it. One file for every Pin. `get_skill()` takes no arguments. 2,900 words, one blob, eight sections. Every lucide icon works. Eight specifiers resolve and nothing else. `dayjs` is frappe-ui's instance with nine plugins. Sketch owns the theme, and dark mode is in the MVP. Runtime work folded in and committed at `a4a932d`: the icon map, `frappe-ui/editor`, `frappe-ui/charts`, `frappe-ui/icons`, `dayjs`, and `FrappeUIProvider` in the mount. 320 KB gzip to render, 543 KB for the compilers, 426 ms boot. `sketch/tests/test_skill_names.py` keeps the skill honest.
 
 Decisions made while charting (no ticket, recorded here once):
 
@@ -85,7 +86,8 @@ Decisions made while charting (no ticket, recorded here once):
 - Abuse controls for open signup: prototype count, file size, `check`
   rate, storage per user. Ticket 10 gives the numbers to rate-limit
   against: one check holds a Chromium context for about a second, and
-  eight at once take 3.1 s each.
+  eight at once take 3.1 s each. Bandwidth counts too: ticket 11 added
+  the editor and charts bundles, 345 KB and 273 KB gzip each.
 - OAuth for claude.ai connectors. Builder's `/mcp` gets it almost free from
   Frappe's OAuth provider; revisit after the MCP server ticket.
 - Adding a second frappe-ui version and moving a prototype's pin.
@@ -94,11 +96,13 @@ Decisions made while charting (no ticket, recorded here once):
 - Whether a Prototype needs the Inter italic face. It is 297 KB, half the
   font payload. Handed over by ticket 04; ticket 10 did not settle it.
 - Type checking (`vue-tsc`) inside `check`.
+- A skill per Pin. One file serves every Pin today. At a second Pin it
+  describes one frappe-ui version while some Prototypes render with
+  another, and nothing tells the agent. Ticket 11 accepted the cost.
+- Dark-mode screenshots in `check`. It renders light only. A raw colour
+  that shows up only in dark is invisible to the agent.
 - Whether `2025-06-18` is still the current MCP protocol revision. Builder
   knows no later one. Not verified against the spec.
-- Whether a Runtime ships `frappe-ui/editor`, `frappe-ui/charts`, and
-  `frappe-ui/icons`. Each export subpath needs its own asset (ticket 04).
-  Ticket 11 decides which ones the skill may name.
 - Iframe sandboxing. The Viewer is same-origin, so Prototype code can reach
   `parent` and Sketch's cookies, and signup is open to anyone. Revisit
   whether the iframe needs `sandbox="allow-scripts"` without

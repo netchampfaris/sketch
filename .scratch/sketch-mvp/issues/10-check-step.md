@@ -182,3 +182,18 @@ The checker opens the Viewer URL as an anonymous browser. Every Prototype in
 this prototype is a `files.json` on disk. In the MVP the Viewer must read the
 owner's files through an API, and headless Chromium must authenticate as the
 owner to open a private Prototype. New ticket 17.
+
+### 2026-08-27 — amendment: `check` forces the light theme
+
+From ticket 11. Dark mode is in the MVP. The Viewer resolves its theme from a
+`theme` parameter in the URL, then `localStorage['theme']`, then
+`prefers-color-scheme`.
+
+`check` passes `theme=light` when it opens the Viewer. A headless Chromium can
+be started with a dark colour-scheme preference, and a screenshot that flips
+theme between runs is not a signal the agent can read.
+
+**One PNG per static route, light only.** Screenshotting both themes doubles
+the measured 913 ms and the payload, and a Prototype that used semantic tokens
+has nothing for the agent to fix in the dark shot. Dark screenshots are on the
+map under Not yet specified.

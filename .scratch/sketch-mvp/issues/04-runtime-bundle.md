@@ -190,3 +190,36 @@ The Viewer posts `{ status, errors, consoleErrors, timings, tailwind }` to
 - The Inter faces are 559 KB gzip, 43% of the total, and the italic face is
   half of that. Decide whether a Prototype needs italic.
 - Not measured: Firefox, Safari, cold cache, a Prototype with 50 files.
+
+### 2026-08-27 — amendment: sizes superseded, three defects fixed
+
+From ticket 11, which folded Runtime work in rather than opening a ticket.
+Committed on this branch at `a4a932d`.
+
+Three defects in what this ticket delivered:
+
+- **`shims/iconPackBrowser.js` was never wired in**, and the
+  `tailwind/lucide-map.json` it imports did not exist. `preset-browser.js`
+  dropped the icon plugin and said so in a comment. Only the 201 icon classes
+  baked into the precompiled `frappe-ui.css` resolved. An unknown name drew an
+  empty box, and `check` reported `ok`.
+- **`FrappeUIProvider` was not mounted.** `dialog.confirm()` and
+  `toast.success()` did nothing and reported no error.
+- **The import map was hand-written in `viewer.html`** and did not match
+  `make-manifest.mjs`. Both now list the same specifiers.
+
+The Runtime now resolves eight specifiers, not four: `frappe-ui/editor`,
+`frappe-ui/charts`, `frappe-ui/icons` and `dayjs` are added, and Rollup splits
+the shared chunks so `Button`, `Tooltip`, `useId`, `dayjs` and
+`useColorScheme` exist once across the entries. The editor and charts download
+only when a Prototype imports them.
+
+Measured numbers above are superseded:
+
+| | this ticket | after ticket 11 |
+|---|---|---|
+| eager render payload | 313 KB gzip | 320 KB gzip |
+| the two compilers | 443 KB gzip | 543 KB gzip |
+| plain boot to painted | 398 ms | 426 ms |
+
+The Inter font question this ticket handed over is still open.

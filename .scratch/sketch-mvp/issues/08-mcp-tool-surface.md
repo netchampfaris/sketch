@@ -242,3 +242,32 @@ TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components
 
 check returns compile errors, console errors, and one image per route when screenshot is true. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them.
 ```
+
+### 2026-08-27 — amendment: `get_skill()` loses its argument, recipes at creation
+
+From ticket 11.
+
+**`get_skill` takes no arguments.** The `prototype` argument selected a Pin.
+The skill is one file at `sketch/skill/frappe-ui.md`, served to every Pin, so
+the argument selects nothing. It also forced the agent to call
+`list_prototypes` or `create_prototype` first, to learn a slug it does not
+need, before reading the skill `INSTRUCTIONS` tells it to read first. In the
+tool table above, read `get_skill` as taking no arguments.
+
+**`create_prototype` gains a recipe.** Ticket 11 handed over Faris's decision
+that a "Select a Recipe" picker appears when a Prototype is created in the
+Sketch UI. Two things follow, and this ticket owns both:
+
+- The **Sketch UI creates Prototypes**. Today only `create_prototype` does, and
+  ticket 08 recorded creation as an agent act while rename and delete are human
+  acts. That split no longer holds.
+- `create_prototype` needs a way to seed the file tree from a recipe. Decide
+  the argument name and whether the MCP tool takes it at all, or whether
+  seeding is UI-only.
+
+There is **no `get_recipe` tool**. The tool count stays at 11. The skill does
+not index recipes: the agent meets a recipe as a working file tree, not as a
+document.
+
+**The skill is not in the Runtime folder.** It ships in app source, so ticket
+12's comment on ticket 11 is superseded. `get_skill` reads one file.
