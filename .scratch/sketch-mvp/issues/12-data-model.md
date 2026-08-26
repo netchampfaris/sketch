@@ -27,8 +27,10 @@ src/
   router.ts
 ```
 
-Content lives at `sites/sketch.localhost/private/files/sketch/<prototype>/`.
-The path in an MCP call is the path on disk.
+Content lives at `sites/sketch.localhost/private/files/sketch/<name>/`,
+where `<name>` is the Prototype's **hash primary key**, not its slug. Slug is
+unique per owner only, so two users with `dashboard` would share a directory.
+The path in an MCP call is the path inside that directory.
 
 There is **no `Sketch File` doctype**. Disk is the only truth. `list_files`
 walks the tree.
@@ -217,8 +219,9 @@ first, then touches disk.
   take paths from the agent, so `../` and absolute paths must be rejected
   before touching disk.
 - `on_trash` on Prototype deletes the tree, or orphan directories build up.
-- Backups need `bench backup --with-files`. A DB-only restore gives
-  Prototype rows with no source.
+- Nothing else. The backup line that stood here is withdrawn: the
+  sketch-bench backup cron is deleted (ticket 16 amendment). Prototypes are
+  not backed up and are treated as disposable.
 - The `auth_hooks` path scope, the Viewer's runtime-missing error, the
   Website-User scope on the username hook, and 404-not-403. All listed
   above.

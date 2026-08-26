@@ -17,7 +17,7 @@ Read /home/faris/benches/builder-bench/apps/builder/builder/ai/mcp (branch forge
 - Remove: the page lock (`builder.ai.locks`), `McpCtx` snapshots and realtime mirror, agent-registry reuse, `CLIENT_OPS` / `SCRIPT_TWINS` / `CONFIRM_KINDS`, all `Builder Page` tools.
 - Works on Frappe version-16 and develop. All APIs used are present in both. Verified by live curl on both benches.
 
-Findings: /home/faris/benches/.scratch/sketch-mvp/research/09-builder-mcp-reuse.md
+Findings: apps/sketch/.scratch/sketch-mvp/research/09-builder-mcp-reuse.md
 
 ### 2026-08-26 — amendment: auth is Sketch's, not core's
 

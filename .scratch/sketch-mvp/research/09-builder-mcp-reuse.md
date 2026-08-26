@@ -1,6 +1,6 @@
 # What to reuse from Builder's /mcp implementation
 
-Ticket: `/home/faris/benches/.scratch/sketch-mvp/issues/09-builder-mcp-reuse.md`
+Ticket: `apps/sketch/.scratch/sketch-mvp/issues/09-builder-mcp-reuse.md`
 Source: `/home/faris/benches/builder-bench/apps/builder`, branch `forge/mcp-server`,
 commit `98e8c6a` ("feat(ai): serve a stateless MCP server at /mcp").
 Frappe A: `/home/faris/benches/builder-bench/apps/frappe` (`version-16`, v16.30.0).

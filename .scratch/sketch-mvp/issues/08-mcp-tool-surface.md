@@ -47,13 +47,17 @@ what keeps the URL honest.
 - A Prototype's **Slug** is derived from its name at creation and never
   changes. Unique per Username.
 - Public URL: `sketch.netchamp.dev/<username>/<slug>`. Root level, no
-  prefix.
+  prefix. **SUPERSEDED.** The URL is now `/u/<username>/<slug>`. See the
+  2026-08-26 amendment below.
 - `set_name` changes the display name only. The slug and the URL stay put,
   so a shared link never dies.
 - Tools address a Prototype by its slug, scoped to the authenticated user.
 - `create_prototype` returns the record as **structured fields**, never
   prose. Builder's `create_page` returns prose and every caller has to
   regex `id=(page-[0-9a-f]+)` out of it.
+
+**SUPERSEDED.** The reserved list is dropped. See the 2026-08-26
+amendment below.
 
 Root-level usernames need a reserved list, because they sit next to
 Frappe's own routes: `app`, `api`, `assets`, `files`, `private`, `login`,
@@ -116,6 +120,9 @@ sectioned `get_skill(topic)` (agents under-fetch, and a missed tokens
 section is how off-palette colours get invented).
 
 ### `INSTRUCTIONS` text
+
+**SUPERSEDED.** Use the version in the 2026-08-26 file-tree amendment
+below.
 
 ```
 Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
@@ -193,3 +200,45 @@ doubled or trailing hyphen, lowercase-normalised.
 
 Rejected: `/@faris/dashboard`. Reads better, but `@` in a path segment trips
 link parsers and copy-paste.
+
+### 2026-08-26 — amendment: file tree, `router.ts`, and `title`
+
+From ticket 12. Three things above are now wrong.
+
+**A Prototype is a tree, not a flat file list.**
+
+```
+src/
+  components/
+  pages/
+  App.vue
+  router.ts
+```
+
+Every `path` argument is a full relative path such as `src/pages/Home.vue`.
+
+**`router.ts`, not `routes.js`.** The router is a TypeScript module inside
+`src/`. TypeScript is stripped in the browser, not type-checked, so the
+extension costs nothing and matches the rest of the tree.
+
+**Return shapes use `title`, not `name`.** Ticket 12 names the display field
+`title`, because `name` is Frappe's primary key and is reserved
+(`model/__init__.py:86`). In the tool table above, read `name` as `title`
+and `id` as the hash primary key. `set_name` keeps its tool name and its
+`name` argument, which is what the agent types; it writes `title`.
+
+**`INSTRUCTIONS` replaces the text above with this:**
+
+```
+Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
+
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, and call check with screenshot: true once at the end of each user request. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+
+A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files and edit_file for small changes to an existing one.
+
+There is no server and no backend. Data lives in plain refs inside the prototype files. Never import useList, useDoc, useCall, useDoctype, useNewDoc, createResource, createListResource, createDocumentResource, frappeRequest or call. They will throw.
+
+TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components and frappe-ui tokens all work; get_skill documents them.
+
+check returns compile errors, console errors, and one image per route when screenshot is true. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them.
+```

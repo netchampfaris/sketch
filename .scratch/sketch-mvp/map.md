@@ -31,9 +31,9 @@ repo to land in. Building the MVP is a separate effort.
 
 <!-- one line per closed ticket: gist, then link -->
 
-- [Scaffold sketch-bench and the sketch app](issues/01-scaffold-bench-and-app.md): done 2026-08-26. Bench `/home/faris/benches/sketch-bench` on Frappe develop `0219b22`, site `sketch.localhost` (web 8007), app `apps/sketch` on branch `forge/mvp`, frappe-ui `1.0.0-beta.55` with Vite 8, SPA served at `/sketch`. Passwords in `sites/sketch.localhost/site_config.json`. Tracker now lives in `apps/sketch/.scratch/sketch-mvp/`.
-- [Route sketch.netchamp.dev through the tunnel](issues/02-tunnel-route.md): done 2026-08-26. `https://sketch.netchamp.dev` serves `sketch.localhost`; SPA at `/sketch`; `/socket.io` → 9007, rest → 8007. Site `host_name` set.
-- [Run sketch-bench as a service](issues/16-sketch-bench-service.md): done 2026-08-26. `sketch-bench.service` user unit, enabled, linger on. `Procfile` has no `watch`; rebuild the frontend with `yarn build`. Scheduler enabled.
+- [Scaffold sketch-bench and the sketch app](issues/01-scaffold-bench-and-app.md): done 2026-08-26. Bench `/home/faris/benches/sketch-bench` on Frappe develop `0219b22`, site `sketch.localhost` (web 8007), app `apps/sketch` on branch `forge/mvp`, frappe-ui `1.0.0-beta.55` with Vite 8, SPA scaffolded at `/sketch` (the spec moves it to `/`; see the charting decisions). Passwords in `sites/sketch.localhost/site_config.json`. Tracker now lives in `apps/sketch/.scratch/sketch-mvp/`.
+- [Route sketch.netchamp.dev through the tunnel](issues/02-tunnel-route.md): done 2026-08-26. `https://sketch.netchamp.dev` serves `sketch.localhost`; SPA scaffolded at `/sketch`, moving to `/`; `/socket.io` → 9007, rest → 8007. Site `host_name` set.
+- [Run sketch-bench as a service](issues/16-sketch-bench-service.md): done 2026-08-26. `sketch-bench.service` user unit, enabled, linger on. `Procfile` has no `watch`; rebuild the frontend with `yarn build`. Scheduler enabled. Backup cron removed 2026-08-26: it was DB-only, and prototype files live on disk.
 - [How do prototype Tailwind classes get styles at runtime](issues/06-runtime-tailwind.md): self-host the MIT `tailwindcss@3.4` engine in the browser with the frappe-ui preset (145 KB gzip, ~300 ms first compile, handles classes added after first paint). Ship precompiled frappe-ui internals CSS first. Reject Play CDN, safelist, twind, UnoCSS.
 - [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is a Sketch `auth_hooks` function reading a `Sketch Token` Bearer header (amended by ticket 12; was Frappe core `api_key`/OAuth), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
 - [Pick the in-browser SFC compiler and TypeScript stripper](issues/05-sfc-compiler-and-ts.md): hand-roll `@vue/compiler-sfc` (esm-browser) + `sucrase` for type stripping, the `@vue/repl` pair. 295 KB gzip, 2.8 ms per SFC. Reject `vue3-sfc-loader` (unmaintained, pins compiler-sfc 3.4.15, swallows parse errors) and `esbuild-wasm` (3.7 MB wasm, 4.7x slower). Check `parse().errors` before `compileScript`.
@@ -54,12 +54,19 @@ Decisions made while charting (no ticket, recorded here once):
 - Prototypes are private by default with a public toggle. Every user picks
   a unique Username. A Prototype renders in a same-origin iframe (the
   Viewer) at `sketch.netchamp.dev/u/<username>/<slug>`.
-- Data: plain `ref`s in prototype files. No backend, no stubs. (Revised
-  2026-08-26; see the Out of scope entry for the Fixture API.)
+- Data: plain `ref`s in prototype files, inline. No backend, no stubs, no
+  Fixture API. (Revised 2026-08-26; see the Out of scope entry.)
 - Sketch UI: prototypes list, fullscreen viewer with no Sketch chrome,
   settings (token + connect snippet). No in-browser editor. Rename and
   delete are UI-only; neither is an MCP tool.
-- Multi-page prototypes with vue-router (hash mode) and a `routes.js`.
+- The SPA serves at the site root `/`, not `/sketch`. Prototypes sit under
+  `/u/`, so the root is free. The scaffold still serves `/sketch`; moving it
+  is implementation work.
+- Nothing is backed up. The backup cron is removed. Prototypes are
+  disposable.
+- Multi-page prototypes with vue-router (hash mode). A Prototype is an
+  app-like tree: `src/pages`, `src/components`, `src/App.vue`,
+  `src/router.ts`.
 - Feedback: writes are silent. A `check` tool at the end of each agent
   loop returns compile errors, console errors, and a screenshot.
 - TypeScript allowed. Type stripping only in the browser. Type checking is

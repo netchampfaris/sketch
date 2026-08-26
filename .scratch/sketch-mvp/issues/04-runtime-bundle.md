@@ -27,3 +27,16 @@ Prototype one Runtime: a Vite library build that exposes vue, vue-router, frappe
   all hit it. Without a stub they throw. Nothing else needs stubbing.
 - Ticket 05 is resolved, so this ticket is unblocked. Compiler is
   `@vue/compiler-sfc` (esm-browser) + `sucrase`.
+
+### 2026-08-26 — from ticket 12
+
+The Runtime directory layout is already decided, so this ticket implements
+it rather than choosing it: `sketch/public/runtimes/<version>/` with a
+`manifest.json`, one folder per frappe-ui version. There is **no** Sketch
+Runtime doctype; `pin` is a plain `Data` field holding the version string.
+
+Say so if the prototype finds a reason the layout cannot work. That reopens
+ticket 12, it does not override it quietly.
+
+The hand-written 2-page prototype should use the real tree: `src/pages`,
+`src/components`, `src/App.vue`, `src/router.ts`.
