@@ -87,6 +87,10 @@ use_json_request_body = True
 # desk, use setup_wizard_stages / setup_wizard_complete instead.
 # setup_wizard_url = "/sketch/setup"
 
+website_route_rules = [
+	{"from_route": "/sketch/<path:app_path>", "to_route": "sketch"},
+]
+
 # Generators
 # ----------
 

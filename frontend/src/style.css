@@ -1,0 +1,3 @@
+/* frappe-ui/style.css already includes the @tailwind base/components/utilities
+   directives (1.0.0-beta line), so they must not be repeated here. */
+@import 'frappe-ui/style.css';

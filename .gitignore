@@ -53,3 +53,9 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
+
+# Frontend build output (frappe-ui vite buildConfig)
+sketch/public/frontend
+sketch/www/sketch.html
+frontend/components.d.ts
+frontend/auto-imports.d.ts
