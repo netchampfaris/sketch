@@ -1,7 +1,7 @@
 # Configure an SMTP provider for verification emails
 
 Type: task
-Status: claimed
+Status: open
 Blocked by: 01
 
 ## Question
@@ -58,3 +58,8 @@ guess them.
 
 Not done yet: nothing beyond the checklist. The Email Account is not created
 and no mail has been sent.
+
+### 2026-08-26 — deferred (Faris)
+
+Unclaimed. Faris: "ignore smtp provider step, i can configure login etc
+later". Ticket stays open, off the critical path. It still blocks 15.

@@ -34,6 +34,7 @@ repo to land in. Building the MVP is a separate effort.
 - [How do prototype Tailwind classes get styles at runtime](issues/06-runtime-tailwind.md): self-host the MIT `tailwindcss@3.4` engine in the browser with the frappe-ui preset (145 KB gzip, ~300 ms first compile, handles classes added after first paint). Ship precompiled frappe-ui internals CSS first. Reject Play CDN, safelist, twind, UnoCSS.
 - [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is Frappe core (token and OAuth Bearer both work on develop), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
 - [Pick the in-browser SFC compiler and TypeScript stripper](issues/05-sfc-compiler-and-ts.md): hand-roll `@vue/compiler-sfc` (esm-browser) + `sucrase` for type stripping, the `@vue/repl` pair. 295 KB gzip, 2.8 ms per SFC. Reject `vue3-sfc-loader` (unmaintained, pins compiler-sfc 3.4.15, swallows parse errors) and `esbuild-wasm` (3.7 MB wasm, 4.7x slower). Check `parse().errors` before `compileScript`.
+- [Define the MCP tool surface and server instructions](issues/08-mcp-tool-surface.md): 11 tools. `list_prototypes`, `create_prototype(name)`, `list_files`, `read_files`, `write_files`, `edit_file`, `delete_file`, `check(screenshot)`, `get_skill`, `set_public`, `set_name`. No `delete_prototype`; deletion is a UI act. Destructive: `delete_file`, `set_public`. Users pick a unique Username; URLs are `sketch.netchamp.dev/<username>/<slug>` at the site root, slug frozen at creation. Short `INSTRUCTIONS` (~1.2k chars) always in context, full ~9k-token skill behind `get_skill`.
 
 Decisions made while charting (no ticket, recorded here once):
 
@@ -45,10 +46,14 @@ Decisions made while charting (no ticket, recorded here once):
 - MCP auth is a per-user Bearer token on a streamable-HTTP `/mcp` endpoint.
 - The frappe-ui skill is served through MCP, versioned with the pin.
 - Signup is email + password with a verification email.
-- Prototypes are private by default with a public-link toggle.
-- Data: in-file fixtures behind stubbed frappe-ui resources. No backend.
+- Prototypes are private by default with a public toggle. Every user picks
+  a unique Username. A Prototype renders in a same-origin iframe (the
+  Viewer) at `sketch.netchamp.dev/<username>/<slug>`.
+- Data: plain `ref`s in prototype files. No backend, no stubs. (Revised
+  2026-08-26; see the Out of scope entry for the Fixture API.)
 - Sketch UI: prototypes list, fullscreen viewer with no Sketch chrome,
-  settings (token + connect snippet). No in-browser editor.
+  settings (token + connect snippet). No in-browser editor. Rename and
+  delete are UI-only; neither is an MCP tool.
 - Multi-page prototypes with vue-router (hash mode) and a `routes.js`.
 - Feedback: writes are silent. A `check` tool at the end of each agent
   loop returns compile errors, console errors, and a screenshot.
@@ -69,12 +74,22 @@ Decisions made while charting (no ticket, recorded here once):
 - Snapshots or revert history for a prototype.
 - Live reload of the viewer when the agent writes files (socketio).
 - Type checking (`vue-tsc`) inside `check`.
-- URL layout: the scaffold serves the SPA at `/sketch`. Decide whether the
-  site root `/` redirects there or serves it directly. Depends on the Sketch
-  UI ticket.
+- Iframe sandboxing. The Viewer is same-origin, so Prototype code can reach
+  `parent` and Sketch's cookies, and signup is open to anyone. Revisit
+  whether the iframe needs `sandbox="allow-scripts"` without
+  `allow-same-origin`, and what that costs the Runtime.
+- Keeping the reserved-username list correct as Frappe adds routes. A new
+  core route can shadow an existing user at the site root.
 - Onboarding copy: what a new user sees before any prototype exists.
 
 ## Out of scope
+
+- Browsing other users' public Prototypes. Usernames are in the MVP, so
+  `/<username>` and a discovery surface can be added later without moving a
+  single URL. The browse page itself is a separate effort.
+- [Design the Fixture API and the stubbed resources](issues/07-fixtures-and-stubs.md):
+  ruled out 2026-08-26. No frappe-ui component fetches its own data, so a
+  Prototype needs no stubs to render. Prototype data lives in `ref`s.
 
 - In-browser code editor. The agent is the editor.
 - Sharing to a specific other user. Only owner-private or public link.
