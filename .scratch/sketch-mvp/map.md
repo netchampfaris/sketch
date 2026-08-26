@@ -21,31 +21,14 @@ repo to land in. Building the MVP is a separate effort.
 - Standing preferences: ASD-STE100 writing. Subagents must not post, push,
   or write outside `/home/faris/benches` without Faris's confirmation.
   Branches from this box use the `forge/` prefix.
-- Glossary lives in `CONTEXT.md` at the app repo root once the scaffold
-  exists. Until then the terms below are the glossary.
-
-### Glossary (moves to CONTEXT.md after ticket 01)
-
-- **Prototype**: a set of Vue SFC files, `.ts`/`.js` files, and a
-  `routes.js`, owned by one User, rendered in the browser. High fidelity:
-  real frappe-ui components and tokens, not a mock.
-- **Runtime**: the shared browser bundle (Vue, vue-router, frappe-ui,
-  Tailwind, SFC compiler, TS stripper) that renders a Prototype. One Runtime
-  per supported frappe-ui version.
-- **Pin**: the frappe-ui version a Prototype targets. Set at creation. A
-  Prototype renders with the Runtime that matches its Pin.
-- **Fixture**: sample data declared inside Prototype files. Stubbed
-  resources resolve from Fixtures instead of a server.
-- **Check**: the MCP step the agent runs once at the end of a user request.
-  Returns compile errors, console errors, and a screenshot.
-- **Public link**: an owner-set toggle. When on, anyone with the URL can
-  view the Prototype read-only, without Sketch chrome.
-- **Token**: the per-user Bearer credential an agent sends to `/mcp`.
+- Glossary lives in `CONTEXT.md` at the app repo root
+  (`apps/sketch/CONTEXT.md`).
 
 ## Decisions so far
 
 <!-- one line per closed ticket: gist, then link -->
 
+- [Scaffold sketch-bench and the sketch app](issues/01-scaffold-bench-and-app.md): done 2026-08-26. Bench `/home/faris/benches/sketch-bench` on Frappe develop `0219b22`, site `sketch.localhost` (web 8007), app `apps/sketch` on branch `forge/mvp`, frappe-ui `1.0.0-beta.55` with Vite 8, SPA served at `/sketch`. Passwords in `sites/sketch.localhost/site_config.json`. Tracker now lives in `apps/sketch/.scratch/sketch-mvp/`.
 - [How do prototype Tailwind classes get styles at runtime](issues/06-runtime-tailwind.md): self-host the MIT `tailwindcss@3.4` engine in the browser with the frappe-ui preset (145 KB gzip, ~300 ms first compile, handles classes added after first paint). Ship precompiled frappe-ui internals CSS first. Reject Play CDN, safelist, twind, UnoCSS.
 - [What to reuse from Builder's /mcp implementation](issues/09-builder-mcp-reuse.md): copy `http.py` and `rpc.py`, wire `/mcp` with one `page_renderer` hook, auth is Frappe core (token and OAuth Bearer both work on develop), keep the `TOOLS`/annotations pattern, drop `ctx.py` and `pages.py`.
 
@@ -83,8 +66,9 @@ Decisions made while charting (no ticket, recorded here once):
 - Snapshots or revert history for a prototype.
 - Live reload of the viewer when the agent writes files (socketio).
 - Type checking (`vue-tsc`) inside `check`.
-- Process management and backups for `sketch-bench` (systemd user service
-  like `builder-bench.service`).
+- URL layout: the scaffold serves the SPA at `/sketch`. Decide whether the
+  site root `/` redirects there or serves it directly. Depends on the Sketch
+  UI ticket.
 - Onboarding copy: what a new user sees before any prototype exists.
 
 ## Out of scope
