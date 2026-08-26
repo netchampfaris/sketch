@@ -32,3 +32,20 @@ Unblocked from 07. Two rules the skill must carry:
 - Storage: the skill ships in the runtime folder it belongs to,
   `sketch/public/runtimes/<version>/`, so it is versioned with the Pin by
   construction. No doctype (ticket 12).
+
+### 2026-08-26 — from ticket 04
+
+- **A Prototype ships no entry file.** The Runtime owns the mount. It imports
+  `src/App.vue` and the routes from `src/router.ts`, then calls
+  `createApp(App).use(router).use(FrappeUI)`. So `src/router.ts` exports a
+  **routes array**, not a router. The skill must say this.
+- The router is hash mode. The skill must not show `createWebHistory`.
+- **Only listed import specifiers resolve.** The import map covers `vue`,
+  `vue-router`, `frappe-ui`, and `frappe-ui/list`. Every frappe-ui export
+  subpath needs its own Runtime asset, so the skill decides which ones exist.
+  `frappe-ui/editor`, `frappe-ui/charts`, and `frappe-ui/icons` are not built
+  yet. Note that `ListView` is gone from the root barrel; lists come from
+  `frappe-ui/list`.
+- Import cycles between Prototype files are not supported.
+- `FileUploader` works. The Viewer stubs `upload_file`, so the skill may
+  allow it.

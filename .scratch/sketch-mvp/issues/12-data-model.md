@@ -225,3 +225,16 @@ first, then touches disk.
 - The `auth_hooks` path scope, the Viewer's runtime-missing error, the
   Website-User scope on the username hook, and 404-not-403. All listed
   above.
+
+## Comments
+
+### 2026-08-26 — from ticket 13, amendment
+
+The `Sketch User` role fixture must set **`desk_access = 0`**.
+`Role.desk_access` defaults to 1, and `User.add_roles()` calls `save()`, so
+`set_system_user()` would flip a new signup to System User during signup.
+The role name and `user_type = Website User` are unchanged.
+
+Also: core auto-derives `User.username` from `first_name` when none is given.
+The Sketch `User.validate` hook must not read an auto-derived value as user
+intent.

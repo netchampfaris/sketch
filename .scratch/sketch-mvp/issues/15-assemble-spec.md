@@ -2,7 +2,7 @@
 
 Type: task
 Status: open
-Blocked by: 04, 08, 10, 11, 12, 13, 14 (01, 02, 05, 06, 09, 16 resolved; 03 removed; 07 closed out of scope)
+Blocked by: 10, 11, 14 (01, 02, 04, 05, 06, 08, 09, 12, 13, 16 resolved; 03 removed; 07 closed out of scope)
 
 ## Question
 
