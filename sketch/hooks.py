@@ -87,8 +87,13 @@ use_json_request_body = True
 # desk, use setup_wizard_stages / setup_wizard_complete instead.
 # setup_wizard_url = "/sketch/setup"
 
+# The SPA has two routes. `/` comes from `home_page` below. `/settings` needs a
+# rule of its own, or a direct load of it is a 404. `/sketch` stays because
+# core's login redirect reads `get_home_page()`, which answers "sketch"; the
+# router rewrites that to `/` before the location is read.
 website_route_rules = [
 	{"from_route": "/sketch/<path:app_path>", "to_route": "sketch"},
+	{"from_route": "/settings", "to_route": "sketch"},
 ]
 
 # The SPA answers the site root. `website_route_rules` cannot claim "/", because
