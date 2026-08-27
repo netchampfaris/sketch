@@ -23,9 +23,14 @@ like a broken recipe but is a broken harness.
 ## Step 2 — boot it in a browser at 1280x800
 
 ```
-cd /tmp/pw-runner
-node /home/faris/benches/sketch-bench/apps/sketch/.scratch/sketch-mvp/build/boot_recipe.mjs "<url>"
+cp /home/faris/benches/sketch-bench/apps/sketch/.scratch/sketch-mvp/build/boot_recipe.mjs \
+   /tmp/pw-runner/boot_recipe.mjs
+cd /tmp/pw-runner && node boot_recipe.mjs "<url>"
 ```
+
+**Copy the script first.** Node resolves an ESM bare import from the script's
+own directory, not from the working directory, so running it by absolute path
+fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'playwright'`.
 
 It prints `window.__sketch`, `data-theme`, the first `h1`, failed requests and
 console errors.

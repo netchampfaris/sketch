@@ -191,10 +191,13 @@ height.
 
 ```vue
 <Editor v-model="content" :extensions="[RichTextKit]">
-  <EditorFixedMenu />
+  <EditorFixedMenu :items="articleToolbar" />
   <EditorContent />
 </Editor>
 ```
+
+`EditorFixedMenu` needs `:items`. It is a required prop, and a bare menu draws
+nothing and reports no error.
 
 Kits: `RichTextKit` for a full editor, `InlineKit` for one line, `CommentKit`
 for a comment box, `StarterKit` for the base. Chrome: `EditorFixedMenu`,
@@ -393,7 +396,7 @@ import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, ScrollArea } from 'f
           <SidebarHeader title="Tracker" subtitle="Acme" />
           <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
             <div class="space-y-0.5">
-              <SidebarItem label="Issues" icon="lucide-circle-dot" :route="{ path: '/' }" />
+              <SidebarItem label="Issues" icon="lucide-circle-dot" to="/" />
             </div>
           </ScrollArea>
         </Sidebar>
