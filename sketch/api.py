@@ -189,10 +189,17 @@ def get_session() -> dict:
 def list_prototypes() -> list[dict]:
 	"""Every Prototype this user owns, newest first.
 
-	`frappe.get_list` keeps the `if_owner` rule. `frappe.get_all` does not.
+	The owner filter is explicit, and not left to the `if_owner` permission
+	rule. `if_owner` is per role: `Sketch User` carries it, `System Manager`
+	does not. Without the filter a System Manager sees all 32 Prototypes on the
+	site, and then the Viewer answers 404 for each one it does not own, because
+	the Viewer serves the owner or a public Prototype and nobody else.
+
+	`frappe.get_all` would also drop the permission check, so keep `get_list`.
 	"""
 	rows = frappe.get_list(
 		"Sketch Prototype",
+		filters={"owner": frappe.session.user},
 		fields=["name", "title", "slug", "pin", "is_public", "modified"],
 		order_by="modified desc",
 		limit_page_length=0,

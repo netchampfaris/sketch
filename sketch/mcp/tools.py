@@ -151,10 +151,12 @@ PROTOTYPE_PARAM = {
 
 
 def do_list_prototypes(args: dict) -> ToolResult:
-	# get_list, never get_all: get_all ignores permissions, which drops the
-	# `if_owner` rule and lists every user's Prototypes.
+	# The owner filter is explicit. `if_owner` is per role, so a token held by a
+	# System Manager would otherwise list every user's Prototypes. get_list, and
+	# never get_all, because get_all drops the permission check as well.
 	rows = frappe.get_list(
 		"Sketch Prototype",
+		filters={"owner": frappe.session.user},
 		fields=["name", "title", "slug", "pin", "is_public", "owner"],
 		order_by="modified desc",
 		limit_page_length=0,
