@@ -97,7 +97,15 @@ home_page = "sketch"
 
 # The Viewer serves /u/<username>/<slug>. Custom renderers run first inside
 # PathResolver.resolve(), ahead of every built-in page type.
-page_renderer = ["sketch.viewer.SketchViewerRenderer"]
+page_renderer = [
+	"sketch.viewer.SketchViewerRenderer",
+	"sketch.mcp.http.McpPageRenderer",
+]
+
+# The Sketch Token resolver. It refuses every path except /mcp, which is the
+# whole reason Sketch owns a third auth scheme instead of using Frappe's
+# api_key: api_key authenticates every Frappe endpoint, and signup is open.
+auth_hooks = ["sketch.auth.validate_sketch_token"]
 
 # Generators
 # ----------
