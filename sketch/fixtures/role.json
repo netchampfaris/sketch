@@ -1,0 +1,11 @@
+[
+ {
+  "desk_access": 0,
+  "disabled": 0,
+  "doctype": "Role",
+  "is_custom": 0,
+  "name": "Sketch User",
+  "role_name": "Sketch User",
+  "two_factor_auth": 0
+ }
+]

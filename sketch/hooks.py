@@ -109,6 +109,13 @@ website_route_rules = [
 # 	"filters": "sketch.utils.jinja_filters"
 # }
 
+# Fixtures
+# --------
+# Filtered on purpose. Plain `fixtures = ["Role"]` makes `bench export-fixtures`
+# overwrite sketch/fixtures/role.json with every Role on the site.
+
+fixtures = [{"dt": "Role", "filters": [["name", "in", ["Sketch User"]]]}]
+
 # Installation
 # ------------
 
