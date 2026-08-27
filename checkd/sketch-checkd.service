@@ -1,0 +1,20 @@
+[Unit]
+Description=Sketch check service (sketch-checkd) on 127.0.0.1:8010
+Documentation=file:///home/faris/benches/sketch-bench/apps/sketch/checkd/checkd.mjs
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/faris/benches/sketch-bench/apps/sketch/checkd
+Environment=PATH=/home/faris/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:/bin
+Environment=SKETCH_CHECKD_PORT=8010
+Environment=SKETCH_CHECKD_CONCURRENCY=4
+Environment=SKETCH_CHECKD_TIMEOUT_MS=30000
+ExecStart=/home/faris/.nvm/versions/node/v24.18.0/bin/node /home/faris/benches/sketch-bench/apps/sketch/checkd/checkd.mjs
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

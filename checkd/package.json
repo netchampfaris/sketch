@@ -1,0 +1,14 @@
+{
+  "name": "sketch-checkd",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "The Sketch check service. One Chromium, one fresh context per check.",
+  "main": "checkd.mjs",
+  "scripts": {
+    "start": "node checkd.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}
