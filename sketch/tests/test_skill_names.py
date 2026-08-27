@@ -88,7 +88,7 @@ class TestSkillNames(unittest.TestCase):
 		cls.runtime = newest_runtime()
 		if cls.runtime is None:
 			raise unittest.SkipTest(
-				f"no Runtime built under {RUNTIMES}; run runtime-prototype/build.sh"
+				f"no Runtime built under {RUNTIMES}; run runtime/build.sh"
 			)
 		cls.manifest = json.loads((cls.runtime / "manifest.json").read_text())
 		cls.import_map = cls.manifest["importMap"]

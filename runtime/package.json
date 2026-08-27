@@ -1,0 +1,6 @@
+{
+  "name": "sketch-runtime",
+  "private": true,
+  "type": "module",
+  "//": "Build source for the shared browser Runtime. Resolves packages through ../frontend/node_modules, which build.sh symlinks in as node_modules."
+}

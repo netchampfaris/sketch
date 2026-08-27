@@ -4,7 +4,8 @@
   "scripts": {
     "postinstall": "cd frontend && yarn install",
     "dev": "cd frontend && yarn dev",
-    "build": "cd frontend && yarn build",
+    "build": "cd frontend && yarn build && cd .. && sh runtime/build.sh",
+    "build:runtime": "sh runtime/build.sh",
     "upgrade-frappeui": "cd frontend && yarn add frappe-ui@beta"
   }
 }

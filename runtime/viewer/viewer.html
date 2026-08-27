@@ -1,0 +1,39 @@
+<!doctype html>
+<html class="h-full" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prototype</title>
+
+    <!-- Layer 1: precompiled frappe-ui CSS. Components are styled at first paint. -->
+    <link rel="stylesheet" href="RUNTIME/frappe-ui.css" />
+    <link rel="stylesheet" href="RUNTIME/frappe-ui-components.css" />
+
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "RUNTIME/vue.js",
+          "vue-router": "RUNTIME/vue-router.js",
+          "frappe-ui": "RUNTIME/frappe-ui.js",
+          "frappe-ui/list": "RUNTIME/frappe-ui-list.js",
+          "frappe-ui/editor": "RUNTIME/frappe-ui-editor.js",
+          "frappe-ui/charts": "RUNTIME/frappe-ui-charts.js",
+          "frappe-ui/icons": "RUNTIME/frappe-ui-icons.js",
+          "dayjs": "RUNTIME/dayjs.js",
+          "@vueuse/core": "RUNTIME/vueuse.js",
+          "sketch:compiler": "RUNTIME/compiler.js",
+          "sketch:tailwind": "RUNTIME/tailwind.js"
+        }
+      }
+    </script>
+  </head>
+  <body class="h-full bg-surface-base text-ink-gray-9">
+    <div id="app" class="h-full"></div>
+    <!-- build.sh stamps the empty data slot here. The renderer fills it
+         with the Prototype's tree, once, per request. The placeholder must
+         not appear anywhere above this line: the renderer replaces the
+         first occurrence and nothing else. -->
+    SKETCH_DATA_SLOT
+    <script type="module" src="./boot.js"></script>
+  </body>
+</html>

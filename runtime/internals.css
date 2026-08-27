@@ -1,0 +1,14 @@
+/* Layer 1 input. Mirrors frappe-ui/src/style.css: the Inter font faces, the
+   three Tailwind directives, and the transition-suppression rules that
+   `useColorScheme` stamps on <html> around a light/dark swap. */
+@import './fonts/inter.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.no-transition *,
+.no-transition *::before,
+.no-transition *::after {
+  transition: none !important;
+}

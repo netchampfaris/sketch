@@ -85,7 +85,7 @@ Put the fixture data in plain `ref`s in the file that uses it, or in a shared
 
 ## 4. What you can import
 
-Eight specifiers resolve. Nothing else does, and a bare import of anything else
+Nine specifiers resolve. Nothing else does, and a bare import of anything else
 fails to compile.
 
 | Specifier | Holds |
@@ -98,6 +98,7 @@ fails to compile.
 | `frappe-ui/charts` | the chart family, ECharts based |
 | `frappe-ui/icons` | 8 hand-drawn Frappe icons that lucide has no match for |
 | `dayjs` | dates. Same instance frappe-ui uses |
+| `@vueuse/core` | Vue composables. Same version frappe-ui uses |
 
 `frappe-ui/editor` and `frappe-ui/charts` are large. They download only when a
 Prototype imports them, so import them only on the page that draws them.
