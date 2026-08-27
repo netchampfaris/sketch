@@ -146,7 +146,17 @@ class SketchViewerRenderer(BaseRenderer):
 		return not frappe.form_dict.get("sig")
 
 	def payload(self) -> dict:
-		"""The data slot contents (contract 4)."""
+		"""The data slot contents (contract 4).
+
+		`rev` is the poller's baseline, read here rather than at the first
+		poll. The first poll lands about two seconds after the page loads, and
+		a write inside that window used to become the baseline, so the page
+		never reloaded. That window is exactly when the agent writes.
+
+		It is a stat walk, so only a live page pays for it. A Guest and a
+		`check` request get "" and never call revision().
+		"""
+		live = self.is_live()
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -155,7 +165,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"pin": self.doc.pin,
 			"is_public": bool(self.doc.is_public),
 			"is_owner": self.is_owner,
-			"live": self.is_live(),
+			"live": live,
+			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"theme": url_theme(),
 		}
 

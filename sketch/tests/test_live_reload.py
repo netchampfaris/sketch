@@ -14,6 +14,7 @@ Two parts, both cheap:
 
 import os
 import time
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
@@ -123,3 +124,41 @@ class TestLiveFlag(IntegrationTestCase):
 		with set_user(self.user):
 			self.sign()
 			self.assertFalse(self.payload()["live"])
+
+	def test_only_a_live_page_carries_and_computes_a_revision(self):
+		"""The baseline the poller starts from, and who pays for the walk.
+
+		The renderer reads the revision at render time so a write in the two
+		seconds before the first poll still reloads the page. It is a stat
+		walk, so the two callers that never poll must not run it.
+		"""
+		calls = []
+		real = prototype_files.revision
+
+		def counted(name: str) -> str:
+			calls.append(name)
+			return real(name)
+
+		with patch.object(prototype_files, "revision", counted):
+			with set_user(self.user):
+				owner = self.payload()
+
+			self.assertEqual(calls, [self.doc.name], "the owner pays for one walk")
+			self.assertEqual(owner["rev"], real(self.doc.name))
+
+			calls.clear()
+			with set_user("Guest"):
+				guest = self.payload()
+
+			with set_user("Guest"):
+				self.sign()
+				checked = self.payload()
+
+			with set_user(self.user):
+				self.sign()
+				signed_owner = self.payload()
+
+		self.assertEqual(calls, [], "a Guest and a check request compute nothing")
+		self.assertEqual(guest["rev"], "")
+		self.assertEqual(checked["rev"], "")
+		self.assertEqual(signed_owner["rev"], "")

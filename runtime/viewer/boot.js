@@ -131,7 +131,11 @@ function startLiveReload(data) {
   if (window.top !== window.self) return
 
   const url = '/api/method/sketch.api.prototype_revision?slug=' + encodeURIComponent(data.slug)
-  let first = null
+  // The renderer read the revision while it built this page, so the baseline
+  // covers the two seconds before the first poll. A write inside that window
+  // used to become the baseline, and the page never reloaded. An older served
+  // document carries no `rev`, so that one still adopts the first poll.
+  let first = typeof data.rev === 'string' && data.rev ? data.rev : null
   let wait = POLL_MS
   let timer = null
 
