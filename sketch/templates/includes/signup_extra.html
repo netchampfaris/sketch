@@ -1,0 +1,136 @@
+{#
+	The Sketch signup form.
+
+	The `signup_form_template` hook replaces the whole `.form-signup`, so this is
+	a copy of `frappe/templates/signup.html` with one extra field: the username.
+
+	Core's own submit handler in `frappe/templates/includes/login/login.js` sends
+	three arguments. The script at the bottom rebinds it. That rebind is the
+	fragile part: login.js is not a stable API.
+#}
+{% from "templates/includes/login/macros.html" import alert_banner %}
+<form class="form-signin form-signup hide flex flex-col gap-8" role="form" novalidate>
+    <div class="page-card-body flex flex-col gap-4">
+        {{ alert_banner("success") }}
+        {{ alert_banner("error") }}
+        <div class="form-group flex flex-col items-start gap-1.5 mb-0">
+            <label class="text-base text-ink-gray-5 w-full mb-0" for="signup_fullname">{{ _("Full Name") }}</label>
+            <input type="text" id="signup_fullname" class="form-control" placeholder="{{ _('Jane Doe') }}"
+                required autofocus autocomplete="name">
+            <p class="field-error text-base text-ink-red-8 mb-0"></p>
+        </div>
+        <div class="form-group flex flex-col items-start gap-1.5 mb-0">
+            <label class="text-base text-ink-gray-5 w-full mb-0" for="signup_email">{{ _("Email") }}</label>
+            <input type="email" id="signup_email" class="form-control"
+                placeholder="{{ _('jane@example.com') }}" required autocomplete="username">
+            <p class="field-error text-base text-ink-red-8 mb-0"></p>
+        </div>
+        <div class="form-group flex flex-col items-start gap-1.5 mb-0">
+            <label class="text-base text-ink-gray-5 w-full mb-0" for="signup_username">{{ _("Username") }}</label>
+            <input type="text" id="signup_username" class="form-control" placeholder="{{ _('jane-doe') }}"
+                required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+                minlength="3" maxlength="30">
+            <p class="signup-username-hint text-sm text-ink-gray-5 mb-0" id="signup_username_hint">
+                {{ _("Your prototype links use this name. It cannot be changed later.") }}
+            </p>
+            <p class="field-error text-base text-ink-red-8 mb-0"></p>
+        </div>
+    </div>
+    <div class="page-card-actions flex flex-col gap-3">
+        <button class="es-button w-full btn-signup" data-variant="solid"
+            type="submit" disabled>{{ _("Create Account") }}</button>
+
+        <p class="text-center sign-up-message text-p-sm text-ink-gray-6 mt-auto mb-0">
+            <a href="#login" class="text-p-sm-semibold text-ink-gray-6">{{ _("Have an account? Login") }}</a>
+        </p>
+    </div>
+</form>
+<script>
+// The Sketch signup rebind.
+//
+// This script runs while the body is parsed, before jQuery loads, so every use
+// of `$` sits inside a callback. `frappe.ready` is defined in the page head.
+//
+// Order: our `frappe.ready` handler is registered first, because the form markup
+// comes before login.js in the body. It only registers a `login_rendered`
+// listener. login.js fires that event at the end of its own ready handler, after
+// `login.bind_events()`. So the rebind below always runs last.
+//
+// It depends on these core symbols:
+//   frappe.ready, the `login_rendered` document event, the `.form-signup` class,
+//   the ids #signup_fullname #signup_email, the class .btn-signup,
+//   login.call, login.show_field_error, validate_email,
+//   frappe.utils.sanitise_redirect, frappe.utils.get_url_arg,
+//   frappe.utils.xss_sanitise.
+(function () {
+	var SKETCH_USERNAME_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+	var SKETCH_USERNAME_HELP = {{ _("3 to 30 characters. Lowercase letters, numbers and single hyphens. Start with a letter.") | tojson }};
+	var SKETCH_USERNAME_NOTE = {{ _("Your prototype links use this name. It cannot be changed later.") | tojson }};
+
+	function sketch_username() {
+		return ($("#signup_username").val() || "").trim().toLowerCase();
+	}
+
+	function sketch_rebind() {
+		var $form = $(".form-signup");
+		if (!$form.length || !$("#signup_username").length) {
+			return;
+		}
+
+		// Core enables the button from full name and email only. Bound after
+		// core's handler on the same inputs, so this value wins.
+		$("#signup_fullname, #signup_email, #signup_username").on("input", function () {
+			var ready =
+				($("#signup_fullname").val() || "").trim() &&
+				($("#signup_email").val() || "").trim() &&
+				sketch_username();
+			$(".form-signup .btn-signup").prop("disabled", !ready);
+		});
+
+		// Show the link shape as the person types.
+		$("#signup_username").on("input", function () {
+			var value = sketch_username();
+			$("#signup_username_hint").text(
+				value
+					? window.location.origin + "/u/" + value + "/your-prototype"
+					: SKETCH_USERNAME_NOTE
+			);
+		});
+
+		// Core's handler posts three arguments. Replace it.
+		$form.off("submit").on("submit", function (event) {
+			event.preventDefault();
+			var args = {};
+			args.cmd = "frappe.core.doctype.user.user.sign_up";
+			args.email = ($("#signup_email").val() || "").trim();
+			args.redirect_to = frappe.utils.sanitise_redirect(frappe.utils.get_url_arg("redirect-to"));
+			args.full_name = frappe.utils.xss_sanitise(($("#signup_fullname").val() || "").trim());
+			args.username = sketch_username();
+
+			if (!args.email || !validate_email(args.email)) {
+				login.show_field_error("signup_email", {{ _("Please enter a valid email.") | tojson }});
+				return false;
+			}
+			if (!args.full_name) {
+				login.show_field_error("signup_fullname", {{ _("Full name is required.") | tojson }});
+				return false;
+			}
+			if (
+				args.username.length < 3 ||
+				args.username.length > 30 ||
+				!SKETCH_USERNAME_RE.test(args.username)
+			) {
+				login.show_field_error("signup_username", SKETCH_USERNAME_HELP);
+				return false;
+			}
+
+			login.call(args);
+			return false;
+		});
+	}
+
+	frappe.ready(function () {
+		$(document).on("login_rendered", sketch_rebind);
+	});
+})();
+</script>

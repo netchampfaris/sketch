@@ -91,6 +91,14 @@ website_route_rules = [
 	{"from_route": "/sketch/<path:app_path>", "to_route": "sketch"},
 ]
 
+# The SPA answers the site root. `website_route_rules` cannot claim "/", because
+# the resolver skips the map while the path is "index" (spec 3).
+home_page = "sketch"
+
+# The Viewer serves /u/<username>/<slug>. Custom renderers run first inside
+# PathResolver.resolve(), ahead of every built-in page type.
+page_renderer = ["sketch.viewer.SketchViewerRenderer"]
+
 # Generators
 # ----------
 
@@ -201,6 +209,28 @@ fixtures = [{"dt": "Role", "filters": [["name", "in", ["Sketch User"]]]}]
 # 		"on_trash": "method"
 # 	}
 # }
+
+# Document Events
+# ---------------
+
+doc_events = {
+	"User": {"validate": "sketch.user_hooks.validate_username"},
+}
+
+# Overriding Methods
+# ------------------
+# Core's sign_up has a fixed three-argument signature and no hook adds a field,
+# so the username arrives through an override (spec 3).
+
+override_whitelisted_methods = {
+	"frappe.core.doctype.user.user.sign_up": "sketch.signup.sign_up",
+}
+
+# The username input on the login page. Markup only: core's login.js still sends
+# three arguments, so the template rebinds the submit handler.
+signup_form_template = "sketch/templates/includes/signup_extra.html"
+
+after_install = "sketch.install.after_install"
 
 # Scheduled Tasks
 # ---------------
