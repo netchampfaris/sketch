@@ -25,7 +25,7 @@ from typing import Callable
 import frappe
 from frappe.utils import strip_html
 
-from sketch import prototype, prototype_files, signature
+from sketch import prototype, prototype_files, signature, versions
 
 logger = frappe.logger("sketch.mcp")
 
@@ -112,6 +112,20 @@ def owned(args: dict):
 	return prototype.resolve_owned(slug)
 
 
+def user_prompt(args: dict) -> str:
+	"""The `prompt` argument, word for word. Nothing here reshapes it."""
+	prompt = args.get("prompt")
+	prompt = prompt if isinstance(prompt, str) else ""
+	if not prompt.strip():
+		frappe.throw(
+			frappe._(
+				"prompt is required. Send the user's message for this request, word for word."
+			)
+		)
+
+	return prompt
+
+
 def record(doc) -> dict:
 	"""The Prototype as structured fields. Never prose."""
 	return {
@@ -144,6 +158,11 @@ RECORD_SCHEMA = {
 PROTOTYPE_PARAM = {
 	"type": "string",
 	"description": "The Prototype slug, as returned by create_prototype or list_prototypes.",
+}
+
+PROMPT_PARAM = {
+	"type": "string",
+	"description": "The user's request, word for word. Copy their message exactly. Do not paraphrase it, do not shorten it, and do not write your own summary. Sketch records a version per request, and this is what the person reads back.",
 }
 
 
@@ -194,16 +213,31 @@ def do_read_files(args: dict) -> ToolResult:
 
 def do_write_files(args: dict) -> ToolResult:
 	doc = owned(args)
+	prompt = user_prompt(args)
 	files = args.get("files")
 	if not isinstance(files, list) or not files:
 		frappe.throw(frappe._("files must be a list of {path, content} objects"))
 
+	# Which paths are already on disk decides added against modified, so read
+	# it before the write overwrites the answer.
+	existed = {
+		entry.get("path")
+		for entry in files
+		if entry.get("path") and os.path.isfile(prototype_files.safe_join(doc.name, entry["path"]))
+	}
+
 	written = prototype_files.write_files(doc.name, files)
+	changes = [
+		{"path": path, "action": versions.MODIFIED if path in existed else versions.ADDED}
+		for path in written
+	]
+	versions.record(doc, prompt, changes)
 	return ToolResult(text="Wrote {0} file(s): {1}".format(len(written), ", ".join(written)))
 
 
 def do_edit_file(args: dict) -> ToolResult:
 	doc = owned(args)
+	prompt = user_prompt(args)
 	path = args.get("path")
 	old_string = args.get("old_string")
 	new_string = args.get("new_string")
@@ -211,16 +245,19 @@ def do_edit_file(args: dict) -> ToolResult:
 		frappe.throw(frappe._("path, old_string and new_string are all required"))
 
 	prototype_files.edit_file(doc.name, path, old_string, new_string)
+	versions.record(doc, prompt, [{"path": path, "action": versions.MODIFIED}])
 	return ToolResult(text=f"Edited {path}.")
 
 
 def do_delete_file(args: dict) -> ToolResult:
 	doc = owned(args)
+	prompt = user_prompt(args)
 	path = args.get("path")
 	if not path:
 		frappe.throw(frappe._("path is required"))
 
 	prototype_files.delete_file(doc.name, path)
+	versions.record(doc, prompt, [{"path": path, "action": versions.DELETED}])
 	return ToolResult(text=f"Deleted {path}.")
 
 
@@ -438,6 +475,7 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
+						"prompt": PROMPT_PARAM,
 						"files": {
 							"type": "array",
 							"items": {
@@ -450,7 +488,7 @@ def build_tools() -> dict[str, Tool]:
 							},
 						},
 					},
-					"required": ["prototype", "files"],
+					"required": ["prototype", "prompt", "files"],
 				},
 				handler=do_write_files,
 			),
@@ -461,11 +499,12 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
+						"prompt": PROMPT_PARAM,
 						"path": {"type": "string"},
 						"old_string": {"type": "string", "description": "The exact text to replace."},
 						"new_string": {"type": "string", "description": "The text to put there."},
 					},
-					"required": ["prototype", "path", "old_string", "new_string"],
+					"required": ["prototype", "prompt", "path", "old_string", "new_string"],
 				},
 				handler=do_edit_file,
 			),
@@ -474,8 +513,12 @@ def build_tools() -> dict[str, Tool]:
 				description="Delete one file from a Prototype. This cannot be undone.",
 				parameters={
 					"type": "object",
-					"properties": {"prototype": PROTOTYPE_PARAM, "path": {"type": "string"}},
-					"required": ["prototype", "path"],
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"prompt": PROMPT_PARAM,
+						"path": {"type": "string"},
+					},
+					"required": ["prototype", "prompt", "path"],
 				},
 				handler=do_delete_file,
 			),

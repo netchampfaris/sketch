@@ -21,9 +21,13 @@ class SketchPrototype(Document):
 	# end: auto-generated types
 
 	def on_trash(self):
-		"""Delete the on-disk tree. Without this, orphan directories build up."""
+		"""Delete the on-disk tree. Without this, orphan directories build up.
+
+		A force delete skips the link check, so the Version rows go too.
+		"""
 		from sketch.prototype_files import delete_tree
 
+		frappe.db.delete("Sketch Prototype Version", {"prototype": self.name})
 		delete_tree(self.name)
 
 

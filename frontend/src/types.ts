@@ -27,6 +27,27 @@ export interface Prototype {
   public_url: string
 }
 
+export interface PrototypeFileChange {
+  path: string
+  /** One of "added", "modified", "deleted". */
+  action: string
+}
+
+export interface PrototypeVersion {
+  name: string
+  /** 1-based, per Prototype. */
+  sequence: number
+  /** The user prompt, stored verbatim. */
+  prompt: string
+  summary: string
+  changes: PrototypeFileChange[]
+  files_added: number
+  files_modified: number
+  files_deleted: number
+  creation: string
+  created: string
+}
+
 export interface Recipe {
   slug: string
   label: string

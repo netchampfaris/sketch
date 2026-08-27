@@ -16,7 +16,7 @@ import os
 import frappe
 from frappe.utils import pretty_date
 
-from sketch import prototype, prototype_files
+from sketch import prototype, prototype_files, versions
 from sketch.sketch.doctype.sketch_token import sketch_token
 
 #: The eight recipes from ui.frappe.io/recipes, plus Blank (spec 10). The trees
@@ -205,6 +205,37 @@ def list_prototypes() -> list[dict]:
 		limit_page_length=0,
 	)
 	return [_row(row) for row in rows]
+
+
+@frappe.whitelist()
+def list_versions(slug: str) -> list[dict]:
+	"""The version history of one Prototype, newest first.
+
+	`resolve_owned` is the permission check. `versions.history` reads with
+	`frappe.get_all`, so it must never take a slug from the client.
+
+	Each row carries both time fields the card uses: `creation` is the absolute
+	timestamp for the hover title, `created` is the relative line the UI shows.
+	"""
+	doc = prototype.resolve_owned(slug)
+	rows = []
+	for row in versions.history(doc.name):
+		rows.append(
+			{
+				"name": row.get("name"),
+				"sequence": row.get("sequence"),
+				"prompt": row.get("prompt") or "",
+				"summary": row.get("summary") or "",
+				"changes": row.get("changes") or [],
+				"files_added": row.get("files_added") or 0,
+				"files_modified": row.get("files_modified") or 0,
+				"files_deleted": row.get("files_deleted") or 0,
+				"creation": str(row.get("creation") or ""),
+				"created": pretty_date(row.get("creation")) if row.get("creation") else "",
+			}
+		)
+
+	return rows
 
 
 @frappe.whitelist()

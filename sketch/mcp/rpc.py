@@ -61,7 +61,7 @@ NAME_TAKING = ("tools/call",)
 
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
-Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, and call check with screenshot: true once at the end of each user request. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, and call check with screenshot: true once at the end of each user request. write_files, edit_file and delete_file each take `prompt`: the user's message word for word. Sketch records one version per request from it. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
 
 A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files and edit_file for small changes to an existing one.
 

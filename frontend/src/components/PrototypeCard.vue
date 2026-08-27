@@ -9,8 +9,9 @@
  * Every row keeps its height in both states. The link row is reserved even
  * while the Prototype is private, so turning the switch never moves the card.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge, Button, Dropdown, Switch, dialog, toast, useCall } from 'frappe-ui'
+import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import { copyText, method } from '../store'
 import type { Prototype } from '../types'
@@ -47,6 +48,9 @@ const remove = useCall<{ name: string }, { slug: string }>({
   },
   onError: (error) => toast.error(error.message),
 })
+
+// The dialog fetches on open, so the gallery never loads history per card.
+const historyOpen = ref(false)
 
 const busy = computed(() => setPublic.loading || rename.loading || remove.loading)
 
@@ -92,6 +96,7 @@ function askDelete(): void {
 const menuOptions = computed(() => [
   { label: 'Open', icon: 'lucide-external-link', onClick: openViewer },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
+  { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
   {
     label: 'Copy public link',
     icon: 'lucide-link',
@@ -158,5 +163,7 @@ const menuOptions = computed(() => [
       />
       <span v-else class="px-1 text-xs text-ink-gray-4">Private. Only you can open it.</span>
     </div>
+
+    <PrototypeHistoryDialog v-model:open="historyOpen" :prototype="prototype" />
   </article>
 </template>
