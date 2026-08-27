@@ -9,7 +9,7 @@ is served on its own, and every reply is one JSON document.
 **Dual-era.** One endpoint serves the legacy revision `2025-06-18` and the
 modern revision `2026-07-28`. `2025-11-25` is not served: its nine changes are
 OAuth discovery, icons, elicitation, sampling and tasks, and none of them touch
-Sketch's eleven tools.
+Sketch's twelve tools.
 
 The era switch is one test: the presence of
 `params._meta["io.modelcontextprotocol/protocolVersion"]`. Sketch keeps no
@@ -51,7 +51,7 @@ HEADER_NAME = "Mcp-Name"
 HEADER_MISMATCH = -32020
 UNSUPPORTED_PROTOCOL_VERSION = -32022
 
-# The tool set is the same eleven for every account, so it caches publicly.
+# The tool set is the same twelve for every account, so it caches publicly.
 # One hour, the value in the revision's own example.
 CACHE_TTL_MS = 3600000
 CACHE_SCOPE = "public"
@@ -61,7 +61,7 @@ NAME_TAKING = ("tools/call",)
 
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
-Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, and call check with screenshot: true once at the end of each user request. write_files, edit_file and delete_file each take `prompt`: the user's message word for word. Sketch records one version per request from it. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
 
 A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files and edit_file for small changes to an existing one.
 

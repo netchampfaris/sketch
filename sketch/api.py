@@ -239,6 +239,18 @@ def list_versions(slug: str) -> list[dict]:
 
 
 @frappe.whitelist()
+def prototype_revision(slug: str) -> dict:
+	"""The current revision of one Prototype's tree, for the Viewer's poller.
+
+	`resolve_owned` is the permission check, so only the owner may poll. The
+	Viewer reloads itself when the revision it reads differs from the one it
+	started with.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return {"rev": prototype_files.revision(doc.name)}
+
+
+@frappe.whitelist()
 def list_recipes() -> list[dict]:
 	"""The Recipes the picker offers.
 

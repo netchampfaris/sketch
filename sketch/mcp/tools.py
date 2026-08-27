@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The MCP tool surface: eleven tools, and no more.
+"""The MCP tool surface: twelve tools, and no more.
 
 There is **no `delete_prototype`**. Deleting is a human act in the Sketch UI.
 MCP refuses delete by exposing no tool, not by permission.
@@ -11,8 +11,8 @@ user through `prototype.resolve_owned`. Every agent-supplied file path goes
 through `prototype_files.safe_join`, which is the one path guard. This module
 writes no second guard.
 
-Six tools return structured output: `create_prototype`, `list_prototypes`,
-`list_files`, `read_files`, `check` and `set_public`. They declare an
+Seven tools return structured output: `create_prototype`, `list_prototypes`,
+`list_files`, `read_files`, `check`, `commit` and `set_public`. They declare an
 `outputSchema` and answer with `structuredContent`. `isError` is set
 explicitly, never guessed from the text.
 """
@@ -160,11 +160,6 @@ PROTOTYPE_PARAM = {
 	"description": "The Prototype slug, as returned by create_prototype or list_prototypes.",
 }
 
-PROMPT_PARAM = {
-	"type": "string",
-	"description": "The user's request, word for word. Copy their message exactly. Do not paraphrase it, do not shorten it, and do not write your own summary. Sketch records a version per request, and this is what the person reads back.",
-}
-
 
 # --- handlers ---------------------------------------------------------------
 
@@ -213,7 +208,6 @@ def do_read_files(args: dict) -> ToolResult:
 
 def do_write_files(args: dict) -> ToolResult:
 	doc = owned(args)
-	prompt = user_prompt(args)
 	files = args.get("files")
 	if not isinstance(files, list) or not files:
 		frappe.throw(frappe._("files must be a list of {path, content} objects"))
@@ -227,17 +221,12 @@ def do_write_files(args: dict) -> ToolResult:
 	}
 
 	written = prototype_files.write_files(doc.name, files)
-	changes = [
-		{"path": path, "action": versions.MODIFIED if path in existed else versions.ADDED}
-		for path in written
-	]
-	versions.record(doc, prompt, changes)
+	versions.note_write(doc.name, written, existed)
 	return ToolResult(text="Wrote {0} file(s): {1}".format(len(written), ", ".join(written)))
 
 
 def do_edit_file(args: dict) -> ToolResult:
 	doc = owned(args)
-	prompt = user_prompt(args)
 	path = args.get("path")
 	old_string = args.get("old_string")
 	new_string = args.get("new_string")
@@ -245,20 +234,47 @@ def do_edit_file(args: dict) -> ToolResult:
 		frappe.throw(frappe._("path, old_string and new_string are all required"))
 
 	prototype_files.edit_file(doc.name, path, old_string, new_string)
-	versions.record(doc, prompt, [{"path": path, "action": versions.MODIFIED}])
+	versions.note(doc.name, path, versions.MODIFIED)
 	return ToolResult(text=f"Edited {path}.")
 
 
 def do_delete_file(args: dict) -> ToolResult:
 	doc = owned(args)
-	prompt = user_prompt(args)
 	path = args.get("path")
 	if not path:
 		frappe.throw(frappe._("path is required"))
 
 	prototype_files.delete_file(doc.name, path)
-	versions.record(doc, prompt, [{"path": path, "action": versions.DELETED}])
+	versions.note(doc.name, path, versions.DELETED)
 	return ToolResult(text=f"Deleted {path}.")
+
+
+def do_commit(args: dict) -> ToolResult:
+	"""File every change since the last version under the user's prompt."""
+	doc = owned(args)
+	prompt = user_prompt(args)
+	summary = args.get("summary")
+	summary = summary.strip() if isinstance(summary, str) else None
+
+	version = versions.commit(doc, prompt, summary or None)
+	if version is None:
+		return ToolResult(
+			text="No file changed since the last version. Nothing recorded.",
+			structured={"recorded": False},
+		)
+
+	payload = {
+		"recorded": True,
+		"sequence": version.sequence,
+		"files_added": version.files_added,
+		"files_modified": version.files_modified,
+		"files_deleted": version.files_deleted,
+		"changes": json.loads(version.changes or "[]"),
+	}
+	text = "Recorded version {0}. {1} added, {2} changed, {3} deleted.".format(
+		version.sequence, version.files_added, version.files_modified, version.files_deleted
+	)
+	return ToolResult(text=text, structured=payload)
 
 
 def do_get_skill(args: dict) -> ToolResult:
@@ -303,7 +319,9 @@ def do_check(args: dict) -> ToolResult:
 		for shot in shots
 		if shot.get("png_base64")
 	]
-	return ToolResult(text=check_text(report), structured=report, images=images)
+	uncommitted = versions.pending_count(doc.name)
+	report["uncommitted"] = uncommitted
+	return ToolResult(text=check_text(report, uncommitted), structured=report, images=images)
 
 
 def run_check(doc, screenshot: bool) -> dict:
@@ -343,8 +361,12 @@ def run_check(doc, screenshot: bool) -> dict:
 		frappe.throw(frappe._("the check service answered with something that is not JSON"))
 
 
-def check_text(report: dict) -> str:
-	"""The report as lines an agent reads. Errors as file:line:col message."""
+def check_text(report: dict, uncommitted: int = 0) -> str:
+	"""The report as lines an agent reads. Errors as file:line:col message.
+
+	`uncommitted` is the number of files changed since the last version. The
+	caller counts them; this function reads nothing of its own.
+	"""
 	lines = [f"status: {report.get('status')}"]
 	for entry in report.get("errors") or []:
 		lines.append(f"error {entry.get('kind')}: {error_line(entry)}")
@@ -356,6 +378,11 @@ def check_text(report: dict) -> str:
 		lines.append("routes: " + ", ".join(report["routes"]))
 	for entry in report.get("skipped") or []:
 		lines.append(f"skipped {entry.get('route')}: {entry.get('reason')}")
+	if uncommitted > 0:
+		lines.append(
+			f"uncommitted: {uncommitted} file(s) changed since the last version. "
+			"Call commit with the user's prompt."
+		)
 
 	return "\n".join(lines)
 
@@ -383,8 +410,37 @@ CHECK_SCHEMA = {
 		"routes": {"type": "array", "items": {"type": "string"}},
 		"skipped": {"type": "array", "items": {"type": "object"}},
 		"timings": {"type": "object"},
+		"uncommitted": {
+			"type": "integer",
+			"description": "Files changed since the last version. Call commit when it is above zero.",
+		},
 	},
 	"required": ["status"],
+}
+
+CHANGE_SCHEMA = {
+	"type": "object",
+	"properties": {
+		"path": {"type": "string"},
+		"action": {"type": "string", "enum": [versions.ADDED, versions.MODIFIED, versions.DELETED]},
+	},
+	"required": ["path", "action"],
+}
+
+COMMIT_SCHEMA = {
+	"type": "object",
+	"properties": {
+		"recorded": {
+			"type": "boolean",
+			"description": "False when no file changed since the last version.",
+		},
+		"sequence": {"type": "integer", "description": "The version number, 1 for the first."},
+		"files_added": {"type": "integer"},
+		"files_modified": {"type": "integer"},
+		"files_deleted": {"type": "integer"},
+		"changes": {"type": "array", "items": CHANGE_SCHEMA},
+	},
+	"required": ["recorded"],
 }
 
 
@@ -475,7 +531,6 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
-						"prompt": PROMPT_PARAM,
 						"files": {
 							"type": "array",
 							"items": {
@@ -488,7 +543,7 @@ def build_tools() -> dict[str, Tool]:
 							},
 						},
 					},
-					"required": ["prototype", "prompt", "files"],
+					"required": ["prototype", "files"],
 				},
 				handler=do_write_files,
 			),
@@ -499,12 +554,11 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
-						"prompt": PROMPT_PARAM,
 						"path": {"type": "string"},
 						"old_string": {"type": "string", "description": "The exact text to replace."},
 						"new_string": {"type": "string", "description": "The text to put there."},
 					},
-					"required": ["prototype", "prompt", "path", "old_string", "new_string"],
+					"required": ["prototype", "path", "old_string", "new_string"],
 				},
 				handler=do_edit_file,
 			),
@@ -513,18 +567,14 @@ def build_tools() -> dict[str, Tool]:
 				description="Delete one file from a Prototype. This cannot be undone.",
 				parameters={
 					"type": "object",
-					"properties": {
-						"prototype": PROTOTYPE_PARAM,
-						"prompt": PROMPT_PARAM,
-						"path": {"type": "string"},
-					},
-					"required": ["prototype", "prompt", "path"],
+					"properties": {"prototype": PROTOTYPE_PARAM, "path": {"type": "string"}},
+					"required": ["prototype", "path"],
 				},
 				handler=do_delete_file,
 			),
 			Tool(
 				name="check",
-				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Call it with screenshot: true once at the end of every user request: that is a workflow step, not an option. Fix every error it reports before you report done.",
+				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Call it with screenshot: true once at the end of every user request: that is a workflow step, not an option. Fix every error it reports before you report done, then call commit.",
 				parameters={
 					"type": "object",
 					"properties": {
@@ -539,6 +589,27 @@ def build_tools() -> dict[str, Tool]:
 				},
 				handler=do_check,
 				output_schema=CHECK_SCHEMA,
+			),
+			Tool(
+				name="commit",
+				description="Record a version of the Prototype. Call it once at the end of every user request, after check, with `prompt` set to the user's message word for word. It files every change you made since the last version under that prompt, so the person can read back what they asked for and what it changed.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"prompt": {
+							"type": "string",
+							"description": "The user's request, word for word. Copy their message exactly. Do not paraphrase it, do not shorten it, and do not write your own summary here.",
+						},
+						"summary": {
+							"type": "string",
+							"description": "One short line naming what you changed. Optional.",
+						},
+					},
+					"required": ["prototype", "prompt"],
+				},
+				handler=do_commit,
+				output_schema=COMMIT_SCHEMA,
 			),
 			Tool(
 				name="get_skill",

@@ -6,19 +6,17 @@
 `name` is always the Prototype's hash primary key (doc.name), never its slug.
 A slug is unique per owner only, so two users can both hold `dashboard`.
 
-Every write tool sends the user's prompt with the change, and `record` files
-that change under the prompt at once. There is no pending state and no second
-call. One user request writes one Sketch Prototype Version row, because the
-second and third change of that request carry the same prompt and fold into
-the row the first one made. A Version stores the prompt, the time and the file
-names. It stores no file content, so there is no revert.
+A write tool notes its change and records nothing. The note lands in the
+Prototype's `pending_changes` list, folded by path. The agent calls `commit`
+once at the end of the user request. That writes one Sketch Prototype Version
+row from the whole pending list and clears it, so one request makes one
+version however many tool calls it took. A Version stores the prompt, the time
+and the file names. It stores no file content, so there is no revert.
 """
 
 import json
-from datetime import timedelta
 
 import frappe
-from frappe.utils import get_datetime, now_datetime
 
 ADDED = "added"
 MODIFIED = "modified"
@@ -27,21 +25,63 @@ DELETED = "deleted"
 PROTOTYPE = "Sketch Prototype"
 VERSION = "Sketch Prototype Version"
 
-# One user request can call write_files, then edit_file, then delete_file, and
-# all of that is one version. A change joins the newest version when the prompt
-# matches word for word and that version is younger than this window. The
-# window stops the same message, sent again weeks later, from joining the old
-# version instead of starting a new one.
-MERGE_WINDOW = timedelta(minutes=30)
+
+def note(name: str, path: str, action: str) -> None:
+	"""Fold one change into the pending list of this Prototype.
+
+	`action` is one of ADDED, MODIFIED or DELETED. Nothing is recorded until
+	`commit` runs.
+	"""
+	if not path:
+		return
+
+	changes = pending(name)
+	_fold(changes, path, action)
+	_set_pending(name, changes)
 
 
-def record(doc, prompt: str, changes: list[dict], summary: str | None = None):
-	"""Fold these changes into the version for this prompt. Returns the version doc.
+def note_write(name: str, paths: list[str], existed: set[str]) -> None:
+	"""Fold a batch of written paths into the pending list.
 
-	`changes` is a list of {"path", "action"}, with the action one of ADDED,
-	MODIFIED or DELETED. Returns None when the list holds no usable change.
-	Raises frappe.ValidationError when the prompt is blank. The prompt is
-	stored verbatim: no trim of inner whitespace, no truncation, no HTML strip.
+	A path in `existed` was already on disk before the write, so it is a
+	modification. Every other path is an addition.
+	"""
+	existed = existed or set()
+	changes = pending(name)
+	for path in paths or []:
+		if path:
+			_fold(changes, path, MODIFIED if path in existed else ADDED)
+
+	_set_pending(name, changes)
+
+
+def pending(name: str) -> list[dict]:
+	"""The changes noted since the last version, oldest first.
+
+	Each row is {"path", "action"}. One path holds one row.
+	"""
+	return _parse(frappe.db.get_value(PROTOTYPE, name, "pending_changes"))
+
+
+def pending_count(name: str) -> int:
+	"""How many files changed since the last version."""
+	return len(pending(name))
+
+
+def commit(doc, prompt: str, summary: str | None = None):
+	"""Record the pending changes as one version. Returns the version doc.
+
+	Returns None and changes nothing when nothing is pending, so a second
+	`commit` in one request is a no-op and never a duplicate row. Raises
+	frappe.ValidationError when the prompt is blank. The prompt is stored
+	verbatim: no trim of inner whitespace, no truncation, no HTML strip.
+
+	`prompt` and `summary` set `ignore_xss_filter` on the doctype, so Frappe
+	stores them raw. Without it `_sanitize_content` runs `sanitize_html` on any
+	prompt that holds `<` or `>`, and the person reads back text they never
+	typed. Neither field is ever rendered as HTML: the SPA history dialog
+	prints both through Vue interpolation (`{{ version.prompt }}` in
+	frontend/src/components/PrototypeHistoryDialog.vue), which escapes them.
 
 	The caller resolves the Prototype through prototype.resolve_owned first,
 	which is permission-checked, so the row is written with ignore_permissions
@@ -50,20 +90,31 @@ def record(doc, prompt: str, changes: list[dict], summary: str | None = None):
 	if not (prompt or "").strip():
 		frappe.throw(frappe._("A version needs the user prompt"), frappe.ValidationError)
 
-	changes = [row for row in (changes or []) if isinstance(row, dict) and row.get("path")]
-	if not changes:
-		return None
-
-	# Hold the Prototype row until this transaction ends. Two tool calls on one
-	# Prototype then queue here, so they cannot read the same newest version or
+	# Hold the Prototype row until this transaction ends. Two commits on one
+	# Prototype then queue here, so they cannot read the same pending list or
 	# the same maximum sequence and write two rows for one request.
 	frappe.db.get_value(PROTOTYPE, doc.name, "name", for_update=True)
 
-	latest = _latest(doc.name)
-	if latest and _joins(latest, prompt):
-		return _append(latest, changes, summary)
+	changes = pending(doc.name)
+	if not changes:
+		return None
 
-	return _insert(doc, prompt, changes, summary)
+	version = frappe.new_doc(VERSION)
+	version.prototype = doc.name
+	version.sequence = _next_sequence(doc.name)
+	version.prompt = prompt
+	version.summary = summary
+	version.changes = json.dumps(changes)
+	version.files_added = _count(changes, ADDED)
+	version.files_modified = _count(changes, MODIFIED)
+	version.files_deleted = _count(changes, DELETED)
+	# The Version belongs to the person who owns the Prototype, so the
+	# `if_owner` rules let that person read the history.
+	version.owner = doc.owner
+	version.insert(ignore_permissions=True)
+
+	_set_pending(doc.name, [])
+	return version
 
 
 def history(name: str) -> list[dict]:
@@ -98,74 +149,15 @@ def history(name: str) -> list[dict]:
 # ------------------------------------------------------------------ internals
 
 
-def _latest(name: str) -> dict | None:
-	"""The newest version of this Prototype, or None. Highest sequence wins."""
-	rows = frappe.get_all(
-		VERSION,
-		filters={"prototype": name},
-		fields=["name", "sequence", "prompt", "changes", "creation"],
-		order_by="sequence desc",
-		limit=1,
-	)
-	return rows[0] if rows else None
+def _set_pending(name: str, changes: list[dict]) -> None:
+	"""Write the pending list back to the Prototype.
 
-
-def _joins(latest: dict, prompt: str) -> bool:
-	"""Whether a change under this prompt belongs in the newest version.
-
-	The compare is character for character, so the stored prompt must be raw.
-	`ignore_xss_filter` on the `prompt` field is what makes it raw: without it
-	`_sanitize_content` runs `sanitize_html` on any prompt that holds `<` or
-	`>`, the stored text stops matching the sent text, and one user request
-	writes one version per tool call. `summary` carries the flag for the same
-	reason. Neither field is ever rendered as HTML. The SPA history dialog
-	prints both through Vue interpolation (`{{ version.prompt }}` in
-	frontend/src/components/PrototypeHistoryDialog.vue), which escapes them.
+	set_value, never doc.save(): the Prototype has track_changes on, and a save
+	would write a core Version row for every file the agent touches.
 	"""
-	if latest.get("prompt") != prompt:
-		return False
-
-	return now_datetime() - get_datetime(latest.get("creation")) <= MERGE_WINDOW
-
-
-def _append(latest: dict, changes: list[dict], summary: str | None):
-	"""Fold the changes into the version that is already there."""
-	folded = _parse(latest.get("changes"))
-	for row in changes:
-		_fold(folded, row.get("path"), row.get("action"))
-
-	update = {
-		"changes": json.dumps(folded),
-		"files_added": _count(folded, ADDED),
-		"files_modified": _count(folded, MODIFIED),
-		"files_deleted": _count(folded, DELETED),
-	}
-	if summary:
-		update["summary"] = summary
-
-	# set_value, never doc.save(): this row is rewritten once per file the
-	# agent touches, and a save would run the whole validate and hook stack
-	# each time for four columns.
-	frappe.db.set_value(VERSION, latest["name"], update)
-	return frappe.get_doc(VERSION, latest["name"])
-
-
-def _insert(doc, prompt: str, changes: list[dict], summary: str | None):
-	"""Start a new version at the next sequence."""
-	version = frappe.new_doc(VERSION)
-	version.prototype = doc.name
-	version.sequence = _next_sequence(doc.name)
-	version.prompt = prompt
-	version.summary = summary
-	version.changes = json.dumps(changes)
-	version.files_added = _count(changes, ADDED)
-	version.files_modified = _count(changes, MODIFIED)
-	version.files_deleted = _count(changes, DELETED)
-	# The Version belongs to the person who owns the Prototype, so the
-	# `if_owner` rules let that person read the history.
-	version.owner = doc.owner
-	version.insert(ignore_permissions=True)
-	return version
+	frappe.db.set_value(
+		PROTOTYPE, name, "pending_changes", json.dumps(changes), update_modified=True
+	)
 
 
 def _fold(changes: list[dict], path: str, action: str) -> None:
@@ -206,7 +198,7 @@ def _fold(changes: list[dict], path: str, action: str) -> None:
 def _next_sequence(name: str) -> int:
 	"""The next 1-based sequence for this Prototype.
 
-	`record` holds the Prototype row `for update` before it reads anything, so
+	`commit` holds the Prototype row `for update` before it reads anything, so
 	no second commit can read this same maximum.
 	"""
 	last = frappe.db.sql(

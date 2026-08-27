@@ -182,6 +182,36 @@ def delete_file(name: str, path: str) -> None:
 	os.remove(absolute)
 
 
+def revision(name: str) -> str:
+	"""A short string that changes whenever any file in the tree changes.
+
+	The Viewer polls this to decide when to reload. It is a stat walk, not a
+	content hash: the file count and the newest modification time in
+	nanoseconds. A write that leaves the mtime where it was is missed. No
+	writer in Sketch does that, and a stat walk stays cheap enough to answer
+	every two seconds.
+
+	Returns "" for a tree that does not exist.
+	"""
+	base = prototype_dir(name)
+	if not os.path.isdir(base):
+		return ""
+
+	count = 0
+	newest = 0
+	for _rel, absolute in _walk(name):
+		try:
+			stamp = os.stat(absolute).st_mtime_ns
+		except OSError:
+			continue
+
+		count += 1
+		if stamp > newest:
+			newest = stamp
+
+	return f"{count}-{newest}"
+
+
 def read_tree(name: str) -> dict[str, str]:
 	"""The whole tree as {relative path: source}.
 

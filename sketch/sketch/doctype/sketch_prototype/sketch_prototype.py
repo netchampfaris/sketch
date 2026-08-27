@@ -15,6 +15,7 @@ class SketchPrototype(Document):
 		from frappe.types import DF
 
 		is_public: DF.Check
+		pending_changes: DF.LongText | None
 		pin: DF.Data
 		slug: DF.Data
 		title: DF.Data

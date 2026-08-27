@@ -113,6 +113,70 @@ function applyTheme(resolved) {
   document.documentElement.dataset.theme = theme
 }
 
+// -------------------------------------------------------------- live reload
+// The owner's own tab polls one revision string and reloads when it moves.
+// Socket.io is not an option here: Frappe's realtime auth compares the request
+// Host against the browser Origin, and the tunnel rewrites Host.
+//
+// The renderer sends `live: false` for everything except the owner reading
+// this Prototype in a session. `check` and a Guest on a public link therefore
+// make no request at all.
+const POLL_MS = 2000 // one poll every two seconds: a stat walk, cheap to answer
+const POLL_MAX_MS = 30000 // the ceiling the backoff climbs to after failures
+
+function startLiveReload(data) {
+  if (!data.live || !data.slug) return
+  // The studio gallery embeds one Viewer per card. Twenty cards in iframes
+  // would make ten requests a second, so only the top-level document polls.
+  if (window.top !== window.self) return
+
+  const url = '/api/method/sketch.api.prototype_revision?slug=' + encodeURIComponent(data.slug)
+  let first = null
+  let wait = POLL_MS
+  let timer = null
+
+  const stop = () => {
+    clearTimeout(timer)
+    timer = null
+  }
+
+  const schedule = () => {
+    stop()
+    // A background tab must not poll. visibilitychange restarts it.
+    if (document.hidden) return
+    timer = setTimeout(poll, wait)
+  }
+
+  async function poll() {
+    try {
+      const response = await fetch(url, { credentials: 'same-origin' })
+      if (!response.ok) throw new Error(String(response.status))
+      const rev = (await response.json())?.message?.rev
+      if (typeof rev !== 'string' || !rev) throw new Error('no revision')
+      wait = POLL_MS // a good answer clears the backoff
+      if (first === null) first = rev
+      else if (rev !== first) {
+        stop()
+        // The router is hash mode (createWebHashHistory below), so the current
+        // page is in location.hash and a reload lands back on it.
+        location.reload()
+        return
+      }
+    } catch {
+      // Every failure is silent. A dead endpoint must leave the Viewer exactly
+      // as it is today, so back off and keep the page working.
+      wait = Math.min(wait * 2, POLL_MAX_MS)
+    }
+    schedule()
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stop()
+    else if (!timer) schedule()
+  })
+  schedule()
+}
+
 // -------------------------------------------------------------- module link
 const EXT = ['', '.ts', '.js', '.vue', '/index.ts', '/index.js']
 // Matches `from '…'`, `import '…'`, `import('…')`, `export … from '…'`.
@@ -208,6 +272,12 @@ function makeRegistry(files, factories, bare) {
 async function run() {
   const data = readData()
   applyTheme(data.theme)
+  // Before the early returns below: an empty or broken tree must reload too.
+  try {
+    startLiveReload(data)
+  } catch {
+    // The poller is never worth failing the boot for.
+  }
   const files = data.files || {}
 
   // A brand-new Prototype has no files until a recipe or the agent writes one.

@@ -10,7 +10,8 @@
   "title",
   "slug",
   "pin",
-  "is_public"
+  "is_public",
+  "pending_changes"
  ],
  "fields": [
   {
@@ -41,6 +42,13 @@
    "fieldname": "is_public",
    "fieldtype": "Check",
    "label": "Is Public"
+  },
+  {
+   "fieldname": "pending_changes",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Pending Changes",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,

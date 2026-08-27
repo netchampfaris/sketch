@@ -127,6 +127,24 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return self.build_response(document.replace(SLOT, to_json(self.payload()), 1), 200, dict(HEADERS))
 
+	def is_live(self) -> bool:
+		"""True when this page may poll sketch.api.prototype_revision.
+
+		Only the owner, in a real browser session, gets the poller. Two other
+		callers reach the same document and must not poll:
+
+		- `check`. It comes in as Guest with the signature `can_render` reads
+		  from form_dict, so the `sig` parameter marks it. Its report carries
+		  every console error the page raised, and a poll would add noise to
+		  every check.
+		- a Guest on a public Prototype. `prototype_revision` is owner-only, so
+		  each poll would answer with a permission error every two seconds.
+		"""
+		if not self.is_owner or frappe.session.user == "Guest":
+			return False
+
+		return not frappe.form_dict.get("sig")
+
 	def payload(self) -> dict:
 		"""The data slot contents (contract 4)."""
 		return {
@@ -137,6 +155,7 @@ class SketchViewerRenderer(BaseRenderer):
 			"pin": self.doc.pin,
 			"is_public": bool(self.doc.is_public),
 			"is_owner": self.is_owner,
+			"live": self.is_live(),
 			"theme": url_theme(),
 		}
 
