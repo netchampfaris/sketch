@@ -1,7 +1,7 @@
 # Assemble the MVP spec
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: nothing (01, 02, 04, 05, 06, 08, 09, 10, 11, 12, 13, 14, 16, 17, 18 resolved; 03 removed; 07 closed out of scope)
 
 ## Question
@@ -84,3 +84,60 @@ The spec must carry these. They supersede the tickets they amend:
   `[a-z0-9-]`. Record the limit in the spec.
 - Ticket 08's `outputSchema` and `structuredContent` work is separate and
   still needed.
+
+## Answer
+
+Done 2026-08-27. `.scratch/sketch-mvp/spec.md`, 1,243 lines, 17 sections.
+
+Assembled from the 16 resolved tickets and the three research reports. Where
+two tickets disagree, the spec carries the later one and the superseded text
+stays in the ticket for the reasoning. No new decisions were made.
+
+Sections: environment, data model, signup, routing, Runtime, Viewer, `check`,
+MCP server, served skill, recipes, Sketch UI, theme, tests, traps, build order,
+out of scope, sources.
+
+Three sections carry more than the tickets do, because the spec is what
+`/implement` reads:
+
+- **Section 14, Traps.** Eighteen items, each one a "must be built" or a
+  "single most likely to be missed" line pulled out of a ticket body. The
+  `<` escaping, HTTP 400 from `rpc.handle`, `process.env.NODE_ENV`,
+  `desk_access = 0`, the `auth_hooks` path scope, the `Host` header on
+  `sketch-checkd`.
+- **Section 15, Build order.** Eight steps, each ending in something runnable.
+  Steps 3, 4 and 5 are the critical path: `check` needs the Viewer, and the
+  Viewer needs the Runtime.
+- **Section 13, Tests.** One test exists. Eight to build, named.
+
+### Drift found while assembling
+
+- `sketch/skill/frappe-ui.md:88` still says **"Eight specifiers resolve"** and
+  has no `@vueuse/core` row. Ticket 11's amendment made it nine. The spec
+  records the edit as work in sections 5.3 and 9.
+  `sketch/tests/test_skill_names.py` reads the manifest, so it will pass on its
+  own once the Runtime entry lands; only the prose needs the row.
+- The built Runtime on this box still has `files.json` and `host.html`. Both
+  are prototype-only and the spec says to delete them, along with
+  `make-files-json.mjs`.
+
+Neither is a contradiction between tickets. Both are the later ticket's work
+not yet applied to the earlier ticket's artifact.
+
+### Verified while writing
+
+- Ticket 15's own "Blocked by" list is accurate: 01, 02, 04, 05, 06, 08, 09,
+  10, 11, 12, 13, 14, 16, 17, 18 are `resolved`, 03 is removed, 07 is closed
+  out of scope. No open ticket remains.
+- The three prototype branches exist and hold what the tickets say:
+  `forge/proto/04-runtime-bundle` at `a4a932d`, `forge/proto/10-check-step` at
+  `3bec4ec`, `forge/proto/14-sketch-ui` at `4d9536d`.
+- The Runtime `manifest.json` on disk lists the ten import-map entries ticket
+  11 recorded, minus `@vueuse/core`.
+
+### The map is closed
+
+The destination was a spec `/implement` can execute plus the scaffold to land
+it in. Both exist. Nothing is left to decide before the build starts.
+
+Building the MVP is the next effort. It is fed by `spec.md`, not by this map.

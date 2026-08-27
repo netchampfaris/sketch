@@ -1,6 +1,7 @@
 # Sketch MVP — wayfinder map
 
 Label: wayfinder:map
+Status: **closed 2026-08-27**. Every ticket is resolved. The destination is `spec.md` at `.scratch/sketch-mvp/spec.md`.
 Tracker: local markdown (`.scratch/sketch-mvp/`). Tickets live in `issues/`.
 
 ## Destination
@@ -8,6 +9,12 @@ Tracker: local markdown (`.scratch/sketch-mvp/`). Tickets live in `issues/`.
 A spec for the Sketch MVP that `/implement` can execute, plus the empty
 `sketch-bench` and `sketch` app scaffold already created so the spec has a
 repo to land in. Building the MVP is a separate effort.
+
+**Reached 2026-08-27.** The spec is `spec.md`. The scaffold is `apps/sketch`
+on `forge/mvp`. The next effort reads `spec.md`, not this map. The two
+sections below stay as they are: **Not yet specified** is the deferred list
+the spec repeats in its section 16, and **Out of scope** records what was
+ruled out. Neither graduates inside this effort.
 
 ## Notes
 
@@ -46,6 +53,8 @@ repo to land in. Building the MVP is a separate effort.
 - [What the served frappe-ui skill contains](issues/11-served-skill.md): done 2026-08-27. A Sketch-owned rewrite, not a trim of the box skill, at `sketch/skill/frappe-ui.md` in app source, **not** in the Runtime folder, so an edit reaches Prototypes made before it. One file for every Pin. `get_skill()` takes no arguments. 2,900 words, one blob, eight sections. Every lucide icon works. Eight specifiers resolve and nothing else. `dayjs` is frappe-ui's instance with nine plugins. Sketch owns the theme, and dark mode is in the MVP. Runtime work folded in and committed at `a4a932d`: the icon map, `frappe-ui/editor`, `frappe-ui/charts`, `frappe-ui/icons`, `dayjs`, and `FrappeUIProvider` in the mount. 320 KB gzip to render, 543 KB for the compilers, 426 ms boot. `sketch/tests/test_skill_names.py` keeps the skill honest.
 - [How the Viewer and the checker read a private Prototype's files](issues/17-viewer-file-access.md): done 2026-08-27. **There is no files endpoint.** The `page_renderer` on `/u/<username>/<slug>` serves the pinned Runtime's own `viewer.html` from disk with the source tree substituted into a `sketch-data` slot, so one authorisation guards everything. Ticket 04's `files.json` is gone. The serialiser must escape `<` as `\u003c`, or the `</script>` in any Vue file breaks the Viewer. `check` mints a 60-second signature over the hash id and `sketch-checkd` opens `127.0.0.1:8007` with a `Host` header; a planted session and the Sketch Token were both rejected. Usernames are frozen at signup. Response carries `no-store` and `frame-ancestors 'self'`. Four Runtime changes: read the DOM, a module registry so import cycles work, `.css` imports injected, and an `empty` status. Nine specifiers now, not eight: `@vueuse/core` joins for the Compose recipe. Recipes are the eight from `ui.frappe.io/recipes`, desktop only, plus Blank, vendored in Sketch. Inter italic dropped. Theme control in the sidebar footer.
 - [Which MCP protocol revision Sketch speaks](issues/18-mcp-protocol-revision.md): done 2026-08-27. **Dual-era.** One endpoint serves legacy `2025-06-18` and modern `2026-07-28`; the server picks by how the client opens, and the spec permits it. `2025-11-25` is not served. Modern only was rejected because the newest TypeScript SDK client defaults to `mode: 'legacy'` and would get a 400. Legacy only works today (Claude Code 2.1.246 was captured falling back and running), but ships two revisions behind. Two premises corrected: Builder is not `2025-06-18`-only (`rpc.py:17` has two revisions) and already has `server/discover`; the method is new as a server *requirement*, not as a method. About 70 lines in `rpc.py`, 1-3 in `http.py`. `rpc.handle` must gain HTTP 400. Modern path unverified against a running client.
+
+- [Assemble the MVP spec](issues/15-assemble-spec.md): done 2026-08-27. `spec.md`, 1,243 lines, 17 sections, assembled from the 16 resolved tickets and the three research reports. Where two tickets disagree it carries the later one. Three sections go beyond the tickets: **Traps** (18 items, each a "must be built" pulled out of a ticket body), **Build order** (8 steps, critical path is Runtime then Viewer then `check`), and **Tests** (one exists, eight to build). Drift found and recorded as work: the served skill still says "eight specifiers" with no `@vueuse/core` row, and the built Runtime still ships `files.json` and `host.html`. **The map is closed.**
 
 Decisions made while charting (no ticket, recorded here once):
 
