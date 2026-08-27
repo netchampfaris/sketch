@@ -88,14 +88,29 @@ function readData() {
   return JSON.parse(raw)
 }
 
-// Sketch owns the theme. The renderer resolves it to light or dark and never
-// sends "system". A Runtime opened without a resolved theme falls back to the
-// URL, then the browser preference. It never writes localStorage.
+// Sketch owns the theme. The order is fixed: the theme URL parameter, then
+// localStorage["theme"], then the browser preference. The renderer resolves
+// the URL parameter and sends null when there is none, because it can read
+// neither of the other two. "system" is not an answer, and the Viewer never
+// writes localStorage: the Sketch UI shares this origin and owns that key.
+const THEMES = ['light', 'dark']
+const pick = (value) => (THEMES.includes(value) ? value : null)
+
+function storedTheme() {
+  // A sandboxed or partitioned context can throw on the first read.
+  try {
+    return localStorage.getItem('theme')
+  } catch {
+    return null
+  }
+}
+
 function applyTheme(resolved) {
   const url = new URLSearchParams(location.search).get('theme')
   const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  const theme = resolved || url || (dark ? 'dark' : 'light')
-  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light'
+  const theme =
+    pick(resolved) || pick(url) || pick(storedTheme()) || (dark ? 'dark' : 'light')
+  document.documentElement.dataset.theme = theme
 }
 
 // -------------------------------------------------------------- module link

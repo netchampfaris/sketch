@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prototype</title>
 
+    <!-- Every URL here must be absolute. build.sh rewrites RUNTIME to the
+         Pin's asset path. The renderer serves this document from
+         /u/<username>/<slug>, so a relative URL asks the wrong directory. -->
+
     <!-- Layer 1: precompiled frappe-ui CSS. Components are styled at first paint. -->
     <link rel="stylesheet" href="RUNTIME/frappe-ui.css" />
     <link rel="stylesheet" href="RUNTIME/frappe-ui-components.css" />
@@ -34,6 +38,6 @@
          not appear anywhere above this line: the renderer replaces the
          first occurrence and nothing else. -->
     SKETCH_DATA_SLOT
-    <script type="module" src="./boot.js"></script>
+    <script type="module" src="RUNTIME/boot.js"></script>
   </body>
 </html>
