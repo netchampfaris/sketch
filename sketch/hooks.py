@@ -109,7 +109,8 @@ page_renderer = [
 
 # The Sketch Token resolver. It refuses every path except /mcp, which is the
 # whole reason Sketch owns a third auth scheme instead of using Frappe's
-# api_key: api_key authenticates every Frappe endpoint, and signup is open.
+# api_key: api_key authenticates every Frappe endpoint, and anyone with a
+# GitHub account can sign up.
 auth_hooks = ["sketch.auth.validate_sketch_token"]
 
 # Generators
@@ -232,19 +233,6 @@ doc_events = {
 		"validate": "sketch.user_hooks.validate_username",
 	},
 }
-
-# Overriding Methods
-# ------------------
-# Core's sign_up has a fixed three-argument signature and no hook adds a field,
-# so the username arrives through an override (spec 3).
-
-override_whitelisted_methods = {
-	"frappe.core.doctype.user.user.sign_up": "sketch.signup.sign_up",
-}
-
-# The username input on the login page. Markup only: core's login.js still sends
-# three arguments, so the template rebinds the submit handler.
-signup_form_template = "sketch/templates/includes/signup_extra.html"
 
 after_install = "sketch.install.after_install"
 

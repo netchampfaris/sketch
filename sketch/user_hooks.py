@@ -9,7 +9,7 @@ unscoped throw stops Desk user management. `user_type` alone is not enough:
 `User.set_system_user()` writes "Website User" on any new user that holds no
 role with desk access, so a Desk-created System User passes through that test
 before its roles are added. A user is in scope when it holds the `Sketch User`
-role, or when `sketch.signup.sign_up` marked the document with `REQUESTED_FLAG`.
+role.
 """
 
 import re
@@ -25,10 +25,6 @@ USERNAME_MAX_LENGTH = 30
 USERNAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 SKETCH_ROLE = "Sketch User"
-
-# The flag `sketch.signup.sign_up` writes before insert. It carries the name the
-# person asked for, so the hook can name it after core blanks a collision.
-REQUESTED_FLAG = "sketch_requested_username"
 
 SYSTEM_USERS = ("Administrator", "Guest")
 
@@ -110,8 +106,6 @@ def in_scope(doc) -> bool:
 		return False
 	if doc.name in SYSTEM_USERS:
 		return False
-	if doc.flags.get(REQUESTED_FLAG):
-		return True
 	return any(row.role == SKETCH_ROLE for row in (doc.get("roles") or []))
 
 
@@ -119,7 +113,7 @@ def validate_username(doc, method=None) -> None:
 	"""The `User.validate` hook. Sketch users only, see `in_scope`.
 
 	Four jobs:
-	1. Keep the username frozen after signup.
+	1. Keep the username frozen after sign-up.
 	2. Turn core's silent blanking of a colliding name into a readable throw.
 	3. Enforce the Sketch format.
 	4. Normalise the stored value to lowercase.
@@ -127,10 +121,9 @@ def validate_username(doc, method=None) -> None:
 	if not in_scope(doc):
 		return
 
-	requested = doc.flags.get(REQUESTED_FLAG)
 	before = None if doc.is_new() else doc.get_doc_before_save()
 
-	# 1. Frozen after signup. A collision on a later save also lands here,
+	# 1. Frozen after sign-up. A collision on a later save also lands here,
 	# because core blanks the field and the value then differs.
 	if before is not None and before.get("username"):
 		if normalise(doc.username) != normalise(before.username):
@@ -143,11 +136,6 @@ def validate_username(doc, method=None) -> None:
 
 	# 2. Core blanked the value. For a Website User it says nothing at all.
 	if not doc.username:
-		if requested:
-			frappe.throw(
-				_("The username {0} is already taken. Choose another.").format(requested),
-				title=_("Username Taken"),
-			)
 		if doc.is_new():
 			frappe.throw(
 				_("A username is required, and it may already be taken."),

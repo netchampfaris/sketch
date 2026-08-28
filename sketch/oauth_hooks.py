@@ -131,8 +131,8 @@ def set_username_for_social_signup(doc, method=None) -> None:
 	"""The `User.before_insert` hook. Social sign-ups only.
 
 	It acts only when the document has no username and holds a social login
-	row. `sketch.signup.sign_up` and a Desk-created user both arrive with a
-	username, or with no social login row, so both pass through untouched.
+	row. A Desk-created user arrives with a username, or with no social login
+	row, so it passes through untouched.
 
 	GitHub puts the account login in the row's `username` field
 	(`frappe/utils/oauth.py:332`). That login is the best seed. The display

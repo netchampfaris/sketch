@@ -13,7 +13,6 @@ Sketch rules then refuse it. The person reads a 417 page with a traceback.
 
 - the derivation, one case per rule it has to obey
 - the whole insert path, built the way `oauth.py` builds it
-- the email signup path, which must stay exactly as it was
 - an existing user, whose username a later GitHub sign-in must not change
 
 No Social Login Key record is needed. `User.set_social_login_userid` only
@@ -21,12 +20,10 @@ appends a child row, so the tests reach the same document core would insert
 without the OAuth handshake.
 """
 
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from sketch import oauth_hooks, signup
+from sketch import oauth_hooks
 from sketch.tests import utils
 from sketch.user_hooks import USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, USERNAME_PATTERN, check_format
 
@@ -166,22 +163,6 @@ class TestGithubSignup(IntegrationTestCase):
 		self.assertEqual(doc.username, "d2t-display-name")
 
 	# ------------------------------------------------- what must not change
-
-	def test_the_email_signup_keeps_the_name_the_person_asked_for(self):
-		"""`sketch.signup.sign_up`, unchanged.
-
-		Sign-up is disabled on this site and the tests must not change a site
-		setting, so the guard is patched, not the setting.
-		"""
-		email = "d2t-ghemail@example.com"
-		utils.drop_user(email)
-		self.addCleanup(utils.drop_user, email)
-
-		with patch.object(signup, "is_signup_disabled", return_value=False):
-			code, message = signup.sign_up(email, "D2t Email Person", "", "d2tghemail")
-
-		self.assertIn(code, (1, 2), message)
-		self.assertEqual(frappe.db.get_value("User", email, "username"), "d2tghemail")
 
 	def test_the_hook_leaves_a_user_that_has_no_social_login(self):
 		"""A Desk-created user must reach core untouched."""

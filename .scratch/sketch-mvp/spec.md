@@ -170,28 +170,42 @@ then touches disk.
 
 ## 3. Signup, username, roles
 
-### Open signup is two settings
+### Sign-up is GitHub only
 
-- Website Settings `disable_signup`, a Check that **defaults to 1**. Set it
-  to 0.
-- System Settings `max_signups_allowed_per_hour`, default 300.
-- `disable_user_pass_login` only hides the form. It does not gate `sign_up`.
+There is no email and password form, and no `sign_up` override. Three settings
+carry it:
 
-### Verification is the password-reset link
+- System Settings `disable_user_pass_login`, a Check that defaults to 0. Set it
+  to **1**. It hides the form (`frappe/www/login.html:9`) and refuses
+  `/api/method/login` (`frappe/auth.py:151`).
+- System Settings `login_with_email_link`, default 1. Set it to **0**. Its
+  button opens a second email field.
+- Website Settings `disable_signup` stays **1**. The GitHub `Social Login Key`
+  holds `sign_ups = "Allow"`, and `provider_allows_signup` reads the key before
+  Website Settings, so GitHub alone can make a user.
 
-There is no separate verify-email token. The welcome mail carries
-`/update-password?key=<plaintext>`; only the SHA-256 hash is stored. The link
-expires after `reset_password_link_expiry_duration`, default 1200 s. Clicking
-it sets the password and logs the user in.
+`sketch.install.disable_email_login` writes the two System Settings fields with
+`frappe.db.set_single_value`. `SystemSettings.validate_user_pass_login` refuses
+a normal save while the GitHub key is still disabled.
+
+### Verification is the GitHub account
+
+There is no verify-email token and no welcome mail. GitHub has already checked
+the account. `frappe/utils/oauth.py:342-350` inserts the User with
+`no_welcome_mail` and a random password that nobody uses.
+
+The way into Desk before the GitHub credentials are pasted:
+`bench --site sketch.localhost browse --user Administrator --sid`.
 
 ### Role assignment
 
-A new signup gets `user_type = "Website User"` (hardcoded) and the one role in
-**Portal Settings `default_role`**. Set that to `Sketch User`.
+A new sign-up gets `user_type = "Website User"` (hardcoded) and the one role in
+**Portal Settings `default_role`** (`frappe/utils/oauth.py:347`). Set that to
+`Sketch User`.
 
 **The `Sketch User` role fixture must set `desk_access = 0`.** `Role.desk_access`
 defaults to 1, and `add_roles()` calls `save()`, so `set_system_user()` flips
-the new user to System User during signup.
+the new user to System User during the sign-up.
 
 ### Username
 
@@ -215,34 +229,32 @@ Three things the hook must get right:
   `suggest_username` inside `if self.user_type == "System User"`. For a Website
   User a collision blanks the username with **no message at all**.
 - Core auto-fills `username = frappe.scrub(first_name)` when it is empty. The
-  hook must not read an auto-derived value as user intent, and signup must set
-  `username` explicitly so the auto-fill never runs.
+  hook must not read an auto-derived value as user intent, and the sign-up must
+  set `username` explicitly so the auto-fill never runs.
 
-**Usernames are frozen at signup.** `User.username` is read-only afterwards.
+**Usernames are frozen at sign-up.** `User.username` is read-only afterwards.
 The case this kills: a user renames, a stranger takes the old name, and the old
 public link keeps working while showing **their** Prototype. That is worse than
-a 404. Cost: a typo at signup is permanent and the fix is a manual database
-edit. Mitigation: show the live URL shape under the field as the user types.
+a 404. Cost: the name a person gets is the one GitHub gave, and the fix is a
+manual database edit.
 
-### Collecting the username at signup
+### Deriving the username
 
-Core's `sign_up(email, full_name, redirect_to)` has a fixed signature and no
-hook adds a field.
+Nobody types a Sketch username. GitHub does not send one, and
+`frappe/utils/oauth.py:287-306` never sets the field.
 
-- Use `override_whitelisted_methods` to point
-  `frappe.core.doctype.user.user.sign_up` at a Sketch method that also takes
-  `username`. It is honoured on every entry path the login page uses.
-- The override **must carry type annotations**
-  (`require_type_annotated_api_methods = True` is already set in `hooks.py`).
-- The override **must re-implement core's guards**: `is_signup_disabled()`, the
-  hourly throttle, the existing-user branches, and
-  `flags.ignore_password_policy`.
-- Pair it with the `signup_form_template` hook for the input markup only. That
-  hook adds markup and nothing else: core's `login.js` submit handler still
-  sends three arguments, so the Sketch template must rebind the submit handler
-  after `frappe.ready`. **Treat the rebind as the fragile part.** Core's
-  `login.js` is not a stable API and changed shape between version-16 and
-  develop.
+- **`sketch/oauth_hooks.py` derives it**, on `User.before_insert`. That is the
+  only place a Sketch username is made.
+- The seed is the GitHub account login, which core puts in the `social_logins`
+  row (`frappe/utils/oauth.py:332`). The display name is the fallback, because
+  a provider can send no login at all.
+- No seed may throw. The module lowercases, cuts, pads and strips until the
+  value matches the format above, and falls back to `sketch-user`.
+- A taken name gets a counter: `octocat`, then `octocat-2`. After
+  `MAX_COLLISION_TRIES` it takes a random suffix, so a crowded name cannot make
+  the sign-up slow.
+- The hook does nothing when the document already has a username, or has no
+  social login row. A Desk-created user reaches core untouched.
 
 ### Landing on the SPA
 
@@ -256,7 +268,7 @@ the path is `index`. Only `get_home_page()` decides what `/` renders.
 - The scaffold currently serves the SPA at `/sketch` through
   `website_route_rules`. Moving it to `/` is implementation work in this spec.
 
-Riding `develop` instead of `version-16` costs nothing here. Signup, roles,
+Riding `develop` instead of `version-16` costs nothing here. Sign-up, roles,
 `user_type` and landing are identical on both.
 
 ---
