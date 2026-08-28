@@ -17,3 +17,30 @@ The wayfinder map for the MVP spec lives in `.scratch/sketch-mvp/map.md`.
 - **Token**: the per-user Bearer credential an agent sends to `/mcp`.
 - **Recipe**: a starter Prototype tree the user picks when creating a Prototype in the Sketch UI. Eight come from `ui.frappe.io/recipes`, plus Blank. The agent has no recipe tool: it meets a Recipe as working code, not as a document.
 - **Fixture**: sample data for a Prototype. Always inline, in plain `ref`s inside the prototype files. There is no Fixture API and no backend.
+
+## Sites: which one takes a test run
+
+The bench has two sites. They do different jobs.
+
+| Site | Job | Tests |
+| --- | --- | --- |
+| `sketch.localhost` | The beta site. Real users, real Prototypes. Web port 8007, public at `https://sketch.netchamp.dev`. | **Never.** `allow_tests` is off, so `run-tests` refuses. |
+| `sketch-test.localhost` | The test site. MariaDB, the same engine as the beta site. Database `sketch_test`, own files, web port 8017. | Always. |
+
+Never put `allow_tests` back on `sketch.localhost`. The suite creates and
+deletes rows, so a run there can damage real user data.
+
+Run the suite:
+
+```bash
+cd /home/faris/benches/sketch-bench
+# 1. The test site needs its own web server. Some tests drive a live request.
+bench --site sketch-test.localhost serve --port 8017 --noreload &
+# 2. The suite.
+bench --site sketch-test.localhost run-tests --app sketch
+```
+
+The tests read the port from the site config, so they never call port 8007.
+Without a server on 8017 the web tests skip and give the reason. `sketch-checkd`
+on port 8010 is shared by both sites. It takes the target URL and the `Host`
+header from the test, so it needs no change.

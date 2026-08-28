@@ -3,13 +3,16 @@
 
 """Fixtures and probes the Sketch tests share.
 
-The site is shared with live work, so every fixture here carries the `d2t`
-prefix, is created by the test that needs it, and is removed again in
-tearDownClass. No test reads a row another agent left behind.
+The suite runs on `sketch-test.localhost`, never on the beta site
+`sketch.localhost`. See CONTEXT.md. Two agents can still share the test site,
+so every fixture here carries the `d2t` prefix, is created by the test that
+needs it, and is removed again in tearDownClass. No test reads a row another
+agent left behind.
 
 Several tests drive the live web server, because a `page_renderer` and an
-`auth_hooks` entry only run inside a real request. Those tests skip with a
-readable reason when the server is not up.
+`auth_hooks` entry only run inside a real request. The port comes from the site
+config, so a run reaches its own site only. Those tests skip with a readable
+reason when the server is not up.
 """
 
 import json
@@ -26,10 +29,6 @@ PREFIX = "d2t"
 
 TEST_ROLE = "Sketch User"
 
-#: The site the web server answers for. Requests go to the loopback port and
-#: carry this as the Host header, never the public hostname (trap 14).
-SITE_HOST = "sketch.localhost"
-
 RUNTIMES = ("public", "runtimes")
 
 CHECKD_URL = os.environ.get("SKETCH_CHECKD_URL", "http://127.0.0.1:8010/check")
@@ -38,8 +37,22 @@ CHECKD_URL = os.environ.get("SKETCH_CHECKD_URL", "http://127.0.0.1:8010/check")
 # --------------------------------------------------------------- the server
 
 
+def site_host() -> str:
+	"""The Host header the web server answers for.
+
+	It is the site the run is on, never the public hostname (trap 14). The name
+	is read at call time, so the suite always talks to the same site it writes
+	to. A hard-coded name here would send a run on one site to another site.
+	"""
+	return frappe.local.site
+
+
 def webserver_port() -> int:
-	"""The bench web server port, from common_site_config."""
+	"""The web server port for the site under test.
+
+	site_config wins over common_site_config, so each site can have its own
+	port. That keeps a test run on one site off another site's server.
+	"""
 	return int(frappe.get_conf().get("webserver_port") or 8000)
 
 
@@ -54,7 +67,7 @@ def request(method: str, path: str, **kwargs) -> requests.Response:
 	A redirect hides the status the test is about, so the caller sees the first
 	answer and nothing else.
 	"""
-	headers = {"Host": SITE_HOST}
+	headers = {"Host": site_host()}
 	headers.update(kwargs.pop("headers", None) or {})
 	kwargs.setdefault("timeout", 60)
 	kwargs.setdefault("allow_redirects", False)
@@ -109,7 +122,7 @@ def run_check(url: str, screenshot: bool = False) -> dict:
 	"""One POST to sketch-checkd. Returns the parsed answer (contract 5)."""
 	response = requests.post(
 		CHECKD_URL,
-		json={"url": url, "host": SITE_HOST, "screenshot": screenshot},
+		json={"url": url, "host": site_host(), "screenshot": screenshot},
 		timeout=180,
 	)
 	response.raise_for_status()

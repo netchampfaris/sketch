@@ -171,6 +171,11 @@ Request:
 `host` is sent as the HTTP `Host` header on every request the browser makes
 (trap 14). The caller never sends the public hostname.
 
+The `url` and `host` above show the beta site, `sketch.localhost` on port 8007.
+A test run never uses them. It uses the test site, `sketch-test.localhost` on
+port 8017, and the test builds both values from the site it runs on. See
+CONTEXT.md.
+
 Response, HTTP 200:
 
 ```json
