@@ -4,7 +4,7 @@
  * Writes are not here. A card owns its own rename, delete and public toggle,
  * so one card's spinner never disables the others.
  */
-import { useCall } from 'frappe-ui'
+import { call, toast, useCall } from 'frappe-ui'
 import type { AgentToken, Prototype, Recipe, SketchSession } from './types'
 
 /** A whitelisted method in `sketch/api.py`. */
@@ -38,6 +38,30 @@ export const agentToken = useCall<AgentToken>({
 export function goToLogin(): void {
   const back = encodeURIComponent(window.location.pathname + window.location.search)
   window.location.href = `/login?redirect-to=${back}`
+}
+
+/**
+ * End the session, then send the browser to the login page.
+ *
+ * `logout` is POST only, so `call` is the right door: it posts, and it adds
+ * the CSRF token that `sketch/www/sketch.py` puts on `window`. The path comes
+ * from the session, never from a literal here.
+ *
+ * A silent failure would leave the user signed in on a login page, so the
+ * browser only moves after the server answers. On an error the user stays put
+ * and reads a toast.
+ */
+export async function logout(): Promise<void> {
+  const url = session.data?.logout_url
+  if (url) {
+    try {
+      await call(url)
+    } catch {
+      toast.error('Could not sign out. Try again.')
+      return
+    }
+  }
+  window.location.href = '/login'
 }
 
 /** Put text on the clipboard. Falls back to a hidden textarea on http. */

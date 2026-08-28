@@ -5,10 +5,14 @@
  * Identity, navigation, the agent-connection status, then the signed-in User
  * and the theme control in the footer. Every row has a fixed height, so
  * nothing moves while the session loads.
+ *
+ * The User row is the account menu trigger. A menu costs no extra height, so
+ * the footer reads the same open or shut.
  */
 import { computed } from 'vue'
 import {
   Avatar,
+  Dropdown,
   ScrollArea,
   Sidebar,
   SidebarHeader,
@@ -16,11 +20,13 @@ import {
   SidebarSection,
 } from 'frappe-ui'
 import ThemeControl from './ThemeControl.vue'
-import { session } from '../store'
+import { logout, session } from '../store'
 
 const connected = computed(() => Boolean(session.data?.has_token))
 const fullName = computed(() => session.data?.full_name ?? '')
 const username = computed(() => session.data?.username ?? '')
+
+const accountMenu = [{ label: 'Log out', icon: 'lucide-log-out', onClick: logout }]
 </script>
 
 <template>
@@ -46,15 +52,26 @@ const username = computed(() => session.data?.username ?? '')
         </span>
       </div>
 
-      <div class="mt-1 flex h-10 items-center gap-2 rounded-4 px-2">
-        <Avatar :label="fullName" :image="session.data?.user_image" size="md" />
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-sm text-ink-gray-8">{{ fullName }}</div>
-          <div class="truncate text-xs text-ink-gray-5">
-            {{ username ? '@' + username : '' }}
-          </div>
-        </div>
-      </div>
+      <Dropdown align="start" match-trigger-width :options="accountMenu" side="top">
+        <template #default="{ open }">
+          <!-- Same h-10 row as before. Only the surface changes on hover and
+               on open, so the footer never moves. -->
+          <button
+            aria-label="Account"
+            class="mt-1 flex h-10 w-full items-center gap-2 rounded-4 px-2 text-left transition focus-visible:ring-0 focus-visible:focus-ring"
+            :class="open ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'"
+            type="button"
+          >
+            <Avatar :label="fullName" :image="session.data?.user_image" size="md" />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm text-ink-gray-8">{{ fullName }}</div>
+              <div class="truncate text-xs text-ink-gray-5">
+                {{ username ? '@' + username : '' }}
+              </div>
+            </div>
+          </button>
+        </template>
+      </Dropdown>
 
       <ThemeControl />
     </div>
