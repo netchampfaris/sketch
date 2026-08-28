@@ -227,7 +227,10 @@ fixtures = [{"dt": "Role", "filters": [["name", "in", ["Sketch User"]]]}]
 # ---------------
 
 doc_events = {
-	"User": {"validate": "sketch.user_hooks.validate_username"},
+	"User": {
+		"before_insert": "sketch.oauth_hooks.set_username_for_social_signup",
+		"validate": "sketch.user_hooks.validate_username",
+	},
 }
 
 # Overriding Methods
