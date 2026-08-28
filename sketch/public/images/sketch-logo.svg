@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Sketch">
+  <title>Sketch</title>
+  <!-- The mark is a wireframe: one header bar and two panels.
+       Sketch draws a user interface, so the mark draws one.
+       The tile carries its own background. The mark holds its
+       contrast on a light page and on a dark page.
+       Tile colour is the frappe-ui token surface-blue-6.
+       Tile radius 16 is the token radius rounded-7.
+       Panel radius 4 is the token radius rounded-1. -->
+  <rect width="64" height="64" rx="16" fill="#0C8EF8"/>
+  <rect x="16" y="16" width="32" height="8" rx="4" fill="#FFFFFF"/>
+  <rect x="16" y="29" width="13" height="19" rx="4" fill="#FFFFFF"/>
+  <rect x="35" y="29" width="13" height="19" rx="4" fill="#FFFFFF" fill-opacity="0.6"/>
+</svg>

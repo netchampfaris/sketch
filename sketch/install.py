@@ -11,6 +11,10 @@ import frappe
 SKETCH_ROLE = "Sketch User"
 GITHUB_LOGIN_KEY = "github"
 
+APP_NAME = "Sketch"
+APP_LOGO = "/assets/sketch/images/sketch-logo.svg"
+FAVICON = "/assets/sketch/images/sketch-favicon.svg"
+
 
 def after_install() -> None:
 	setup_site_settings()
@@ -18,7 +22,8 @@ def after_install() -> None:
 
 
 def setup_site_settings() -> None:
-	"""Point Portal Settings at the Sketch User role and shut the email login.
+	"""Brand the site, point Portal Settings at the Sketch User role, and shut
+	the email login.
 
 	`frappe/utils/oauth.py:347` reads `Portal Settings.default_role` and gives
 	the new GitHub user that one role. The field has no default, so a sign-up
@@ -26,6 +31,8 @@ def setup_site_settings() -> None:
 
 	Website Settings `disable_signup` is left alone on purpose. It stays 1.
 	"""
+	set_branding()
+
 	if not frappe.db.exists("Role", SKETCH_ROLE):
 		frappe.log_error(
 			title="Sketch setup",
@@ -41,6 +48,50 @@ def setup_site_settings() -> None:
 		frappe.db.commit()
 
 	disable_email_login()
+
+
+def set_branding() -> None:
+	"""Put the Sketch marks on every page that comes before the app.
+
+	Each field feeds one surface:
+
+	* `app_name` is the brand name in outgoing mail
+	  (`frappe/email/email_body.py:710`).
+	* `app_logo` is the logo on `/login` (`frappe/www/login.html:82`), on
+	  `/update-password` (`frappe/www/update-password.html:18`), and in mail
+	  (`frappe/email/email_body.py:706`). `get_app_logo` reads this field
+	  first (`frappe/core/doctype/navbar_settings/navbar_settings.py:30`).
+	* `favicon` is the tab icon on every web page
+	  (`frappe/templates/base.html:15`).
+	* `title_prefix` is the tab title. `set_title_with_prefix` turns `Login`
+	  into `Sketch - Login`
+	  (`frappe/website/page_renderers/base_template_page.py:43`). `app_name`
+	  does not touch the tab title.
+	* `splash_image` is the mark the login page shows after a sign-in
+	  (`frappe/templates/includes/login/login.js:324`).
+
+	The save is skipped when every field already holds the value, so a second
+	run writes nothing. `WebsiteSettings.on_update` clears the cache
+	(`frappe/website/doctype/website_settings/website_settings.py:145`).
+
+	`disable_signup` stays 1. Sketch signs people in with GitHub only.
+	"""
+	values = {
+		"app_name": APP_NAME,
+		"app_logo": APP_LOGO,
+		"favicon": FAVICON,
+		"title_prefix": APP_NAME,
+		"splash_image": APP_LOGO,
+	}
+
+	settings = frappe.get_single("Website Settings")
+	if all(settings.get(field) == value for field, value in values.items()):
+		return
+
+	settings.update(values)
+	settings.flags.ignore_permissions = True
+	settings.save()
+	frappe.db.commit()
 
 
 def disable_email_login() -> None:
