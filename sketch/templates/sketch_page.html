@@ -373,68 +373,117 @@
 	}
 
 	/*
-	 * The feed list (`sketch/www/feed.html`).
+	 * The feed grid (`sketch/www/feed.html`).
 	 *
-	 * A row is a link, and the whole row is not the target: the title is.
-	 * Hover therefore underlines the title instead of filling a surface. A
-	 * hover surface would need the gutter bleed `.sk-brand` uses, and the
-	 * separator rule between two rows would then stop short of it on both
-	 * sides. DESIGN principle 2 separates rows with a rule, so the rule wins.
+	 * A grid of pictures, not a list of rows. The rows existed because a card
+	 * preview used to be a live Viewer iframe, and a page of every public
+	 * Prototype could not boot that many Runtimes. The preview is a PNG now
+	 * (`sketch/thumbnails.py`), so this page draws the same card the SPA
+	 * gallery draws (`frontend/src/components/PrototypeCard.vue`): the picture,
+	 * then the name, then one line of meta.
 	 *
-	 * `.sk-rows` above cannot serve this list: that ladder is label over
-	 * value, its rows are not targets, and it aligns its second column to the
-	 * right edge of the card.
+	 * Two columns at 940px, the SPA's own `md:grid-cols-2` and `gap-6`. The
+	 * whole card is the link, because unlike the SPA card it carries no
+	 * buttons and no menu, so there is nothing else inside it to click. Hover
+	 * underlines the title rather than filling a surface: the picture is the
+	 * card's largest area and a wash over it would tint the artwork.
 	 */
-	.sk-feed {
+	.sk-grid {
+		display: grid;
+		gap: calc(var(--spacing) * 6);
 		list-style: none;
 		padding: 0;
 	}
 
-	.sk-feed > li + li {
-		border-top: 1px solid var(--outline-gray-1);
+	@media (min-width: 768px) {
+		.sk-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 	}
 
-	.sk-feed-row {
-		display: flex;
-		align-items: baseline;
-		gap: calc(var(--spacing) * 4);
-		padding-block: calc(var(--spacing) * 3);
+	.sk-item {
+		min-width: 0;
+	}
+
+	.sk-item-link {
+		display: block;
 		color: var(--ink-gray-8);
 		text-decoration: none;
 	}
 
-	.sk-feed-row:hover {
+	.sk-item-link:hover {
 		color: var(--ink-gray-8);
 		text-decoration: none;
 	}
 
-	.sk-feed-row:hover .sk-feed-title {
+	.sk-item-link:hover .sk-item-title {
 		text-decoration: underline;
 		text-underline-offset: calc(var(--spacing) * 0.5);
 	}
 
-	.sk-feed-main {
+	/* 1280x800 is the frame the capture takes, which is this box's own 16:10,
+	   so `cover` scales and never crops. The box holds its size before the
+	   picture arrives, so nothing below it moves on load. */
+	.sk-shot {
+		position: relative;
+		display: block;
+		width: 100%;
+		aspect-ratio: 16 / 10;
+		overflow: hidden;
+		border: 1px solid var(--outline-gray-1);
+		border-radius: var(--radius-6);
+		background-color: var(--surface-gray-2);
+	}
+
+	.sk-shot img {
+		position: absolute;
+		inset: 0;
+		height: 100%;
+		width: 100%;
+		object-fit: cover;
+		object-position: top;
+	}
+
+	/* A Prototype whose owner has not run a check since the pictures existed.
+	   The `size-6` glyph step, without the 48px container the full empty-state
+	   recipe uses: this is one tile in a grid, not a screen. */
+	.sk-shot-empty {
+		position: absolute;
+		inset: 0;
 		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: calc(var(--spacing) * 2);
+		color: var(--ink-gray-5);
+	}
+
+	.sk-shot-icon {
+		height: calc(var(--spacing) * 6);
+		width: calc(var(--spacing) * 6);
+		color: var(--ink-gray-4);
+	}
+
+	/* Both rows are 28px, the height of a small button, the same rhythm the
+	   SPA card sets under its own preview. Nothing here changes state, so the
+	   fixed height is for the match rather than for a jump. */
+	.sk-item-row {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+		height: calc(var(--spacing) * 7);
+	}
+
+	.sk-shot + .sk-item-row {
+		margin-top: calc(var(--spacing) * 3);
+	}
+
+	/* One line, always. A title is free text, and a wrap here would make one
+	   card in the row taller than the other. */
+	.sk-item-title,
+	.sk-item-meta {
 		min-width: 0;
 		flex: 1 1 auto;
-		flex-direction: column;
-	}
-
-	/* A repeating trailing element gets a fixed column, per DESIGN principle
-	   5, so every title ends on the same x. 96px holds the longest
-	   `pretty_date` line ("22 minutes ago") on one line, the same reserve
-	   `PrototypeHistoryDialog.vue` gives the same value. */
-	.sk-feed-when {
-		flex-shrink: 0;
-		width: calc(var(--spacing) * 24);
-		text-align: right;
-	}
-
-	/* One line, always. Both slots carry it, because a title is free text and
-	   a wrap here would move every row below it. */
-	.sk-feed-title,
-	.sk-feed-meta,
-	.sk-feed-when {
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
