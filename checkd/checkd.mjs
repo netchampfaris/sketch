@@ -62,6 +62,7 @@ function bootFailed(message) {
 		skipped: [],
 		timings: {},
 		screenshots: [],
+		thumbnails: [],
 	}
 }
 
@@ -79,13 +80,14 @@ async function check(request) {
 
 	// The hard cap covers the queue wait as well, so a caller blocked on one
 	// HTTP call always gets an answer.
-	return await deadline(queued(browser, url, !!request.screenshot), TIMEOUT_MS)
+	const options = { screenshot: !!request.screenshot, thumbnails: !!request.thumbnails }
+	return await deadline(queued(browser, url, options), TIMEOUT_MS)
 }
 
-async function queued(browser, url, screenshot) {
+async function queued(browser, url, options) {
 	await acquire()
 	try {
-		return await runCheck(browser, { url, screenshot, timeoutMs: TIMEOUT_MS })
+		return await runCheck(browser, { url, ...options, timeoutMs: TIMEOUT_MS })
 	} finally {
 		release()
 	}
