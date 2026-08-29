@@ -30,7 +30,13 @@ onMounted(async () => {
       element PageHeaderBase's `getScrollParent` finds, so a header click
       scrolls the page to the top.
     -->
-    <div class="h-full w-full overflow-y-auto bg-surface-base text-ink-gray-9">
+    <!--
+      `text-ink-gray-8` is the page default and it is set once, here. TOKENS.md
+      > Hierarchy keeps gray-9 for the strongest values on a screen, unread row
+      titles and KPI figures. Sketch draws neither, so gray-9 as the page
+      default left nothing above the body copy.
+    -->
+    <div class="h-full w-full overflow-y-auto bg-surface-base text-ink-gray-8">
       <AppTopBar />
       <!--
         The centred column. With no sidebar the content would otherwise run the
