@@ -295,7 +295,15 @@ after_install = "sketch.install.after_install"
 
 # Request Events
 # ----------------
-# before_request = ["sketch.utils.before_request"]
+
+# The three /mcp cases that are decided before any renderer or auth hook runs.
+# Core raises NotFound for DELETE (frappe/app.py:117-118), returns a bare 200
+# for OPTIONS (frappe/app.py:82-83), and throws its own HTML page for a Basic
+# or token Authorization scheme (frappe/auth.py:649-651, 734-738). This hook
+# runs inside init_request (frappe/app.py:183-184), ahead of all three. It
+# returns at once on every path but /mcp.
+before_request = ["sketch.mcp.http.before_request"]
+
 # after_request = ["sketch.utils.after_request"]
 
 # Job Events

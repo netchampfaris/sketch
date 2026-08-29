@@ -174,12 +174,19 @@ def get_session() -> dict:
 	full_name, username, user_image = frappe.db.get_value(
 		"User", user, ["full_name", "username", "user_image"]
 	)
+	# One read for both answers. The shell shows the connection state on the
+	# first screen, and it must not call get_agent_token to learn it:
+	# get_or_create mints a token, which rendering a screen must never do.
+	row = frappe.db.get_value("Sketch Token", {"user": user}, ["name", "last_used"], as_dict=True)
+	last_used = str(row.last_used) if row and row.last_used else None
 	return {
 		"user": user,
 		"username": username or "",
 		"full_name": full_name or user,
 		"user_image": user_image or "",
-		"has_token": bool(frappe.db.exists("Sketch Token", {"user": user})),
+		"has_token": bool(row),
+		"last_used": last_used,
+		"last_used_pretty": pretty_date(last_used) if last_used else None,
 		"mcp_endpoint": _public_base() + MCP_PATH,
 		"logout_url": "/api/method/logout",
 	}
@@ -340,10 +347,19 @@ def delete_prototype(slug: str) -> dict:
 
 @frappe.whitelist()
 def get_agent_token() -> dict:
-	"""The user's token and the MCP endpoint. One user, one token."""
+	"""The user's token, the MCP endpoint, and when an agent last used it.
+
+	`last_used` is read after get_or_create, so a token minted on this call
+	reports null. `sketch.auth` stamps the field on a good `/mcp` request.
+	"""
+	token = sketch_token.get_or_create(frappe.session.user)
+	last_used = frappe.db.get_value("Sketch Token", {"user": frappe.session.user}, "last_used")
+	last_used = str(last_used) if last_used else None
 	return {
-		"token": sketch_token.get_or_create(frappe.session.user),
+		"token": token,
 		"endpoint": _public_base() + MCP_PATH,
+		"last_used": last_used,
+		"last_used_pretty": pretty_date(last_used) if last_used else None,
 	}
 
 

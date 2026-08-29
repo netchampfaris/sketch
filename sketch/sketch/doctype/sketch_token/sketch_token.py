@@ -20,6 +20,7 @@ class SketchToken(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		last_used: DF.Datetime | None
 		token: DF.Password
 		user: DF.Link
 	# end: auto-generated types

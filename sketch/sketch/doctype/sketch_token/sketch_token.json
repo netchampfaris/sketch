@@ -8,7 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "token"
+  "token",
+  "last_used"
  ],
  "fields": [
   {
@@ -27,11 +28,18 @@
    "label": "Token",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "description": "When an agent last sent a request to /mcp with this token. Stamped by sketch.auth, at most once a minute.",
+   "fieldname": "last_used",
+   "fieldtype": "Datetime",
+   "label": "Last Used",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-27 00:00:00.000000",
+ "modified": "2026-08-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sketch",
  "name": "Sketch Token",

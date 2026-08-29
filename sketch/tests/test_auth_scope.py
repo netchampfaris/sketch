@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from werkzeug.exceptions import Unauthorized
 
 from sketch import auth
 from sketch.sketch.doctype.sketch_token.sketch_token import get_or_create
@@ -80,6 +81,27 @@ class TestAuthTokenScope(IntegrationTestCase):
 		"""Run the hook with this user's real token on `path`."""
 		return self.as_guest(path, f"Bearer {self.token}")
 
+	def refused(self, path: str, header: str):
+		"""Run the hook as Guest and expect it to stop the request.
+
+		Returns the werkzeug Response the raise carries. The session user is
+		read before the restore, so the case still proves the header
+		authenticated nobody.
+		"""
+		before = frappe.session.user
+		with patch.object(frappe.local, "request", FakeRequest(path), create=True):
+			with patch.object(frappe, "get_request_header", lambda key, default=None: header):
+				frappe.set_user("Guest")
+				try:
+					auth.validate_sketch_token()
+				except Unauthorized as e:
+					self.assertEqual(frappe.session.user, "Guest", f"{header} authenticated someone")
+					return e.response
+				else:
+					self.fail(f"the hook accepted {header!r}")
+				finally:
+					frappe.set_user(before)
+
 	def test_the_hook_refuses_every_path_but_mcp(self):
 		for path in FORBIDDEN_PATHS:
 			with self.subTest(path=path):
@@ -95,13 +117,18 @@ class TestAuthTokenScope(IntegrationTestCase):
 			with self.subTest(path=path):
 				self.assertEqual(self.resolve_on(path), self.user)
 
-	def test_the_hook_ignores_a_wrong_token(self):
-		self.assertEqual(self.as_guest("/mcp", "Bearer sk_not-a-real-token"), "Guest")
+	def test_the_hook_refuses_a_wrong_token(self):
+		"""A bad token stops the request. It never falls through to core."""
+		self.assertEqual(self.refused("/mcp", "Bearer sk_not-a-real-token").status_code, 401)
 
-	def test_the_hook_ignores_a_header_that_is_not_a_sketch_token(self):
-		for header in ("", "token abc:def", "Basic Zm9vOmJhcg==", "Bearer ", f"Bearer x{self.token}"):
+	def test_the_hook_refuses_a_header_that_is_not_a_sketch_token(self):
+		for header in ("token abc:def", "Basic Zm9vOmJhcg==", "Bearer ", f"Bearer x{self.token}"):
 			with self.subTest(header=header):
-				self.assertEqual(self.as_guest("/mcp", header), "Guest")
+				self.assertEqual(self.refused("/mcp", header).status_code, 401)
+
+	def test_the_hook_leaves_a_missing_header_to_the_renderer(self):
+		"""No header is not a failed token, so the hook raises nothing."""
+		self.assertEqual(self.as_guest("/mcp", ""), "Guest")
 
 	# ------------------------------------------------------ the live server
 

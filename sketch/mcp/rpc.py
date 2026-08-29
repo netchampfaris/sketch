@@ -96,6 +96,12 @@ def handle(raw: bytes, headers=None) -> tuple[int, dict | None]:
 	try:
 		message = json.loads(raw or b"null")
 	except Exception:
+		# This branch never runs over HTTP. Core parses the body in
+		# `make_form_dict` (`frappe/app.py:302-308`), called from `init_request`
+		# at `frappe/app.py:178`, and throws `frappe.DataError` there. That is
+		# before every app hook and every renderer, so a broken body never
+		# reaches `handle`. The branch stays for the in-process callers, which
+		# pass raw bytes straight in.
 		return 200, error(None, -32700, "Parse error: body must be a JSON object")
 	if isinstance(message, list):
 		return 200, error(None, -32600, "Batching is not supported: send one message per request")
