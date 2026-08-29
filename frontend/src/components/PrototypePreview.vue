@@ -9,6 +9,8 @@
  *
  * The frame remounts when the theme changes, because the Viewer reads
  * localStorage["theme"] once, at boot (spec 12).
+ *
+ * The whole preview is a link to `src`. See the shield in the template.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useColorScheme } from 'frappe-ui'
@@ -65,8 +67,16 @@ watch(frameKey, () => (loaded.value = false))
       :title="title"
       @load="loaded = true"
     />
-    <!-- The preview is a picture, not a control. The shield keeps clicks and
-         scrolls on the card. -->
-    <div class="absolute inset-0" />
+    <!-- The shield keeps clicks and scrolls off the iframe: the preview is a
+         picture of the prototype, not the prototype. It is also the card's
+         big click target, and on a touch device the only one that always
+         works, because the hover-only "Open prototype" button never appears
+         there. `src` is the page the picture shows, so opening it is the one
+         honest destination.
+
+         Out of the tab order and out of the accessibility tree on purpose:
+         the card title carries the same link with the prototype's name on it,
+         and two links to one page would be announced twice. -->
+    <a aria-hidden="true" class="absolute inset-0" :href="src" tabindex="-1" />
   </div>
 </template>
