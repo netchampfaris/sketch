@@ -244,7 +244,7 @@ async function copy(text: string, done: string): Promise<void> {
 
       <div class="mt-5 rounded-6 border border-outline-gray-1 p-5">
         <FormControl
-          class="font-mono"
+          class="[&_input]:font-mono"
           description="One user, one token. Anyone who holds it can write your prototypes."
           label="Token"
           readonly
@@ -279,7 +279,7 @@ async function copy(text: string, done: string): Promise<void> {
 
       <div class="mt-4 rounded-6 border border-outline-gray-1 p-5">
         <FormControl
-          class="font-mono"
+          class="[&_input]:font-mono"
           label="Endpoint"
           readonly
           :model-value="endpoint"
@@ -304,27 +304,29 @@ async function copy(text: string, done: string): Promise<void> {
         Every block below already holds your token and your endpoint.
       </p>
 
-      <Tabs v-model="client" class="mt-4">
-        <TabList class="overflow-x-auto">
+      <!--
+        A side rail, not a strip. Eight clients across the top crowd the line
+        and leave the panel a wide, short box. The rail is eight rows high, so
+        it also carries most of the reserve below.
+      -->
+      <Tabs v-model="client" class="mt-4 flex gap-6" vertical>
+        <TabList class="w-40 shrink-0">
           <TabTrigger
             v-for="item in harnesses"
             :key="item.value"
-            class="shrink-0"
             :label="item.value"
             :value="item.value"
           />
         </TabList>
         <!--
-          The snippets run from one line to twelve. The min-height holds every
-          panel at the tallest one, so the page below does not move when the
-          user picks another client. The spare space falls under the note,
-          rather than inside the code block, where an empty box would read as
-          a fault.
+          The panels run 151px to 331px. The rail is 250px, so most of that
+          range is already absorbed. The min-height covers the rest, and the
+          section keeps one height whichever client is picked.
         -->
         <TabPanel
           v-for="item in harnesses"
           :key="item.value"
-          class="min-h-[22rem] pt-4"
+          class="min-h-[22.6rem] min-w-0 flex-1"
           :value="item.value"
         >
           <p class="text-p-sm text-ink-gray-7">{{ item.help }}</p>
