@@ -180,8 +180,10 @@ class TestMcpEraSwitch(IntegrationTestCase):
 		self.assertEqual(payload["error"]["code"], -32600)
 
 	def test_a_broken_body_is_a_parse_error(self):
+		"""400, because no message was ever read. `test_mcp_errors.py` holds
+		the HTTP twin of this case, and the two answers must stay identical."""
 		status, payload = rpc.handle(b"{not json", {})
-		self.assertEqual(status, 200)
+		self.assertEqual(status, 400)
 		self.assertEqual(payload["error"]["code"], -32700)
 
 	# --------------------------------------------------------- over HTTP

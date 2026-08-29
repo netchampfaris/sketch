@@ -96,10 +96,15 @@ and `http.py`. A `before_request` hook answers `DELETE /mcp` with 405 and `Allow
 and `OPTIONS /mcp` with 204. Core raises `NotFound` for DELETE and returns a bare 200 for
 OPTIONS before any renderer runs, so a renderer cannot fix either. Effort M.
 
-**3.3 Correct the dead parse branch.** Closes E6 as far as it can close. Frappe throws
-`DataError` inside `make_form_dict`, which runs before every app hook, so `rpc.py`'s
-`-32700` branch is unreachable over HTTP. Keep it for the in-process tests, comment the
-real reason, stop claiming it serves HTTP. `sketch/mcp/rpc.py`. Effort S.
+**3.3 A broken body answers the parse error.** Closes E6. Frappe throws `DataError`
+inside `make_form_dict` (`frappe/app.py:302-308`), called from `init_request` at
+`frappe/app.py:178`. That is ahead of `before_request`, ahead of `validate_auth()` and
+ahead of every renderer, so no hook on the way in can catch it, and the client gets a 417
+HTML page. The way out is open: `run_after_request_hooks` is in the `finally` of
+`application` (`frappe/app.py:132-134`) and is handed the same `Response` object core
+returns (`frappe/app.py:141`). An `after_request` hook rewrites that page as
+`-32700` with HTTP 400. Scope is two tests: the path is `/mcp`, and Sketch did not build
+the response. `sketch/mcp/http.py`, `sketch/mcp/rpc.py`, `sketch/hooks.py`. Effort M.
 
 ## The `/mcp` error contract
 
@@ -201,5 +206,6 @@ solid, anywhere.
   on screen instead.
 - Rate limits, prototype counts and storage caps. Spec 16 defers them.
 - A username-change flow. Spec 3 freezes the username on purpose.
-- E6 over HTTP. Frappe parses the body before any Sketch hook runs. Fixing it means a core
-  change.
+- Core's other failures on `/mcp`: the rate limit, maintenance mode. They still serve an
+  HTML page. `after_request` rewrites the broken-body 417 only, because keeping a status
+  is worth more than making every page JSON.

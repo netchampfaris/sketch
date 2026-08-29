@@ -59,6 +59,10 @@ CACHE_SCOPE = "public"
 # Methods that take a name in `Mcp-Name`.
 NAME_TAKING = ("tools/call",)
 
+#: The body a broken request body gets. Shared with `sketch.mcp.http`, which
+#: serves it over HTTP: core rejects the body before `handle` is ever called.
+PARSE_ERROR = "Parse error: body must be a JSON object"
+
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
 Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
@@ -102,7 +106,11 @@ def handle(raw: bytes, headers=None) -> tuple[int, dict | None]:
 		# before every app hook and every renderer, so a broken body never
 		# reaches `handle`. The branch stays for the in-process callers, which
 		# pass raw bytes straight in.
-		return 200, error(None, -32700, "Parse error: body must be a JSON object")
+		#
+		# HTTP gets the same status and the same body all the same:
+		# `sketch.mcp.http.after_request` rewrites core's 417 page with
+		# `PARSE_ERROR`. One mistake, one answer, either way in.
+		return 400, error(None, -32700, PARSE_ERROR)
 	if isinstance(message, list):
 		return 200, error(None, -32600, "Batching is not supported: send one message per request")
 	if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":

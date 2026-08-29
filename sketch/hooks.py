@@ -304,7 +304,14 @@ after_install = "sketch.install.after_install"
 # returns at once on every path but /mcp.
 before_request = ["sketch.mcp.http.before_request"]
 
-# after_request = ["sketch.utils.after_request"]
+# The one /mcp case that is decided before before_request itself. Core parses
+# the request body in make_form_dict (frappe/app.py:302-308) and throws its own
+# 417 HTML page on JSON it cannot read, from inside init_request
+# (frappe/app.py:178) and ahead of every app hook. This hook runs in the finally
+# of application (frappe/app.py:132-134), holds the response object core is
+# about to return, and rewrites that page as the JSON-RPC parse error. It
+# returns at once on every path but /mcp.
+after_request = ["sketch.mcp.http.after_request"]
 
 # Job Events
 # ----------

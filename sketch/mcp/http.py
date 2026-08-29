@@ -18,6 +18,10 @@ serve it: the renderer answers `no_credentials` and `no_access`, `before_request
 refuses a non-Bearer scheme, and `sketch.auth` raises on a token that resolves
 to no user.
 
+One case is decided outside all three. Core parses the request body before any
+app hook runs, so a broken body never reaches Sketch on the way in. It is caught
+on the way out instead, in `after_request`.
+
 This module is imported for every website request, so `rpc` and `sketch.api`
 load lazily inside the functions that need them.
 """
@@ -82,6 +86,20 @@ ERRORS = {
 #: -32000..-32019 sub-range is legacy in 2026-07-28 and new servers stay out.
 METHOD_NOT_ALLOWED = "Method Not Allowed: POST a single JSON-RPC message"
 
+#: The status core answers a broken request body with. `make_form_dict` throws
+#: `frappe.DataError` (`frappe/app.py:302-308`), and `DataError` subclasses
+#: `ValidationError`, whose `http_status_code` is 417.
+CORE_BAD_BODY_STATUS = 417
+
+#: Set on `frappe.local.flags` by every response this module builds.
+#: `after_request` reads it to tell a Sketch answer from a core error page.
+ANSWERED_FLAG = "sketch_mcp_answered"
+
+#: Headers core's website error page leaves behind. They describe an HTML page:
+#: `Link` preloads a stylesheet and two bundles, and the other two name the
+#: template that rendered. A JSON body must not carry them.
+PAGE_HEADERS = ("Link", "X-Page-Name", "X-From-Cache")
+
 
 def is_mcp_path(path: str | None) -> bool:
 	"""True for `/mcp`, `/mcp/`, and any letter case of either."""
@@ -145,7 +163,7 @@ def before_request() -> None:
 
 	if request.method == "OPTIONS":
 		# 204: an answer about methods carries no body.
-		stop(Response(status=204, headers={"Allow": "POST, OPTIONS"}))
+		stop(mark(Response(status=204, headers={"Allow": "POST, OPTIONS"})))
 
 	if frappe.session.user not in ("", "Guest"):
 		# A session cookie already logged this request in. Leave it alone.
@@ -155,6 +173,64 @@ def before_request() -> None:
 	header = (frappe.get_request_header("Authorization") or "").strip()
 	if header and not header.lower().startswith(BEARER_PREFIX):
 		stop(error_response("wrong_auth_scheme"))
+
+
+def after_request(response: Response, request) -> None:
+	"""Rewrite core's broken-body page on `/mcp` into the JSON-RPC parse error.
+
+	One `/mcp` case is decided before every hook this app can register. Core
+	reads and parses the request body in `make_form_dict`
+	(`frappe/app.py:302-308`) and throws `frappe.DataError` on JSON it cannot
+	read. That call sits in `init_request` at `frappe/app.py:178`, ahead of
+	`before_request` at `frappe/app.py:183`, ahead of `validate_auth()` at
+	`frappe/app.py:80`, and ahead of every renderer. So a malformed body never
+	reaches Sketch code on the way in, and the client gets a 417 HTML page.
+
+	The way in is closed. The way out is not. `run_after_request_hooks` is in
+	the `finally` of `application` (`frappe/app.py:132-134`), so it runs on the
+	exception path too, and it is handed the same `Response` object that
+	`application` returns at `frappe/app.py:141`. Mutating it here changes the
+	bytes on the wire. `process_response` runs afterwards
+	(`frappe/app.py:144-145`) and only adds headers.
+
+	Scope is two tests wide: the path is `/mcp`, and Sketch did not build this
+	response. Every response this module builds sets `ANSWERED_FLAG`, so a
+	Sketch 401, 403, 405, 204 or a real JSON-RPC reply is never touched. Core's
+	other failures on `/mcp` (rate limit, maintenance mode) keep their own
+	pages: they are not this problem, and rewriting them would hide the status.
+
+	A hook is registered site-wide, so every other path leaves on the first
+	test.
+	"""
+	if response is None or request is None or not is_mcp_path(request.path):
+		return
+
+	flags = getattr(frappe.local, "flags", None)
+	if flags is not None and flags.get(ANSWERED_FLAG):
+		return
+
+	if response.status_code != CORE_BAD_BODY_STATUS:
+		return
+
+	from sketch.mcp import rpc
+
+	# The same body `rpc.handle` returns for the same bytes. The handler is not
+	# called: nothing authenticated this request, because `validate_auth()`
+	# never ran, and a body that failed core's parser cannot carry a message.
+	payload = rpc.error(None, -32700, rpc.PARSE_ERROR)
+	response.status_code = 400
+	response.mimetype = "application/json"
+	response.set_data(json.dumps(payload))
+	for header in PAGE_HEADERS:
+		response.headers.pop(header, None)
+
+
+def mark(response: Response) -> Response:
+	"""Record that Sketch built this response, for `after_request`."""
+	flags = getattr(frappe.local, "flags", None)
+	if flags is not None:
+		flags[ANSWERED_FLAG] = True
+	return response
 
 
 def stop(response: Response) -> None:
@@ -204,4 +280,4 @@ def pin_header(name: str, value: str) -> None:
 
 def json_response(status: int, payload: dict | None, headers: dict | None = None) -> Response:
 	body = "" if payload is None else json.dumps(payload)
-	return Response(body, status=status, mimetype="application/json", headers=headers)
+	return mark(Response(body, status=status, mimetype="application/json", headers=headers))

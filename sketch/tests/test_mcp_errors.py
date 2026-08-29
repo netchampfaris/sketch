@@ -3,15 +3,16 @@
 
 """The `/mcp` error contract: every failure is JSON that names the fix.
 
-Problems E1, E2, E4, E5, E7, E8, E9 and C4. A wrong token used to return an
+Problems E1, E2, E4, E5, E6, E7, E8, E9 and C4. A wrong token used to return an
 8 KB HTML "Session Expired" page with a Python traceback on it. An agent reads
 JSON, so each failure now carries `error`, `message` and `settings_url`, and
 each 401 carries a `WWW-Authenticate` header that does not start an OAuth flow
 Sketch cannot serve.
 
 Every case here drives the live server. The contract is made of a raise in
-`sketch.auth`, a renderer in `sketch.mcp.http`, a `before_request` hook, and
-core's own response pipeline, and only a real request runs all four.
+`sketch.auth`, a renderer in `sketch.mcp.http`, a `before_request` hook, an
+`after_request` hook, and core's own response pipeline, and only a real request
+runs all five.
 
 `test_auth_scope.py` owns the scope of a Sketch Token and `test_mcp_era.py`
 owns the JSON-RPC bodies. Neither is repeated here.
@@ -24,7 +25,7 @@ import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
 from sketch import api
-from sketch.mcp import http
+from sketch.mcp import http, rpc
 from sketch.sketch.doctype.sketch_token.sketch_token import get_or_create
 from sketch.tests import utils
 
@@ -234,6 +235,78 @@ class TestMcpErrorContract(IntegrationTestCase):
 				options = utils.request("OPTIONS", path)
 				self.assertEqual(options.status_code, 200)
 				self.assertIsNone(options.headers.get("Allow"))
+
+	# ------------------------------------------------- E6: a broken body
+
+	def broken(self, body: str, headers: dict | None = None, path: str = "/mcp"):
+		"""One POST carrying a body that is not JSON."""
+		return utils.request(
+			"POST",
+			path,
+			headers={"Content-Type": "application/json", **(headers or {})},
+			data=body,
+		)
+
+	def test_a_broken_body_answers_the_parse_error_and_not_an_html_page(self):
+		"""E6. Core threw a 417 HTML page from inside `make_form_dict`.
+
+		That call is ahead of every app hook, so no hook on the way in can
+		catch it. `after_request` holds the response on the way out instead.
+		"""
+		utils.require_webserver()
+		for body in ("{bad json", "not json at all", "{'single': 'quotes'}"):
+			with self.subTest(body=body):
+				response = self.broken(body)
+				self.assertEqual(response.status_code, 400, response.text[:400])
+				self.assertTrue(
+					response.headers.get("Content-Type", "").startswith("application/json"),
+					response.headers.get("Content-Type"),
+				)
+				payload = response.json()
+				self.assertEqual(payload["error"]["code"], -32700)
+				self.assertEqual(payload["error"]["message"], rpc.PARSE_ERROR)
+				self.assertIsNone(payload["id"])
+
+	def test_the_broken_body_answer_matches_the_in_process_one(self):
+		"""One mistake, one answer. `rpc.handle` and HTTP must not differ."""
+		utils.require_webserver()
+		status, payload = rpc.handle(b"{bad json", {})
+
+		response = self.broken("{bad json")
+		self.assertEqual(response.status_code, status)
+		self.assertEqual(response.json(), payload)
+
+	def test_the_broken_body_answer_carries_no_web_page_headers(self):
+		"""Core's error page leaves `Link` preloads and `X-Page-Name` behind."""
+		utils.require_webserver()
+		response = self.broken("{bad json")
+		for header in http.PAGE_HEADERS:
+			with self.subTest(header=header):
+				self.assertIsNone(response.headers.get(header))
+
+	def test_a_broken_body_off_mcp_keeps_core_s_own_answer(self):
+		"""The rewrite is scoped. Every other path still gets core's 417."""
+		utils.require_webserver()
+		for path in ("/mcpx", "/api/method/frappe.ping"):
+			with self.subTest(path=path):
+				response = self.broken("{bad json", path=path)
+				self.assertEqual(response.status_code, 417, response.text[:200])
+				self.assertNotIn("-32700", response.text)
+
+	def test_a_good_body_is_never_rewritten(self):
+		"""`after_request` must leave every Sketch answer alone.
+
+		The flag is the whole guard. If it ever fails to set, a real reply
+		turns into a parse error.
+		"""
+		utils.require_webserver()
+		good = self.post({"Authorization": f"Bearer {self.token}"})
+		self.assertEqual(good.status_code, 200, good.text[:400])
+		self.assertNotIn("-32700", good.text)
+
+		for case in FAILURES:
+			with self.subTest(case=case):
+				self.assertNotIn("-32700", self.failure(case).text)
 
 	# ------------------------------------------- the raise stays on /mcp
 
