@@ -12,9 +12,10 @@ is set in hooks.py.
 """
 
 import os
+from datetime import UTC, datetime
 
 import frappe
-from frappe.utils import pretty_date
+from frappe.utils import convert_utc_to_system_timezone, pretty_date
 
 from sketch import prototype, prototype_files, versions
 from sketch.sketch.doctype.sketch_token import sketch_token
@@ -33,62 +34,32 @@ RECIPES = {
 	"accounting": ("Accounting", "An invoice ledger with totals.", "lucide-landmark"),
 }
 
-#: Recipe order in the picker. Blank first, because it is the fallback.
+#: Recipe order in the picker. Blank first, because it is what the dialog opens
+#: on (frontend/src/components/NewPrototypeDialog.vue:71).
 RECIPE_ORDER = list(RECIPES)
 
 #: The one MCP endpoint an agent connects to (spec 8).
 MCP_PATH = "/mcp"
 
-#: Used when sketch/recipes/blank/ is not vendored yet. It keeps creation
-#: working, and every other recipe still comes from disk.
-BLANK_TREE = {
-	"src/App.vue": """<script setup lang="ts">
-import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, SidebarSection } from 'frappe-ui'
-</script>
+#: Recipe files write this token wherever the Prototype's own name belongs.
+#: `create_prototype` replaces it with the title the user typed, in every file
+#: of every recipe, so the first page a new user opens carries their name and
+#: not a placeholder (review 6.2). A recipe that does not use the token is
+#: unaffected: the replace is a no-op.
+#:
+#: The token stays readable on its own, because `sketch/tests/test_recipes_boot.py`
+#: writes each recipe tree unsubstituted and boots it. Anything that must
+#: compile after the replace has to compile before it too.
+TITLE_TOKEN = "__SKETCH_TITLE__"
 
-<template>
-  <div class="h-screen w-full bg-surface-base text-ink-gray-9">
-    <DesktopShell>
-      <template #sidebar>
-        <Sidebar width="14rem" class="border-r">
-          <SidebarHeader title="Blank" subtitle="Prototype" />
-          <div class="min-h-0 flex-1 overflow-y-auto px-2 pt-0.5 pb-10">
-            <SidebarSection>
-              <SidebarItem to="/" icon="lucide-home" label="Home" />
-            </SidebarSection>
-          </div>
-        </Sidebar>
-      </template>
-      <router-view />
-    </DesktopShell>
-  </div>
-</template>
-""",
-	"src/router.ts": """// The Runtime creates the router in hash mode. A Prototype exports routes only.
-import type { RouteRecordRaw } from 'vue-router'
-import Home from './pages/Home.vue'
-
-const routes: RouteRecordRaw[] = [{ path: '/', name: 'Home', component: Home }]
-
-export default routes
-""",
-	"src/pages/Home.vue": """<script setup lang="ts">
-import { Button, PageHeader } from 'frappe-ui'
-</script>
-
-<template>
-  <PageHeader>
-    <h1 class="text-lg font-semibold text-ink-gray-8">Home</h1>
-  </PageHeader>
-  <div class="px-5 pt-6 pb-10">
-    <p class="text-p-base text-ink-gray-7">
-      This prototype is empty. Ask your agent to build something here.
-    </p>
-    <Button class="mt-4" variant="solid" theme="gray" label="Primary action" />
-  </div>
-</template>
-""",
-}
+#: Characters dropped from a title before it is substituted into a recipe file.
+#: A recipe file is a Vue single-file component compiled in the browser, and the
+#: token sits in template text or in an attribute. `<` and `>` open a tag, `{`
+#: and `}` open an interpolation, and a quote or a backslash ends an attribute
+#: early, so any of them turns a user's name into a compile error on the first
+#: screen they see. Only the copy written into source is stripped. The
+#: Prototype's own `title` field keeps every character.
+_TITLE_UNSAFE = str.maketrans(dict.fromkeys("<>{}\"'`\\"))
 
 
 def _recipes_root() -> str:
@@ -119,6 +90,60 @@ def _recipe_tree(slug: str) -> list[dict]:
 	return sorted(files, key=lambda item: item["path"])
 
 
+def _title_for_source(title: str) -> str:
+	"""The title as it can be pasted into a Vue single-file component.
+
+	Drops the characters in `_TITLE_UNSAFE` and collapses whitespace, so a
+	newline or a stray quote cannot break the compile of the first page the
+	user opens. Falls back to "Untitled" when nothing survives, which is only
+	reachable for a title made entirely of those characters.
+	"""
+	cleaned = " ".join((title or "").translate(_TITLE_UNSAFE).split())
+	return cleaned or "Untitled"
+
+
+def _apply_title(files: list[dict], title: str) -> list[dict]:
+	"""Replace TITLE_TOKEN with `title` in every file of a recipe tree.
+
+	Runs over the whole tree, not one named file, so a recipe puts the token
+	wherever it needs the name: a heading, a sidebar title, a document title.
+	A recipe with no token comes back unchanged.
+	"""
+	safe = _title_for_source(title)
+	return [dict(entry, content=entry["content"].replace(TITLE_TOKEN, safe)) for entry in files]
+
+
+def _content_modified(name: str, files: list[dict]) -> str:
+	"""When this Prototype's files last changed, on the site clock.
+
+	Not `Sketch Prototype.modified`. Every doc write moves that field, so
+	flipping the public switch reset the card to "Updated 1 second ago" and
+	jumped it to the head of the gallery, which sorted on the same field
+	(review 5.7). Only an agent writing files is a change the user asked for,
+	so the newest mtime in the tree is what the label and the order both read.
+
+	`files` is the listing the caller already walked, so this costs one stat
+	per file and no second walk. Returns "" when nothing can be stat'ed,
+	including an empty tree.
+	"""
+	base = prototype_files.prototype_dir(name)
+	newest = 0.0
+	for row in files:
+		try:
+			newest = max(newest, os.stat(os.path.join(base, row["path"])).st_mtime)
+		except OSError:
+			continue
+
+	if not newest:
+		return ""
+
+	# st_mtime is epoch UTC. `pretty_date` subtracts against `now_datetime()`,
+	# which is the site's timezone (frappe/utils/data.py:1866), so an
+	# unconverted stamp reads hours out and can print a time in the future.
+	local = convert_utc_to_system_timezone(datetime.fromtimestamp(newest, tz=UTC))
+	return local.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _public_base() -> str:
 	"""The public origin a shared link carries.
 
@@ -141,14 +166,24 @@ def _username() -> str:
 def _row(doc_or_dict) -> dict:
 	"""One gallery item.
 
-	`file_count` and the description come off disk, because no field stores
-	them and a stored copy drifts (spec 2).
+	`file_count`, the description and the timestamp all come off disk, because
+	no field stores them and a stored copy drifts (spec 2).
+
+	`modified` here is the tree's stamp, not the document's field. The card and
+	the gallery order both read it, so a visibility toggle no longer moves a
+	card (review 5.7). Callers that need the document's own `modified` must
+	read the document.
 	"""
 	name = doc_or_dict.get("name")
 	slug = doc_or_dict.get("slug")
 	pin = doc_or_dict.get("pin")
-	count = len(prototype_files.list_files(name))
+	files = prototype_files.list_files(name)
+	count = len(files)
 	username = _username()
+	# Falls back to `creation`, never to `modified`. `modified` is the field
+	# that moves on a visibility toggle, which is the jump this stamp exists to
+	# stop, and an empty tree has no mtime of its own to report.
+	updated_at = _content_modified(name, files) or str(doc_or_dict.get("creation") or "")
 	return {
 		"name": name,
 		"title": doc_or_dict.get("title"),
@@ -156,9 +191,13 @@ def _row(doc_or_dict) -> dict:
 		"pin": pin,
 		"is_public": bool(doc_or_dict.get("is_public")),
 		"file_count": count,
-		"description": f"{count} {'file' if count == 1 else 'files'} · frappe-ui {pin}",
-		"modified": str(doc_or_dict.get("modified") or ""),
-		"updated": pretty_date(doc_or_dict.get("modified")) if doc_or_dict.get("modified") else "",
+		# The pin is deliberately out of this line. It used to lead it, which
+		# made the frappe-ui version the loudest fact about a Prototype and told
+		# a new user nothing they could act on (review 5.8). It stays in the
+		# `pin` field above, for the surfaces that print a build detail.
+		"description": f"{count} {'file' if count == 1 else 'files'}",
+		"modified": updated_at,
+		"updated": pretty_date(updated_at) if updated_at else "",
 		"viewer_path": f"/u/{username}/{slug}",
 		"public_url": f"{_public_base()}/u/{username}/{slug}",
 	}
@@ -203,15 +242,24 @@ def list_prototypes() -> list[dict]:
 	the Viewer serves the owner or a public Prototype and nobody else.
 
 	`frappe.get_all` would also drop the permission check, so keep `get_list`.
+
+	The order is the tree's stamp, the same one the card prints. Ordering on
+	the document's `modified` meant a visibility toggle sent a card to the top
+	and moved every other card under the pointer (review 5.7). SQL cannot see
+	an mtime, so the sort happens here.
 	"""
 	rows = frappe.get_list(
 		"Sketch Prototype",
 		filters={"owner": frappe.session.user},
-		fields=["name", "title", "slug", "pin", "is_public", "modified"],
-		order_by="modified desc",
+		fields=["name", "title", "slug", "pin", "is_public", "creation"],
+		order_by="creation desc",
 		limit_page_length=0,
 	)
-	return [_row(row) for row in rows]
+	items = [_row(row) for row in rows]
+	# Python's sort is stable, so the SQL order above survives as the tiebreak
+	# between two Prototypes whose newest file carries the same second.
+	items.sort(key=lambda item: item["modified"], reverse=True)
+	return items
 
 
 @frappe.whitelist()
@@ -263,7 +311,8 @@ def list_recipes() -> list[dict]:
 
 	Reads the vendored trees off disk. A recipe with no tree is still listed,
 	marked `available: false`, so the picker never silently loses one. Blank
-	always works: it falls back to a built-in tree.
+	carries no exception: it is a vendored tree like the other eight, and
+	`create_prototype` refuses any recipe that is not on disk.
 	"""
 	root = _recipes_root()
 	on_disk = set()
@@ -280,7 +329,7 @@ def list_recipes() -> list[dict]:
 				"label": label,
 				"description": description,
 				"icon": icon,
-				"available": slug in on_disk or slug == "blank",
+				"available": slug in on_disk,
 			}
 		)
 
@@ -289,18 +338,31 @@ def list_recipes() -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 def create_prototype(title: str, recipe: str = "blank") -> dict:
-	"""Create a Prototype and write the chosen Recipe into its directory."""
+	"""Create a Prototype and write the chosen Recipe into its directory.
+
+	The tree is written with TITLE_TOKEN replaced by the Prototype's title, so
+	the first page carries the name the user just typed. `doc.title` is used
+	and not the argument, because `prototype.create` strips it.
+
+	Every recipe comes off disk, `blank` included. `blank` used to have a
+	second tree inlined here as a fallback, and the two then disagreed about
+	the first screen: the inlined one had a DesktopShell and a one-item
+	sidebar, the vendored one at sketch/recipes/blank/src/App.vue is a bare
+	RouterView. The vendored tree is the one users saw, so the copy is gone.
+	"""
 	recipe = (recipe or "blank").strip().lower()
 	if recipe not in RECIPES and recipe not in _recipe_tree_slugs():
 		frappe.throw(frappe._("No recipe named {0}").format(recipe), frappe.ValidationError)
 
 	files = _recipe_tree(recipe)
-	if not files and recipe == "blank":
-		files = [{"path": path, "content": content} for path, content in BLANK_TREE.items()]
+	if not files:
+		# Named in RECIPES but not vendored. The check runs before
+		# `prototype.create`, so a broken install leaves no empty Prototype
+		# behind and the user reads why instead of a blank first screen.
+		frappe.throw(frappe._("The {0} recipe is not installed").format(recipe), frappe.ValidationError)
 
 	doc = prototype.create(title)
-	if files:
-		prototype_files.write_files(doc.name, files)
+	prototype_files.write_files(doc.name, _apply_title(files, doc.title))
 
 	return _row(doc.as_dict())
 

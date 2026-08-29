@@ -76,6 +76,12 @@ def regenerate(user: str | None = None) -> str:
 	token = new_token()
 	doc = frappe.get_doc("Sketch Token", user)
 	doc.token = token
+	# The connection state goes with the token. Settings reads `last_used` and
+	# prints "Last agent request: N ago" from it. Every agent still holding the
+	# old token now gets a 401 from `sketch.auth`, so leaving the old stamp
+	# there claims a live connection that is dead, on the one screen the user
+	# opens to fix it. The next good /mcp request stamps it again.
+	doc.last_used = None
 	doc.save(ignore_permissions=True)
 	return token
 
