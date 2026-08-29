@@ -1,20 +1,24 @@
 <script setup lang="ts">
 /**
- * One gallery item: preview, name, description, updated time, the
- * Public/Private switch and the overflow menu (spec 11).
+ * One gallery item: preview, then two rows (spec 11).
  *
- * Rename and Delete sit in the overflow menu, because they are UI-only
+ * Row one is the name, a Badge for the Public/Private state, and the action
+ * rail: Open, then the overflow menu. Row two is every meta fact on one line,
+ * with the copy-link button when there is a link.
+ *
+ * Public/Private is one boolean and it is drawn once, by the Badge. The menu
+ * sets it: Share makes it public, Make private takes it back. It was a Switch
+ * on the card, which put a control that publishes to the internet one stray
+ * click away from the artwork, and cost a row to say what the Badge says.
+ *
+ * Rename, History and Delete sit in the same menu, because they are UI-only
  * actions. Delete uses the destructive confirm preset.
  *
- * Every row keeps its height in both states. The link row is reserved even
- * while the Prototype is private, so turning the switch never moves the card.
- *
- * Public/Private is one boolean, so it is drawn twice and no more: the switch
- * sets it, the footer row shows what it gives you, a link or nobody. The
- * "Public" Badge beside the title was a third drawing of the same fact.
+ * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
+ * the card.
  */
 import { computed, ref } from 'vue'
-import { Button, Dropdown, Switch, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import { copyText, method } from '../store'
@@ -118,15 +122,33 @@ function askDelete(): void {
 }
 
 const menuOptions = computed(() => [
-  { label: 'Open', icon: 'lucide-external-link', onClick: openViewer },
-  { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
-  { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
+  // No Open row: the action has its own button beside this menu.
+  //
+  // One row, two labels. It names what the click does next, not the state the
+  // card is already in: the Badge beside the title carries the state. It is
+  // disabled while a write is in flight, which is the job the switch's own
+  // `:disabled` used to do.
+  props.prototype.is_public
+    ? {
+        label: 'Make private',
+        icon: 'lucide-lock',
+        disabled: busy.value,
+        onClick: () => setPublic.submit({ slug: props.prototype.slug, is_public: false }),
+      }
+    : {
+        label: 'Share',
+        icon: 'lucide-globe',
+        disabled: busy.value,
+        onClick: () => setPublic.submit({ slug: props.prototype.slug, is_public: true }),
+      },
   {
     label: 'Copy public link',
     icon: 'lucide-link',
     disabled: !props.prototype.is_public,
     onClick: copyPublicUrl,
   },
+  { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
+  { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
   // `theme: 'red'` colours the whole row, not the icon alone: frappe-ui
   // `Menu/utils.ts:164` returns `text-ink-red-7` for the label too, so this
   // row needs no class override (review 5.9).
@@ -135,107 +157,89 @@ const menuOptions = computed(() => [
 </script>
 
 <template>
-  <article class="group min-w-0">
-    <div class="relative">
-      <PrototypePreview :src="prototype.viewer_path" :title="prototype.title" />
+  <article class="min-w-0">
+    <PrototypePreview :src="prototype.viewer_path" :title="prototype.title" />
+
+    <!--
+      Two rows under the preview, not four. Name and state on the first, every
+      meta fact on the second. `h-7` on both is the height of a `sm` Button
+      (`Button.vue:209`), so the action rail sets the rhythm and neither row
+      changes height when its contents change.
+    -->
+    <div class="mt-3 flex h-7 items-center gap-2">
       <!--
-        A mouse gets the named action on hover. It is never the only door:
-        the preview and the title are both links to the same page, so a touch
-        device, which never fires `group-hover`, still opens the prototype.
-        `pointer-events-none` at rest keeps the invisible button from eating
-        taps meant for the preview link under it. `shadow-lg` is the token for
-        something floating over content; `shadow-md` belongs to slider thumbs
-        (TOKENS > Shadow).
-
-        It is centred at its own label width, not stretched. `inset-x-4` made
-        it 406px wide on a two-column card, which reads as a bar across the
-        preview and not as a button (review 5.11). `left-1/2 -translate-x-1/2`
-        centres it without a wrapper element; only `opacity` transitions, so
-        the offset never animates.
+        A real `<a>`, not a click handler: it is the one door into the
+        prototype that a touch user, a middle click and "open in new tab"
+        all find. The Viewer is rendered by Python at /u/<user>/<slug> and
+        is deliberately outside the SPA router (`router.ts:11`), so this is
+        an href and not a RouterLink.
       -->
-      <Button
-        class="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 opacity-0 shadow-lg transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-        icon-left="lucide-external-link"
-        label="Open prototype"
-        theme="gray"
-        variant="subtle"
-        @click="openViewer"
+      <h2 class="min-w-0 flex-1 truncate text-base-medium text-ink-gray-8">
+        <a class="hover:underline" :href="prototype.viewer_path">{{ prototype.title }}</a>
+      </h2>
+      <!--
+        The Badge reports the state. It does not set it: Share and Make
+        private are in the menu, so nothing on the card can be toggled by a
+        stray click on the artwork. `sm` keeps it quieter than the name beside
+        it, and green reads as "anyone can reach this", which is the fact that
+        matters here.
+      -->
+      <Badge
+        :label="prototype.is_public ? 'Public' : 'Private'"
+        size="sm"
+        :theme="prototype.is_public ? 'green' : 'gray'"
       />
-    </div>
+      <!--
+        Open sits on the action rail beside the menu, not over the preview. A
+        button floating on the artwork needed a shadow to stay legible, and it
+        appeared on hover only, so it was invisible until the pointer arrived
+        and absent on touch. Here it is always on screen and always in the
+        same place.
 
-    <div class="mt-3 flex h-10 items-start gap-2">
-      <div class="min-w-0 flex-1">
-        <!--
-          A real `<a>`, not a click handler: it is the one door into the
-          prototype that a touch user, a middle click and "open in new tab"
-          all find. The Viewer is rendered by Python at /u/<user>/<slug> and
-          is deliberately outside the SPA router (`router.ts:11`), so this is
-          an href and not a RouterLink.
-        -->
-        <h2 class="truncate text-base-medium text-ink-gray-8">
-          <a class="hover:underline" :href="prototype.viewer_path">{{ prototype.title }}</a>
-        </h2>
-        <p class="mt-1 truncate text-sm text-ink-gray-5">{{ subtitle }}</p>
-      </div>
+        Icon-only with a Tooltip, the same treatment as "Copy public link"
+        below. DESIGN principle 6 reserves that for universal actions, and the
+        card names the target three times over: the title, the preview and the
+        path. The menu drops its own Open row, which this replaces.
+      -->
+      <Tooltip text="Open prototype">
+        <Button
+          aria-label="Open prototype"
+          icon="lucide-external-link"
+          variant="ghost"
+          @click="openViewer"
+        />
+      </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
 
-    <div
-      class="mt-2 flex h-9 items-center justify-between border-t border-outline-gray-1 pt-2"
-    >
-      <span class="truncate text-xs text-ink-gray-5">Updated {{ prototype.updated }}</span>
-      <!--
-        The label goes through the slot only to drop it to 12px, so both ends
-        of this row sit on one type step. `InputLabel.vue:39` hard-codes
-        `text-base` on the label element and takes no size prop, and the span
-        inside it wins on the cascade. The row height does not move: the
-        switch group is the 16px control plus `py-1.5` (`Switch.vue:192`),
-        which is the 28px this `h-9 pt-2` row already reserves.
-      -->
-      <Switch
-        :disabled="busy"
-        :model-value="prototype.is_public"
-        @update:model-value="
-          (value) => setPublic.submit({ slug: prototype.slug, is_public: value })
-        "
-      >
-        <template #label>
-          <span class="text-xs">{{ prototype.is_public ? 'Public' : 'Private' }}</span>
-        </template>
-      </Switch>
-    </div>
-
     <!--
-      Reserved in both states, so the switch never changes the card height.
-      Both states start their text on the card's own left edge, with no button
-      padding in front of it, so flipping the switch does not shift the line.
-      The path is meta, not a title: 12px mono ink-gray-5 keeps the name above
-      it the loudest thing on the card.
+      Every meta fact on one line, in the order a user asks for them: how big
+      is it, when did the agent last touch it. One separator, one type step,
+      one ink step, so the line reads as a single caption and not as a list.
+
+      The copy button only exists while there is a link to copy. The row keeps
+      its height either way, because `h-7` is the button's own height.
     -->
     <div class="flex h-7 items-center justify-between gap-2">
-      <template v-if="prototype.is_public">
-        <span class="min-w-0 truncate font-mono text-xs text-ink-gray-5">
-          {{ prototype.viewer_path }}
-        </span>
-        <!--
-          Icon-only because copy is universal and the path beside it already
-          names what is copied. The `sm` icon button is 28px square
-          (`Button.vue:209`), which is this row's full height, so its right
-          edge lands on the same rail as the menu button and the switch.
-        -->
-        <Tooltip text="Copy public link">
-          <Button
-            aria-label="Copy public link"
-            icon="lucide-copy"
-            size="sm"
-            variant="ghost"
-            @click="copyPublicUrl"
-          />
-        </Tooltip>
-      </template>
-      <span v-else class="truncate text-xs text-ink-gray-5">Private. Only you can open it.</span>
+      <span class="min-w-0 truncate text-xs text-ink-gray-5">
+        {{ subtitle }} &middot; Updated {{ prototype.updated }}
+      </span>
+      <!--
+        Icon-only because copy is universal, and the Badge above already says
+        the link exists. Its right edge lands on the same rail as the menu
+        button on the row above (`Button.vue:209`, `sm` is 28px square).
+      -->
+      <Tooltip v-if="prototype.is_public" text="Copy public link">
+        <Button
+          aria-label="Copy public link"
+          icon="lucide-copy"
+          size="sm"
+          variant="ghost"
+          @click="copyPublicUrl"
+        />
+      </Tooltip>
     </div>
 
     <PrototypeHistoryDialog v-model:open="historyOpen" :prototype="prototype" />

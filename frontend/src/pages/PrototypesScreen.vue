@@ -163,20 +163,22 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageHeader>
+  <!--
+    No rule under the title. The top bar already draws one, and a second line
+    12px below it read as a double border rather than as a section edge.
+
+    `border-b-0` beats `PageHeader.vue`'s own `border-b` on source order, not
+    on specificity: Tailwind emits `.border-b-0` after `.border-b`. The
+    component hard-codes the border and exposes no prop, and its class lands
+    on the same element as ours through `PageHeaderBase`'s `$attrs`.
+
+    `pt-6` matches the body's own top padding below, so the title sits on the
+    same rhythm as the grid. The component is `min-h-12 justify-center`, so
+    padding moves the content down and the header grows with it.
+  -->
+  <PageHeader class="border-b-0 pt-6">
     <div class="min-w-0">
       <h1 class="truncate text-2xl-semibold text-ink-gray-8">Your prototypes</h1>
-      <!--
-        A fixed line box. The count is unknown until the list lands, and "0
-        prototypes" beside a grid of skeleton cards was a lie, so the slot
-        holds a Skeleton until then instead of collapsing.
-      -->
-      <div class="flex h-5 items-center">
-        <Skeleton v-if="firstLoad" class="h-4 w-24" />
-        <p v-else class="text-p-xs text-ink-gray-5">
-          {{ count }} {{ count === 1 ? 'prototype' : 'prototypes' }}
-        </p>
-      </div>
     </div>
     <!--
       One action per screen (DESIGN.md principle 3), and it lives here in
@@ -186,8 +188,8 @@ onMounted(() => {
       The empty state below therefore never repeats this label.
 
       It waits for the first list only so the header does not offer an action
-      over skeleton cards. The header is `min-h-12` and the title block is
-      taller than that, so a 28px button appearing changes no height.
+      over skeleton cards. The button is 28px and the `h1` line box is 28px,
+      so the row height is the same whether or not the button is there.
     -->
     <Button
       v-if="!firstLoad"
