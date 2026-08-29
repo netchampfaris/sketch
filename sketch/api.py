@@ -262,6 +262,98 @@ def list_prototypes() -> list[dict]:
 	return items
 
 
+def public_prototypes() -> list[dict]:
+	"""Every public Prototype on the site, newest first. The /feed listing.
+
+	Not whitelisted, on purpose. `sketch/www/feed.py` renders the page on the
+	server, so nothing calls this over HTTP and the method surface a Guest can
+	reach does not grow by one.
+
+	This is the one read in this file that drops the permission check, and the
+	filter is why. `list_prototypes` above keeps `get_list` because a role can
+	express "the rows you own": `Sketch User` carries `if_owner`. No role
+	expresses "the rows anybody made public", and the caller here is usually a
+	Guest, who holds no role at all, so `get_list` would answer an empty list
+	for every visitor the feed exists for.
+
+	`is_public` is therefore the whole permission check. It is set here, it is
+	never taken from the caller, and it is the only filter, so a private
+	Prototype cannot reach the page. The field list carries nothing a private
+	Prototype could leak through either: no file content, no token, no email.
+
+	The order is the tree's own stamp, the same value `list_prototypes` sorts
+	on and the same one each row prints as "Updated ...". Ordering on the
+	document's `modified` would send a Prototype to the head of the feed for
+	the flip of a switch, which is review 5.7 with a bigger audience. SQL
+	cannot see an mtime, so the sort happens here. The cost is one stat per
+	file of every public Prototype on the site, and the caller cannot avoid it
+	by asking for fewer rows: the order needs the whole set.
+
+	A row whose owner has no username is left out. `/u/<username>/<slug>` is
+	the only address a Prototype has (`sketch/viewer.py`), so a row without one
+	has no link the feed could print.
+	"""
+	rows = frappe.get_all(
+		"Sketch Prototype",
+		filters={"is_public": 1},
+		fields=["name", "title", "slug", "owner", "creation"],
+		order_by="creation desc",
+		limit_page_length=0,
+	)
+	usernames = _usernames([row.owner for row in rows])
+	items = [_public_row(row, usernames[row.owner]) for row in rows if usernames.get(row.owner)]
+	# Python's sort is stable, so the SQL order above survives as the tiebreak
+	# between two Prototypes whose newest file carries the same second.
+	items.sort(key=lambda item: item["modified"], reverse=True)
+	return items
+
+
+def _usernames(owners: list[str]) -> dict[str, str]:
+	"""The username of each owner, in one read.
+
+	One query for the whole feed, not one per row. A user with no username is
+	absent from the answer rather than present with an empty value, so the
+	caller has one thing to test.
+	"""
+	if not owners:
+		return {}
+
+	rows = frappe.get_all(
+		"User",
+		filters={"name": ("in", sorted(set(owners)))},
+		fields=["name", "username"],
+		limit_page_length=0,
+	)
+	return {row.name: row.username for row in rows if row.username}
+
+
+def _public_row(row, username: str) -> dict:
+	"""One feed item.
+
+	`_row` cannot serve here. Its username is the session user's, and on a
+	feed of every owner's work that addresses the wrong Viewer.
+
+	No `pin` and no `is_public`: every row on the feed is public, and the Pin
+	is a build detail that told a reader nothing they could act on
+	(review 5.8).
+	"""
+	files = prototype_files.list_files(row.name)
+	count = len(files)
+	# Falls back to `creation`, never to `modified`, for the reason
+	# `public_prototypes` gives: `modified` moves on a visibility toggle, and
+	# the toggle is what puts a Prototype on this page.
+	updated_at = _content_modified(row.name, files) or str(row.creation or "")
+	return {
+		"title": row.title,
+		"username": username,
+		"slug": row.slug,
+		"viewer_path": f"/u/{username}/{row.slug}",
+		"description": f"{count} {'file' if count == 1 else 'files'}",
+		"modified": updated_at,
+		"updated": pretty_date(updated_at) if updated_at else "",
+	}
+
+
 @frappe.whitelist()
 def list_versions(slug: str) -> list[dict]:
 	"""The version history of one Prototype, newest first.

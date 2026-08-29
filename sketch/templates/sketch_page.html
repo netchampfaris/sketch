@@ -1,6 +1,7 @@
 {#
-  The shell for every Sketch page that is not the SPA: the marketing page at
-  `/`, `/login` and `/help`.
+  The shell for every Sketch page that is not the SPA: `/feed`, `/login` and
+  `/help`. `/feed` is the one a signed-out visitor at `/` is sent to
+  (`sketch/www/sketch.py`).
 
   It extends `templates/base.html`, not `templates/web.html`. web.html wraps
   its content in the portal's breadcrumb bar, bootstrap container and sidebar
@@ -369,6 +370,114 @@
 		min-width: 0;
 		text-align: right;
 		overflow-wrap: anywhere;
+	}
+
+	/*
+	 * The feed list (`sketch/www/feed.html`).
+	 *
+	 * A row is a link, and the whole row is not the target: the title is.
+	 * Hover therefore underlines the title instead of filling a surface. A
+	 * hover surface would need the gutter bleed `.sk-brand` uses, and the
+	 * separator rule between two rows would then stop short of it on both
+	 * sides. DESIGN principle 2 separates rows with a rule, so the rule wins.
+	 *
+	 * `.sk-rows` above cannot serve this list: that ladder is label over
+	 * value, its rows are not targets, and it aligns its second column to the
+	 * right edge of the card.
+	 */
+	.sk-feed {
+		list-style: none;
+		padding: 0;
+	}
+
+	.sk-feed > li + li {
+		border-top: 1px solid var(--outline-gray-1);
+	}
+
+	.sk-feed-row {
+		display: flex;
+		align-items: baseline;
+		gap: calc(var(--spacing) * 4);
+		padding-block: calc(var(--spacing) * 3);
+		color: var(--ink-gray-8);
+		text-decoration: none;
+	}
+
+	.sk-feed-row:hover {
+		color: var(--ink-gray-8);
+		text-decoration: none;
+	}
+
+	.sk-feed-row:hover .sk-feed-title {
+		text-decoration: underline;
+		text-underline-offset: calc(var(--spacing) * 0.5);
+	}
+
+	.sk-feed-main {
+		display: flex;
+		min-width: 0;
+		flex: 1 1 auto;
+		flex-direction: column;
+	}
+
+	/* A repeating trailing element gets a fixed column, per DESIGN principle
+	   5, so every title ends on the same x. 96px holds the longest
+	   `pretty_date` line ("22 minutes ago") on one line, the same reserve
+	   `PrototypeHistoryDialog.vue` gives the same value. */
+	.sk-feed-when {
+		flex-shrink: 0;
+		width: calc(var(--spacing) * 24);
+		text-align: right;
+	}
+
+	/* One line, always. Both slots carry it, because a title is free text and
+	   a wrap here would move every row below it. */
+	.sk-feed-title,
+	.sk-feed-meta,
+	.sk-feed-when {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	/*
+	 * The empty state, the one recipe: a 48px circle, a 24px glyph, `gap-3`,
+	 * `py-16`, and one action at the subtle weight, which `.sk-btn` already
+	 * is.
+	 *
+	 * The recipe is written in Tailwind for the SPA, and the website bundle
+	 * carries no `grid`, no `size-12` and no `lucide-*` class, so the geometry
+	 * is spelt here in the same token steps and the glyph is inline SVG, the
+	 * way `.sk-note` carries its own.
+	 */
+	.sk-empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: calc(var(--spacing) * 3);
+		padding-block: calc(var(--spacing) * 16);
+		text-align: center;
+	}
+
+	.sk-empty-mark {
+		display: grid;
+		place-items: center;
+		height: calc(var(--spacing) * 12);
+		width: calc(var(--spacing) * 12);
+		border-radius: var(--radius-full);
+		background-color: var(--surface-gray-2);
+		color: var(--ink-gray-5);
+	}
+
+	.sk-empty-icon {
+		height: calc(var(--spacing) * 6);
+		width: calc(var(--spacing) * 6);
+	}
+
+	/* `max-w-sm` in the recipe. The body is the one node here that wraps. */
+	.sk-empty-body {
+		max-width: calc(var(--spacing) * 96);
 	}
 
 	.sk-narrow {

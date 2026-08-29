@@ -1,0 +1,135 @@
+{#
+  /feed: every public Prototype on this site, and the front door for a
+  signed-out visitor.
+
+  What the page shows, and what it costs. One row of text per Prototype: the
+  title, who wrote it, how many files, and when it last changed. No preview.
+  The SPA gallery renders a live Viewer iframe per card
+  (`frontend/src/components/PrototypePreview.vue`), which boots a whole
+  Runtime per frame; a feed of every public Prototype on the site cannot pay
+  that. `sketch/www/feed.py` PAGE_SIZE holds the numbers.
+
+  Escaping is explicit. Frappe builds its Jinja environment with no
+  `autoescape` (`frappe/utils/jinja.py:66`), so `{{ x }}` writes raw HTML. A
+  title and a username are written by a user, so every one of them carries
+  `| e`, the way core's own templates do (`frappe/templates/web.html:43`).
+#}
+{% extends "sketch/templates/sketch_page.html" %}
+
+{% block bar_actions %}
+{% if signed_in %}
+<a class="sk-btn sk-btn--ghost sk-btn--sm text-base" href="/">Open Sketch</a>
+{% else %}
+<a class="sk-btn sk-btn--sm text-base" href="/login">Sign in</a>
+{% endif %}
+{% endblock %}
+
+{% block sketch_content %}
+<section class="sk-measure">
+	<h1 class="text-2xl-semibold">Public prototypes</h1>
+	<p class="sk-mt-1 text-p-xs sk-ink-5">Prototypes their owners made public, newest first</p>
+
+	{#
+	  Problem 8.1, in one sentence. The root used to answer a signed-out
+	  visitor with a login form for a product they had never read a line
+	  about; it now answers with this page, so this page has to say what
+	  Sketch is before it asks for anything. The sentence is the one
+	  `sketch/www/login.html:30` already prints, word for word.
+	#}
+	<p class="sk-mt-4 text-p-base sk-ink-7">
+		Sketch renders frappe-ui prototypes that your own agent writes over MCP.
+	</p>
+
+	{% if not signed_in %}
+	<div class="sk-mt-4">
+		<a class="sk-btn text-base-medium" href="/login">Sign in</a>
+	</div>
+	<p class="sk-mt-2 text-p-xs sk-ink-5">
+		Sketch signs you in with GitHub. The same button makes your account.
+	</p>
+	{% endif %}
+</section>
+
+<section class="sk-mt-10 sk-measure">
+	{% if prototypes %}
+	{#
+	  The cap is stated, never silent. `capped` is computed in get_context, so
+	  this line cannot disagree with the list under it.
+	#}
+	<p class="text-xs sk-ink-5">
+		{% if capped %}
+		Showing the newest {{ prototypes | length }} of {{ total }}. Each one opens in a new tab.
+		{% else %}
+		{{ total }} prototype{{ "" if total == 1 else "s" }}. Each one opens in a new tab.
+		{% endif %}
+	</p>
+
+	<ul class="sk-mt-2 sk-feed">
+		{% for item in prototypes %}
+		{#
+		  `rel="noopener"` is not optional. The Viewer runs prototype code that
+		  somebody else's agent wrote, and without it that page holds a live
+		  `window.opener` handle to this one. The SPA card carries the same
+		  token for the same reason
+		  (`frontend/src/components/PrototypeCard.vue:77`). It implies
+		  `noreferrer` in every current browser, so one token is enough.
+		#}
+		<li>
+			<a
+				class="sk-feed-row"
+				href="/u/{{ item.username | e }}/{{ item.slug | e }}"
+				rel="noopener"
+				target="_blank"
+			>
+				<span class="sk-feed-main">
+					<span class="sk-feed-title text-base-medium">{{ item.title | e }}</span>
+					<span class="sk-feed-meta sk-mt-1 text-xs sk-ink-5">
+						{{ item.username | e }} &middot; {{ item.description }}
+					</span>
+				</span>
+				<span class="sk-feed-when text-xs sk-ink-5">{{ item.updated }}</span>
+			</a>
+		</li>
+		{% endfor %}
+	</ul>
+	{% else %}
+	{#
+	  The empty state a site with no public Prototype gets, per the one recipe
+	  in the conventions: the 48px circle, the 24px glyph, `gap-3`, and one
+	  action at the subtle weight.
+
+	  lucide-panels-top-left, the glyph the recipe names. Inline, because the
+	  `lucide-*` classes come from the frappe-ui Tailwind plugin and the
+	  website bundle does not carry them.
+	#}
+	<div class="sk-empty">
+		<span class="sk-empty-mark">
+			<svg
+				aria-hidden="true"
+				class="sk-empty-icon"
+				fill="none"
+				stroke="currentColor"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="2"
+				viewBox="0 0 24 24"
+				xmlns="http://www.w3.org/2000/svg"
+			>
+				<rect height="18" rx="2" width="18" x="3" y="3"/>
+				<path d="M3 9h18"/>
+				<path d="M9 21V9"/>
+			</svg>
+		</span>
+		<p class="text-base-medium">No public prototypes yet</p>
+		<p class="sk-empty-body text-p-sm sk-ink-5">
+			A prototype lands here when its owner turns on the public link.
+		</p>
+		{% if signed_in %}
+		<a class="sk-btn sk-mt-2 text-base-medium" href="/">Open Sketch</a>
+		{% else %}
+		<a class="sk-btn sk-mt-2 text-base-medium" href="/login">Sign in</a>
+		{% endif %}
+	</div>
+	{% endif %}
+</section>
+{% endblock %}

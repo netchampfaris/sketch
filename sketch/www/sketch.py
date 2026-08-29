@@ -1,4 +1,4 @@
-"""The one page that boots the Sketch SPA, and the page a Guest gets instead.
+"""The one page that boots the Sketch SPA, and where a Guest goes instead.
 
 `home_page = "sketch"` in hooks.py points the site root here, and
 `website_route_rules` sends `/settings` here as well.
@@ -7,13 +7,13 @@
 from urllib.parse import quote
 
 import frappe
-from frappe.utils import get_url
 
 no_cache = 1
 
-#: The template a signed-out visitor gets at the site root. It sits outside
-#: `templates/pages`, so `/` stays its only address (see the file's own note).
-MARKETING_TEMPLATE = "sketch/templates/marketing.html"
+#: Where a signed-out visitor at the site root is sent. `sketch/www/feed.py`
+#: renders it on the server, so a Guest can read it with no session and no
+#: role.
+FEED_PATH = "/feed"
 
 #: The request paths that count as the site root. `/` resolves through
 #: `home_page`, and `/index` reaches the same renderer, so both are the root as
@@ -24,7 +24,9 @@ ROOT_PATHS = ("", "/index")
 
 def get_context():
 	if frappe.session.user == "Guest":
-		return _guest_context()
+		# Never returns. Both answers leave this page, so nothing below runs
+		# for a Guest and no Guest is handed the bundle.
+		_redirect_guest()
 
 	csrf_token = frappe.sessions.get_csrf_token()
 	frappe.db.commit()
@@ -34,20 +36,24 @@ def get_context():
 	return context
 
 
-def _guest_context() -> frappe._dict:
-	"""Answer a signed-out visitor without serving the SPA bundle.
+def _redirect_guest() -> None:
+	"""Send a signed-out visitor away, without serving the SPA bundle.
 
-	Two answers, decided by the path.
+	Two destinations, decided by the path.
 
-	The site root gets the marketing page. Every public URL used to redirect,
+	The site root goes to /feed. Every public URL used to redirect to /login,
 	so the first thing a visitor met was a login form for a product they had
-	never read a sentence about (problem 8.1). Swapping `context.template` is
-	enough to change the page: `TemplatePage.get_html` calls `update_context`,
-	which runs this function, before `setup_template_source` reads the template
-	(`frappe/website/page_renderers/template_page.py:87-100`), and
-	`BaseTemplatePage.post_process_context` then copies `context.template` back
-	over `self.template_path`
-	(`frappe/website/page_renderers/base_template_page.py:34`).
+	never read a sentence about (problem 8.1). The feed answers that: it says
+	what Sketch is in one line, it carries the sign-in action, and it shows
+	real work. It is server rendered for this reason, so a Guest reads it with
+	no session and no role (`sketch/www/feed.py`).
+
+	The status is 302, not core's default 301. A 301 on the site root is a
+	permanent instruction: a browser may keep it, and the same person, now
+	signed in, would be sent to /feed forever and never reach the app again.
+	`frappe.Redirect` takes the status (`frappe/exceptions.py:77-79`) and
+	`handle_exception` hands it to `RedirectPage`
+	(`frappe/website/serve.py:29-30`).
 
 	Every other path here is a deep link into the app: `/settings` and
 	`/sketch/...`. Those still bounce to /login, and the bounce happens before
@@ -60,20 +66,8 @@ def _guest_context() -> frappe._dict:
 	if path not in ROOT_PATHS:
 		_redirect_to_login(request)
 
-	return frappe._dict(
-		{
-			"template": MARKETING_TEMPLATE,
-			"title": "Sketch",
-			"description": (
-				"High-fidelity frappe-ui prototypes, written by your own agent over MCP."
-			),
-			# One page owns the OAuth URL, so the button here only has to point
-			# at it. /login also keeps a `redirect-to` when core sends a deep
-			# link through it.
-			"sign_in_url": "/login",
-			"mcp_url": get_url("/mcp"),
-		}
-	)
+	frappe.local.flags.redirect_location = FEED_PATH
+	raise frappe.Redirect(302)
 
 
 def _redirect_to_login(request) -> None:

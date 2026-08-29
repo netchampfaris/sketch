@@ -24,6 +24,9 @@ from sketch.tests import utils
 #: The three walls the page exists to name (`sketch/mcp/http.py`, ERRORS).
 ERROR_NAMES = ("no_credentials", "wrong_auth_scheme", "invalid_token")
 
+#: The top-level config key, per client. The most common way a paste fails.
+CONFIG_KEYS = ("servers", "mcp", "mcp_servers", "mcpServers")
+
 
 class TestHelpPage(IntegrationTestCase):
 	def setUp(self):
@@ -66,7 +69,7 @@ class TestHelpPage(IntegrationTestCase):
 
 	def test_the_page_names_this_sites_own_endpoint(self):
 		"""`get_url("/mcp")` on the site under test, never a hard-coded host.
-		A reader pastes this line into their client.
+		A reader pastes the `claude mcp add` line into a shell.
 
 		`site_config.host_name` wins inside `get_url`
 		(`frappe/utils/data.py:1965-1970`), so this process and the web server
@@ -82,6 +85,28 @@ class TestHelpPage(IntegrationTestCase):
 		for name in ERROR_NAMES:
 			self.assertIn(name, body)
 
+	def test_the_page_names_every_top_level_config_key(self):
+		"""The wrong key fails with no error at all, so the client simply has
+		no Sketch tools. The page maps that symptom to the four keys."""
+		body = self.get_help()
+
+		for key in CONFIG_KEYS:
+			self.assertIn(f"<code>{key}</code>", body)
+
+	def test_the_page_names_the_claude_code_scope_flag(self):
+		"""Without it, Claude Code binds Sketch to one directory."""
+		self.assertIn("--scope user", self.get_help())
+
+	def test_the_page_says_claude_ai_connectors_cannot_work(self):
+		"""The dialog takes a URL only and sends no Authorization header. A
+		reader who tries it has no error to read."""
+		self.assertIn("claude.ai connector", self.get_help())
+
+	def test_the_page_sends_the_reader_to_settings_for_the_token(self):
+		"""The page carries no token and no per-client block. Settings holds
+		both, so the page points instead of repeating."""
+		self.assertIn('href="/settings"', self.get_help())
+
 	def test_the_page_is_the_sketch_shell(self):
 		"""Same chrome as `/` and `/login`, so the three read as one product."""
 		self.assertIn('class="sk-shell"', self.get_help())
@@ -92,10 +117,14 @@ class TestHelpPage(IntegrationTestCase):
 
 	# --------------------------------------------------- who points at it
 
-	def test_the_marketing_page_links_to_it(self):
+	def test_the_feed_links_to_it(self):
 		"""A dead link in the footer is worse than no link. Both Guest pages
-		carry one, so both are checked against the live route."""
-		self.assertIn('href="/help"', utils.request("GET", "/").text)
+		carry one, so both are checked against the live route.
+
+		This asks /feed, not /. The root is a 302 to /feed for a Guest now,
+		`utils.request` follows no redirect, and an empty body carries no
+		link at all."""
+		self.assertIn('href="/help"', utils.request("GET", "/feed").text)
 
 	def test_the_login_page_links_to_it(self):
 		self.assertIn('href="/help"', utils.request("GET", "/login").text)
