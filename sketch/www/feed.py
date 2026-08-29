@@ -5,7 +5,8 @@
 
 Server rendered, like /login and /help, because a Guest has to read it with no
 session and no role. The listing itself is `sketch.api.public_prototypes`,
-which explains the filter that keeps a private Prototype off this page.
+which explains the filter that keeps a private Prototype off this page, and
+carries the card picture of each row (`sketch/thumbnails.py`).
 
 `sketch/www/sketch.py` now sends a signed-out visitor here, so this page also
 holds the job the marketing page used to hold: one line that says what Sketch
@@ -22,17 +23,15 @@ no_cache = 1
 
 #: How many Prototypes one page of the feed prints.
 #:
-#: The SPA gallery draws a live Viewer iframe per card
-#: (`frontend/src/components/PrototypePreview.vue`), and every frame boots a
-#: whole Runtime: about 4.5 MB of assets for the first one and a Vue app, a
-#: Tailwind compile and an SFC compile for each one after that. Across every
-#: public Prototype on the site that does not scale, so this page prints text.
-#: A row costs no request and no Runtime.
+#: A card is one PNG, requested lazily (`sketch/thumbnails.py`), so the page
+#: pays one small image per card that scrolls into view. It used to print text
+#: rows, because a preview was a live Viewer iframe and a page of those boots a
+#: whole Runtime each.
 #:
 #: The cap is therefore about what a visitor reads, not what the server pays.
 #: The order needs the tree stamp of every public Prototype
 #: (`sketch.api.public_prototypes`), so the stat walk is the whole set at any
-#: page size. Two dozen rows is a page somebody finishes; the rest of the list
+#: page size. Two dozen cards is a page somebody finishes; the rest of the list
 #: is a directory, and the page says so instead of ending without a word.
 PAGE_SIZE = 24
 

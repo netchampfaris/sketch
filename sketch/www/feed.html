@@ -2,12 +2,15 @@
   /feed: every public Prototype on this site, and the front door for a
   signed-out visitor.
 
-  What the page shows, and what it costs. One row of text per Prototype: the
-  title, who wrote it, how many files, and when it last changed. No preview.
-  The SPA gallery renders a live Viewer iframe per card
-  (`frontend/src/components/PrototypePreview.vue`), which boots a whole
-  Runtime per frame; a feed of every public Prototype on the site cannot pay
-  that. `sketch/www/feed.py` PAGE_SIZE holds the numbers.
+  A grid of cards, the same one the SPA gallery draws
+  (`frontend/src/components/PrototypeCard.vue`): a picture, the name, and one
+  line of meta. It used to be text rows, because a preview was a live Viewer
+  iframe and this page cannot boot a Runtime per public Prototype. The preview
+  is a PNG now (`sketch/thumbnails.py`), so both surfaces draw the same card.
+
+  The picture is the light one. These pages carry no theme control, and core's
+  token layer only turns dark on `[data-theme="dark"]`, which nothing here
+  sets. `sketch/www/feed.py` PAGE_SIZE holds how many.
 
   Escaping is explicit. Frappe builds its Jinja environment with no
   `autoescape` (`frappe/utils/jinja.py:66`), so `{{ x }}` writes raw HTML. A
@@ -50,7 +53,13 @@
 	{% endif %}
 </section>
 
-<section class="sk-mt-10 sk-measure">
+{#
+  No `sk-measure` on this section. That cap is 640px, which is a reading
+  measure for the prose above; a two-column grid of 16:10 pictures inside it
+  would draw cards a third the width of the gallery's. The grid takes the
+  940px column instead, the same one the SPA lays its cards in.
+#}
+<section class="sk-mt-10">
 	{% if prototypes %}
 	{#
 	  The cap is stated, never silent. `capped` is computed in get_context, so
@@ -64,30 +73,68 @@
 		{% endif %}
 	</p>
 
-	<ul class="sk-mt-2 sk-feed">
+	<ul class="sk-mt-4 sk-grid">
 		{% for item in prototypes %}
 		{#
 		  `rel="noopener"` is not optional. The Viewer runs prototype code that
 		  somebody else's agent wrote, and without it that page holds a live
 		  `window.opener` handle to this one. The SPA card carries the same
-		  token for the same reason
-		  (`frontend/src/components/PrototypeCard.vue:77`). It implies
+		  token for the same reason (`PrototypeCard.vue`). It implies
 		  `noreferrer` in every current browser, so one token is enough.
 		#}
-		<li>
+		<li class="sk-item">
 			<a
-				class="sk-feed-row"
+				class="sk-item-link"
 				href="/u/{{ item.username | e }}/{{ item.slug | e }}"
 				rel="noopener"
 				target="_blank"
 			>
-				<span class="sk-feed-main">
-					<span class="sk-feed-title text-base-medium">{{ item.title | e }}</span>
-					<span class="sk-feed-meta sk-mt-1 text-xs sk-ink-5">
-						{{ item.username | e }} &middot; {{ item.description }}
+				<span class="sk-shot">
+					{#
+					  `alt=""`: the title under the picture is the same link and
+					  carries the name, so a described image would be announced
+					  twice. `loading="lazy"` matters on a full page of them.
+					#}
+					{% if item.thumbnail and item.thumbnail.light %}
+					<img alt="" decoding="async" loading="lazy" src="{{ item.thumbnail.light | e }}"/>
+					{% else %}
+					{#
+					  No picture yet. The reader here is not the owner and
+					  cannot run the check that would draw one, so this says
+					  what is true and asks for nothing.
+
+					  lucide-image, inline: the `lucide-*` classes come from the
+					  frappe-ui Tailwind plugin and the website bundle does not
+					  carry them.
+					#}
+					<span class="sk-shot-empty">
+						<svg
+							aria-hidden="true"
+							class="sk-shot-icon"
+							fill="none"
+							stroke="currentColor"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							viewBox="0 0 24 24"
+							xmlns="http://www.w3.org/2000/svg"
+						>
+							<rect height="18" rx="2" ry="2" width="18" x="3" y="3"/>
+							<circle cx="9" cy="9" r="2"/>
+							<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+						</svg>
+						<span class="text-xs">No preview yet</span>
+					</span>
+					{% endif %}
+				</span>
+				<span class="sk-item-row">
+					<span class="sk-item-title text-base-medium">{{ item.title | e }}</span>
+				</span>
+				<span class="sk-item-row">
+					<span class="sk-item-meta text-xs sk-ink-5">
+						{{ item.username | e }} &middot; {{ item.description }} &middot; Updated {{ item.updated }}
 					</span>
 				</span>
-				<span class="sk-feed-when text-xs sk-ink-5">{{ item.updated }}</span>
 			</a>
 		</li>
 		{% endfor %}
