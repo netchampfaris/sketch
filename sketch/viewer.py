@@ -130,7 +130,12 @@ class SketchViewerRenderer(BaseRenderer):
 	def is_live(self) -> bool:
 		"""True when this page may poll sketch.api.prototype_revision.
 
-		Only the owner, in a real browser session, gets the poller. Two other
+		"May", not "does". The renderer cannot tell a top-level tab from the
+		gallery's card iframe, so the last word belongs to the page: only a
+		top-level document starts the poller, and only it prints the line that
+		promises a reload (runtime/viewer/boot.js, reloadsItself).
+
+		Only the owner, in a real browser session, gets that far. Two other
 		callers reach the same document and must not poll:
 
 		- `check`. It comes in as Guest with the signature `can_render` reads
@@ -154,7 +159,9 @@ class SketchViewerRenderer(BaseRenderer):
 		never reloaded. That window is exactly when the agent writes.
 
 		It is a stat walk, so only a live page pays for it. A Guest and a
-		`check` request get "" and never call revision().
+		`check` request get "" and never call revision(). The owner's own card
+		preview still pays for a baseline its iframe never polls with, which is
+		one stat walk per card and the price of one honest `live` flag here.
 		"""
 		live = self.is_live()
 		return {
