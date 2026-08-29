@@ -67,18 +67,57 @@ export async function logout(): Promise<void> {
   window.location.href = '/login'
 }
 
-/** Put text on the clipboard. Falls back to a hidden textarea on http. */
-export async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
+/**
+ * The textarea fallback for a browser with no async clipboard.
+ *
+ * `execCommand('copy')` returns false instead of throwing when the write is
+ * refused, so the boolean is the only failure signal there is. The field is
+ * removed in `finally`: an exception used to leave an invisible textarea in
+ * the DOM, and every later copy added another one.
+ */
+function copyWithTextarea(text: string): boolean {
   const field = document.createElement('textarea')
   field.value = text
   field.style.position = 'fixed'
   field.style.opacity = '0'
   document.body.appendChild(field)
-  field.select()
-  document.execCommand('copy')
-  document.body.removeChild(field)
+  try {
+    field.select()
+    return document.execCommand('copy')
+  } finally {
+    document.body.removeChild(field)
+  }
+}
+
+/**
+ * Put text on the clipboard. Falls back to a hidden textarea on http.
+ *
+ * Rejects when the text did not reach the clipboard, after showing the text
+ * so the user can select it by hand. A silent failure was worse than no copy
+ * at all: the user believed the token was on the clipboard, pasted whatever
+ * was there before into an agent config, and blamed the token.
+ *
+ * `navigator.clipboard.writeText` rejects on a denied permission, on a
+ * document that is not focused, and on any page the browser does not treat as
+ * a secure context. None of that is visible to the caller otherwise.
+ *
+ * The rejection is the contract, not a leak: every caller awaits this and
+ * then reports success, so swallowing the error would put a green "Copied"
+ * toast next to the red one. `toast` de-duplicates on `id`, so a burst of
+ * failed copies replaces one message instead of stacking (DESIGN.md >
+ * Toasts).
+ */
+export async function copyText(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+    if (!copyWithTextarea(text)) throw new Error('execCommand("copy") was refused')
+  } catch (error) {
+    toast.error(`Could not copy. Select this and copy it by hand: ${text}`, {
+      id: 'copy-text',
+    })
+    throw error
+  }
 }

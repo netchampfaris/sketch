@@ -3,8 +3,9 @@
  * The one bar above every screen (spec 11).
  *
  * Sketch has two screens and one action, so a 14rem sidebar was furniture.
- * The mark goes left, the account menu goes right, and everything the sidebar
- * carried moves into that menu.
+ * The mark goes left; Settings and the account menu go right. Settings is a
+ * labelled button rather than a menu row, because it is the one page a user
+ * has to find again: it holds the agent token.
  *
  * The bar is a fixed h-12. Nothing in it depends on the session: the Avatar
  * keeps its size with no label and no image, and the name and the username
@@ -19,6 +20,7 @@
 import { computed } from 'vue'
 import {
   Avatar,
+  Button,
   Dropdown,
   useColorScheme,
   type ColorScheme,
@@ -60,7 +62,22 @@ const menu = computed<DropdownOptions>(() => [
     key: 'account',
     group: username.value ? '@' + username.value : ' ',
     options: [
-      { label: 'Agent connection', icon: 'lucide-plug-zap', route: '/settings' },
+      // Settings left this menu and became a labelled button in the bar, so
+      // the route to the token is visible without opening anything. Help
+      // stays here: it is read once, not returned to.
+      //
+      // `onClick`, not `route`. /help is a server-rendered page
+      // (`sketch/www/help.html`), and the SPA router declares `/` and
+      // `/settings` only (`frontend/src/router.ts`). Menu.vue answers `route`
+      // with `router.push()` and `onClick` only when there is no `route`
+      // (frappe-ui Menu/Menu.vue, `handleItemSelect`), so a `route` here
+      // pushed a path that matched nothing and painted a blank column. A full
+      // page load is correct: /help is outside the SPA.
+      {
+        label: 'Help',
+        icon: 'lucide-circle-help',
+        onClick: () => (window.location.href = '/help'),
+      },
       {
         label: 'Theme',
         icon: 'lucide-sun-moon',
@@ -105,32 +122,58 @@ const menu = computed<DropdownOptions>(() => [
         <span class="text-base-medium text-ink-gray-8">Sketch</span>
       </router-link>
 
-      <Dropdown align="end" :options="menu">
-        <template #default="{ open }">
-          <!-- Only the surface changes on hover and on open, so the bar never
-               moves. The Avatar holds its size with no label and no image. -->
-          <button
-            aria-label="Account"
-            class="flex size-8 shrink-0 items-center justify-center rounded-full transition focus-visible:ring-0 focus-visible:focus-ring"
-            :class="open ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'"
-            type="button"
-          >
-            <Avatar :image="session.data?.user_image" :label="fullName" size="md" />
-          </button>
-        </template>
+      <div class="flex items-center gap-2">
+        <!--
+          Settings is a labelled control in the bar, not a row inside the
+          account menu. The token lives on that page, and the only route to it
+          used to be an unlabelled "S" avatar: a user reconnecting on a second
+          machine had to open a menu to find out. Ghost keeps it quiet next to
+          the page's own action, and the label matches the page title, which
+          the menu row's "Agent connection" did not.
+        -->
+        <Button
+          icon-left="lucide-settings"
+          label="Settings"
+          route="/settings"
+          theme="gray"
+          variant="ghost"
+        />
 
-        <!-- The check marks the live scheme. Only the theme rows set
-             `selected`, and an unset row returns a comment node, which
-             `hasRenderableContent` rejects. So the Theme row keeps its own
-             submenu chevron. -->
-        <template #item-suffix="{ selected }">
-          <span
-            v-if="selected"
-            aria-hidden="true"
-            class="lucide-check size-4 shrink-0 text-ink-gray-7"
-          />
-        </template>
-      </Dropdown>
+        <Dropdown align="end" :options="menu">
+          <template #default="{ open }">
+            <!-- Only the surface changes on hover and on open, so the bar
+                 never moves. The Avatar holds its size with no label and no
+                 image.
+
+                 The 32px target is 4px wider than the 24px `md` Avatar inside
+                 it (frappe-ui Avatar.vue:109, `w-6 h-6`), so centring the
+                 Avatar pushed it 4px inside the right rail that the page
+                 header, the card menus and the dropdowns all share. `-mr-1`
+                 hangs that 4px past the gutter and puts the Avatar back on
+                 the rail. -->
+            <button
+              aria-label="Account"
+              class="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full transition focus-visible:ring-0 focus-visible:focus-ring"
+              :class="open ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'"
+              type="button"
+            >
+              <Avatar :image="session.data?.user_image" :label="fullName" size="md" />
+            </button>
+          </template>
+
+          <!-- The check marks the live scheme. Only the theme rows set
+               `selected`, and an unset row returns a comment node, which
+               `hasRenderableContent` rejects. So the Theme row keeps its own
+               submenu chevron. -->
+          <template #item-suffix="{ selected }">
+            <span
+              v-if="selected"
+              aria-hidden="true"
+              class="lucide-check size-4 shrink-0 text-ink-gray-7"
+            />
+          </template>
+        </Dropdown>
+      </div>
     </div>
   </header>
 </template>
