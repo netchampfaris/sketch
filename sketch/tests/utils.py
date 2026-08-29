@@ -318,3 +318,21 @@ def data_slot(html: str) -> dict:
 		raise AssertionError("the sketch-data slot is never closed")
 
 	return json.loads(html[start:end])
+
+
+def api_auth_header(user: str) -> dict:
+	"""An `Authorization` header that signs an HTTP case in as one test user.
+
+	API keys, not a session id: `frappe.sessions.Session` reads
+	`frappe.request.cookies`, and a test has no bound request.
+
+	The keys must be on disk before the web server reads them, because that
+	server holds its own database connection.
+	"""
+	secret = frappe.generate_hash(length=20)
+	doc = frappe.get_doc("User", user)
+	doc.api_key = frappe.generate_hash(length=20)
+	doc.api_secret = secret
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"Authorization": f"token {doc.api_key}:{secret}"}

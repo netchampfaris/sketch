@@ -49,6 +49,13 @@ def get_or_create(user: str | None = None) -> str:
 	doc.token = token
 	doc.owner = user
 	doc.insert(ignore_permissions=True)
+	# The commit is not optional. `get_agent_token` is a GET, and core rolls a
+	# GET back at `frappe/app.py:404-407`: it commits only for an unsafe HTTP
+	# method or when `flags.commit` is set. Without this the screen shows a
+	# token, the row never lands, the next read mints a different one, and no
+	# token the user pastes can ever authenticate. This is a deliberate write
+	# on a read path, so it commits itself.
+	frappe.db.commit()
 	# Frappe masks a Password field on the document after save. Return the
 	# plain value we generated, never doc.token.
 	return token
