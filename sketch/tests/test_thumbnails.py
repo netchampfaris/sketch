@@ -22,6 +22,7 @@ checkd and a Runtime on disk, and it skips with a reason when either is absent.
 """
 
 import base64
+import json
 import os
 
 import frappe
@@ -95,8 +96,14 @@ class TestThumbnailStore(IntegrationTestCase):
 	def test_the_sidecar_dates_the_pictures_against_the_tree(self):
 		rev = self.rev()
 		thumbnails.store(self.doc.name, [shot("light")], rev)
+		stored = thumbnails.meta(self.doc.name)
 
-		self.assertEqual(thumbnails.meta(self.doc.name), {"rev": rev, "themes": ["light"]})
+		self.assertEqual(stored["rev"], rev)
+		self.assertEqual(stored["themes"], ["light"])
+		# `stamp` is the cache key and is new on every call, so it is checked
+		# for existence here and for change in
+		# `test_two_captures_of_one_tree_land_at_two_urls`.
+		self.assertTrue(stored["stamp"])
 
 	def test_a_theme_an_earlier_run_wrote_survives_a_run_without_it(self):
 		"""A dark capture that fails must not delete the dark picture on disk.
@@ -160,17 +167,44 @@ class TestThumbnailStore(IntegrationTestCase):
 			thumbnails.store(self.doc.name, [shot("dark")], self.rev())
 			self.assertEqual(sorted(self.row()["thumbnail"]), ["dark", "light"])
 
-	def test_a_row_url_carries_the_tree_stamp(self):
+	def test_a_row_url_carries_the_capture_stamp(self):
 		"""The stamp is the cache key. Without it the renderer refuses to send
 		a year-long cache header, because the same URL would answer with
 		different bytes after the next capture."""
-		rev = self.rev()
-		thumbnails.store(self.doc.name, [shot("light")], rev)
+		thumbnails.store(self.doc.name, [shot("light")], self.rev())
 
 		with self.set_user(self.user):
 			url = self.row()["thumbnail"]["light"]
 
-		self.assertEqual(url, f"/t/d2tthumbstore/d2t-store/light.png?rev={rev}")
+		stamp = thumbnails.stamp(self.doc.name)
+		self.assertEqual(url, f"/t/d2tthumbstore/d2t-store/light.png?rev={stamp}")
+
+	def test_two_captures_of_one_tree_land_at_two_urls(self):
+		"""The Refresh preview case. A capture leaves the tree untouched, so
+		keying the URL on the tree revision would send the second picture to a
+		URL the browser already holds under a year-long cache, and the user
+		would go on seeing the old one."""
+		rev = self.rev()
+		thumbnails.store(self.doc.name, [shot("light")], rev)
+		with self.set_user(self.user):
+			first = self.row()["thumbnail"]["light"]
+
+		thumbnails.store(self.doc.name, [shot("light")], rev)
+		with self.set_user(self.user):
+			second = self.row()["thumbnail"]["light"]
+
+		self.assertEqual(self.rev(), rev, "the capture must not move the tree")
+		self.assertNotEqual(first, second)
+
+	def test_a_sidecar_with_no_stamp_still_has_a_cache_key(self):
+		"""A capture written before `stamp` existed. It keeps a URL a browser
+		can cache rather than losing one."""
+		thumbnails.store(self.doc.name, [shot("light")], self.rev())
+		path = os.path.join(thumbnails.thumb_dir(self.doc.name), thumbnails.META)
+		with open(path, "w", encoding="utf-8") as handle:
+			handle.write(json.dumps({"rev": self.rev(), "themes": ["light"]}))
+
+		self.assertEqual(thumbnails.stamp(self.doc.name), self.rev())
 
 	def row(self) -> dict:
 		return [item for item in api.list_prototypes() if item["name"] == self.doc.name][0]
@@ -295,6 +329,42 @@ class TestThumbnailCapture(IntegrationTestCase):
 		self.assertNotEqual(
 			thumbnails.read(self.doc.name, "light"), thumbnails.read(self.doc.name, "dark")
 		)
+
+	def test_refresh_preview_re_takes_the_picture_and_answers_with_the_row(self):
+		"""The manual door. The reply carries a URL the browser has not seen,
+		even though the tree did not move."""
+		with self.set_user(self.user):
+			thumbnails.capture(self.doc.name)
+			before = api.list_prototypes()
+			before_url = [r for r in before if r["name"] == self.doc.name][0]["thumbnail"]["light"]
+
+			row = api.refresh_preview("d2t-capture")
+
+		self.assertEqual(sorted(row["thumbnail"]), ["dark", "light"])
+		self.assertNotEqual(row["thumbnail"]["light"], before_url)
+
+	def test_refresh_preview_says_so_when_the_prototype_does_not_render(self):
+		"""A queued job that dies leaves the same stale picture with nothing
+		said. This one was asked for, so it fails out loud."""
+		with self.set_user(self.user):
+			prototype_files.write_files(
+				self.doc.name, [{"path": "src/App.vue", "content": "<template><h1>unclosed\n"}]
+			)
+			with self.assertRaises(frappe.ValidationError) as caught:
+				api.refresh_preview("d2t-capture")
+
+		self.assertIn("did not render", str(caught.exception))
+
+	def test_refresh_preview_is_not_a_door_into_somebody_elses_prototype(self):
+		"""`resolve_owned` is the guard, the same one every other action on
+		this menu uses. The test is here because this method reaches a browser
+		and a private file, which the others do not."""
+		stranger = utils.make_user("thumbstranger", "d2tthumbstranger")
+		self.addCleanup(utils.drop_user, stranger)
+
+		with self.set_user(stranger):
+			with self.assertRaises(frappe.DoesNotExistError):
+				api.refresh_preview("d2t-capture")
 
 	def test_a_tree_that_never_mounts_keeps_the_picture_it_has(self):
 		"""checkd answers a broken tree with no thumbnails, and no thumbnails

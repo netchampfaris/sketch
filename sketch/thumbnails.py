@@ -26,6 +26,7 @@ import base64
 import json
 import os
 import shutil
+import time
 
 import frappe
 
@@ -77,7 +78,7 @@ def read(name: str, theme: str) -> bytes | None:
 
 
 def meta(name: str) -> dict:
-	"""The sidecar: `rev`, and the themes on disk. `{}` when there is none."""
+	"""The sidecar: `rev`, `stamp`, and the themes on disk. `{}` when there is none."""
 	try:
 		with open(os.path.join(thumb_dir(name), META), encoding="utf-8") as handle:
 			loaded = json.load(handle)
@@ -118,6 +119,12 @@ def store(name: str, shots: list[dict], rev: str) -> list[str]:
 	asks for another capture. Reading it after would record a tree the picture
 	does not show.
 
+	The sidecar also carries `stamp`, which is new on every call. That is what
+	the URL is keyed on, and it cannot be `rev`: a capture leaves the tree
+	untouched, so two captures of one tree share a `rev`, and the second one
+	would land at a URL the browser already holds under a year-long cache. The
+	Refresh preview action is exactly that case.
+
 	Returns the themes written.
 	"""
 	written = []
@@ -151,9 +158,19 @@ def store(name: str, shots: list[dict], rev: str) -> list[str]:
 	# light only must not drop a dark picture an earlier run took.
 	on_disk = sorted({*meta(name).get("themes", []), *written})
 	with open(os.path.join(folder, META), "w", encoding="utf-8") as handle:
-		json.dump({"rev": rev, "themes": on_disk}, handle)
+		json.dump({"rev": rev, "stamp": str(time.time_ns()), "themes": on_disk}, handle)
 
 	return written
+
+
+def stamp(name: str) -> str:
+	"""The cache key of this Prototype's pictures. "" when there are none.
+
+	Falls back to `rev` for a sidecar written before `stamp` existed, so an
+	early capture keeps a URL that a browser can cache rather than losing one.
+	"""
+	stored = meta(name)
+	return stored.get("stamp") or stored.get("rev") or ""
 
 
 def capture(name: str) -> list[str]:

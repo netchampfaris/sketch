@@ -173,6 +173,11 @@ def _card_image(name: str, username: str, slug: str, rev: str) -> dict | None:
 	file changed would flicker on every agent write, and the old picture is a
 	true picture of an older tree. The refresh is asked for in the background,
 	and the gallery poll that follows picks up the new one.
+
+	The URL is keyed on the capture stamp, never on `rev`. `rev` says which
+	tree the picture is of, which is the staleness question above; it does not
+	change when a picture is re-taken of a tree that did not move, and that is
+	what Refresh preview does.
 	"""
 	state = thumbnails.state(name, rev)
 	if state != "fresh":
@@ -181,8 +186,9 @@ def _card_image(name: str, username: str, slug: str, rev: str) -> dict | None:
 	if state == "missing":
 		return None
 
+	key = thumbnails.stamp(name)
 	themes = thumbnails.meta(name).get("themes") or []
-	return {theme: thumbnail.url(username, slug, theme, rev) for theme in themes}
+	return {theme: thumbnail.url(username, slug, theme, key) for theme in themes}
 
 
 def _public_base() -> str:
@@ -538,6 +544,40 @@ def set_public(slug: str, is_public: bool) -> dict:
 	doc = prototype.resolve_owned(slug)
 	doc.is_public = 1 if is_public else 0
 	doc.save()
+	return _row(doc.as_dict())
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_preview(slug: str) -> dict:
+	"""Re-take this Prototype's card pictures now, and answer with the new row.
+
+	The card is normally taken during the `check` the agent runs at the end of
+	a request, and re-taken in the background when it goes stale
+	(`_card_image`). This is the manual door for the two cases neither of those
+	covers: a Prototype whose agent has not checked it since the pictures
+	existed, and one whose background refresh could not run because checkd or
+	the worker was down.
+
+	It runs the browser inline rather than queueing, which is the point: the
+	user asked for this one and is watching the card. It costs about two
+	seconds, and it fails loudly, because a queued job that dies leaves the
+	same stale picture with nothing said.
+
+	The reply is the whole row, so the caller can draw the new picture without
+	a second read. Its URL is new even when no file changed: the stamp is the
+	capture's, not the tree's (`sketch/thumbnails.py` `store`).
+	"""
+	doc = prototype.resolve_owned(slug)
+	written = thumbnails.capture(doc.name)
+	if not written:
+		# `capture` returns nothing for a tree that did not mount, and leaves
+		# the last good picture alone. Say which of the two happened, because
+		# "nothing changed" and "your code is broken" ask for different next
+		# steps from the user.
+		frappe.throw(
+			frappe._("The prototype did not render, so there is no new picture. Run check to see why.")
+		)
+
 	return _row(doc.as_dict())
 
 
