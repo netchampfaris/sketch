@@ -25,14 +25,10 @@ from typing import Callable
 import frappe
 from frappe.utils import strip_html
 
-from sketch import prototype, prototype_files, signature, versions
+from sketch import checkd, prototype, prototype_files, thumbnails, versions
 
 logger = frappe.logger("sketch.mcp")
 
-# sketch-checkd, the Node service that opens the Viewer in one Chromium.
-CHECKD_URL = "http://127.0.0.1:8010/check"
-# checkd hard-timeouts a check at 30 s. Wait a little past that, then give up.
-CHECKD_TIMEOUT = 45
 # get_app_path() scrubs a hyphen to an underscore, so join by hand.
 SKILL_FILE = ("skill", "frappe-ui.md")
 
@@ -308,12 +304,29 @@ def do_set_name(args: dict) -> ToolResult:
 
 
 def do_check(args: dict) -> ToolResult:
-	"""Open the Prototype in sketch-checkd and report what the browser saw."""
+	"""Open the Prototype in sketch-checkd and report what the browser saw.
+
+	`screenshot` also takes the card images, in both themes. They are the same
+	browser run and the agent never sees them: the gallery and the feed do
+	(`sketch/thumbnails.py`). The skill tells the agent to call check with
+	`screenshot: true` once at the end of every request, so that is the moment
+	the card is already worth re-taking, and it costs one extra page load
+	rather than a second check.
+
+	The stamp is read before the run and not after. A file written while the
+	browser was open must leave the pictures stale, so the next card view asks
+	for another capture.
+	"""
 	doc = owned(args)
 	screenshot = bool(args.get("screenshot"))
-	report = run_check(doc, screenshot)
+	rev = prototype_files.revision(doc.name) if screenshot else ""
+	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot)
 
 	shots = report.pop("screenshots", None) or []
+	cards = report.pop("thumbnails", None) or []
+	if rev and cards:
+		thumbnails.store(doc.name, cards, rev)
+
 	images = [
 		{"type": "image", "data": shot.get("png_base64"), "mimeType": "image/png"}
 		for shot in shots
@@ -322,43 +335,6 @@ def do_check(args: dict) -> ToolResult:
 	uncommitted = versions.pending_count(doc.name)
 	report["uncommitted"] = uncommitted
 	return ToolResult(text=check_text(report, uncommitted), structured=report, images=images)
-
-
-def run_check(doc, screenshot: bool) -> dict:
-	"""POST to sketch-checkd. Contract 5."""
-	import requests
-
-	signed = signature.mint(doc.name)
-	username = frappe.db.get_value("User", doc.owner, "username")
-	port = frappe.conf.webserver_port or 8000
-	url = (
-		f"http://127.0.0.1:{port}/u/{username}/{doc.slug}"
-		f"?theme=light&exp={signed['exp']}&sig={signed['sig']}"
-	)
-	body = {"url": url, "host": frappe.local.site, "screenshot": screenshot}
-
-	try:
-		response = requests.post(CHECKD_URL, json=body, timeout=CHECKD_TIMEOUT)
-	except requests.exceptions.ConnectionError:
-		frappe.throw(
-			frappe._("the check service is not running at {0}. Ask the site owner to start it.").format(
-				CHECKD_URL
-			)
-		)
-	except requests.exceptions.Timeout:
-		frappe.throw(frappe._("the check service did not answer in {0}s").format(CHECKD_TIMEOUT))
-
-	if response.status_code >= 400:
-		frappe.throw(
-			frappe._("the check service refused the request: HTTP {0} {1}").format(
-				response.status_code, response.text[:400]
-			)
-		)
-
-	try:
-		return response.json()
-	except ValueError:
-		frappe.throw(frappe._("the check service answered with something that is not JSON"))
 
 
 def check_text(report: dict, uncommitted: int = 0) -> str:
@@ -581,7 +557,7 @@ def build_tools() -> dict[str, Tool]:
 						"prototype": PROTOTYPE_PARAM,
 						"screenshot": {
 							"type": "boolean",
-							"description": "Return one PNG per static route. Set it true at the end of each user request.",
+							"description": "Return one PNG per static route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",
 							"default": False,
 						},
 					},
