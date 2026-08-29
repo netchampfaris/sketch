@@ -28,9 +28,9 @@ from frappe.website.page_renderers.base_renderer import BaseRenderer
 
 from sketch import prototype, thumbnails
 
-#: A year. The URL carries the tree stamp (`sketch/api.py` `_thumbnail_url`),
+#: A year. The URL carries the capture stamp (`sketch/thumbnails.py` `stamp`),
 #: so the bytes at one URL never change and the browser never has to ask again.
-#: A capture writes a new stamp, which is a new URL.
+#: Every capture writes a new stamp, which is a new URL.
 IMMUTABLE = "max-age=31536000, immutable"
 
 
@@ -91,12 +91,12 @@ class SketchThumbnailRenderer(BaseRenderer):
 		return f"{scope}, {IMMUTABLE}"
 
 
-def url(username: str, slug: str, theme: str, rev: str) -> str:
+def url(username: str, slug: str, theme: str, stamp: str) -> str:
 	"""The path a card puts in `src`. Relative, so it works on any hostname.
 
-	`rev` is `prototype_files.revision()`. It is a cache key and nothing else:
-	the renderer never reads it to pick a file, so a stale or absent stamp
-	serves the current picture rather than an old one.
+	`stamp` is `thumbnails.stamp()`, which is new on every capture. It is a
+	cache key and nothing else: the renderer never reads it to pick a file, so
+	a stale or absent stamp serves the current picture rather than an old one.
 	"""
-	suffix = f"?rev={rev}" if rev else ""
+	suffix = f"?rev={stamp}" if stamp else ""
 	return f"/t/{username}/{slug}/{theme}.png{suffix}"
