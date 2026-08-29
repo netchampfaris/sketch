@@ -1,10 +1,13 @@
 <script setup lang="ts">
 /**
- * Settings: one scroll, two sections.
- *
- * Agent connection comes first, then Profile, because connecting an agent is
- * why anyone opens this page. Agent connection is one token, not a token list.
+ * Settings: one section, because connecting an agent is the only reason
+ * anyone opens this page. Agent connection is one token, not a token list.
  * One user, one token.
+ *
+ * There is no Profile section. It held two read-only fields and no control
+ * that changed anything: the username is frozen at signup, and the email is
+ * the account. `AppTopBar.vue` already prints `@username` as the account menu
+ * label, so the one fact worth reading was already on screen.
  *
  * The eight per-client panels are gone. They were eight tabs, eight config
  * snippets and eight notes, and the user still had to find the right file and
@@ -17,7 +20,7 @@
  * prompt, masked until the user asks for it.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Button, FormControl, PageHeader, dialog, toast, useCall } from 'frappe-ui'
+import { Button, PageHeader, dialog, toast, useCall } from 'frappe-ui'
 import { usePoll } from '../poll'
 import { agentToken, copyText, method, session } from '../store'
 import type { AgentToken } from '../types'
@@ -78,7 +81,6 @@ const regenerate = useCall<AgentToken>({
 
 const token = computed(() => agentToken.data?.token ?? '')
 const endpoint = computed(() => agentToken.data?.endpoint ?? '')
-const username = computed(() => session.data?.username ?? '')
 
 /**
  * The mask is the token's own length, so revealing it cannot rewrap the block
@@ -291,60 +293,28 @@ async function copy(text: string, done: string): Promise<void> {
       </div>
 
       <!--
-        Built from tokens, not `Alert`. Alert's container is always gray, so
-        `theme="amber"` coloured the 16px icon and nothing else, and the warning
-        read as a note (problem 3.11). This is the one tinted block on the page.
+        Two sentences, not a tinted block. The claude.ai warning (problem 3.11)
+        was a full amber panel, which is the loudest treatment on the page for
+        the rarest client. /help carries the same warning and this paragraph
+        links to it. The failure is no longer silent either: paste the prompt
+        above into claude.ai and the model answers that it cannot add an MCP
+        server, so the reader gets an explanation without this page.
       -->
-      <div
-        class="mt-4 flex gap-2 rounded-6 border border-outline-amber-3 bg-surface-amber-2 p-3 text-ink-amber-7"
-      >
-        <span class="lucide-triangle-alert mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <div class="min-w-0">
-          <p class="text-base-medium">claude.ai connectors do not work yet</p>
-          <p class="mt-1 text-p-sm">
-            A claude.ai custom connector takes a URL only and sends no
-            Authorization header, so it cannot reach Sketch.
-          </p>
-        </div>
-      </div>
-
+      <p class="mt-4 text-p-sm text-ink-gray-7">
+        A claude.ai custom connector cannot reach Sketch. It sends a URL only,
+        with no Authorization header.
+      </p>
       <!--
         A plain anchor. /help is a server-rendered page (`sketch/www/help.html`)
         and the SPA router does not declare it, so a RouterLink or a Button
         `route` prop would call `router.push()` and 404 inside the app.
         `AppTopBar.vue` carries the same note for the same reason.
       -->
-      <p class="mt-4 text-p-sm text-ink-gray-7">
+      <p class="mt-1 text-p-sm text-ink-gray-7">
         Is your connection still quiet?
         <a class="text-ink-blue-link hover:underline" href="/help">Help</a>
         lists what to check.
       </p>
-    </section>
-
-    <section class="mt-10">
-      <h2 class="text-lg-semibold text-ink-gray-8">Profile</h2>
-      <p class="mt-1 text-p-sm text-ink-gray-7">
-        This name is in every public prototype link.
-      </p>
-      <!--
-        One card for both fields. The fields were `max-w-md` under 856px cards,
-        so the right edge zig-zagged down the page (problem 3.18).
-      -->
-      <div class="mt-4 space-y-4 rounded-6 border border-outline-gray-1 p-5">
-        <div>
-          <FormControl label="Username" readonly :model-value="username" />
-          <!--
-            A sibling paragraph, not FormControl's `description` prop: that prop
-            renders 13px and cannot be retuned, so the card held two helper
-            sizes (problem 3.15).
-          -->
-          <p class="mt-2 text-p-xs text-ink-gray-5">
-            Set at signup and frozen after it, because a shared link must never
-            point at somebody else.
-          </p>
-        </div>
-        <FormControl label="Email" :model-value="session.data?.user ?? ''" readonly />
-      </div>
     </section>
   </div>
 </template>
