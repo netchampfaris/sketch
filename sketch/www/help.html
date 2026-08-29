@@ -3,10 +3,9 @@
   symptom list, not a manual: the reader is stuck and wants out in a minute.
 
   It does not repeat Settings. Settings
-  (`frontend/src/pages/SettingsScreen.vue`, the `harnesses` list) holds the
-  ready-made block with your token in it. This page holds the reason a block
-  does not work, and the three `/mcp` error codes
-  (`sketch/mcp/http.py`, `ERRORS`).
+  (`frontend/src/pages/SettingsScreen.vue`, `SETUP_PROMPT`) holds the setup
+  prompt with your token in it. This page holds the reason the setup does not
+  work, and the three `/mcp` error codes (`sketch/mcp/http.py`, `ERRORS`).
 #}
 {% extends "sketch/templates/sketch_page.html" %}
 
@@ -27,27 +26,30 @@
 <section class="sk-mt-10 sk-measure">
 	<h2 class="text-lg-semibold">Connect your agent</h2>
 	<p class="sk-mt-1 text-p-base sk-ink-7">
-		<a class="sk-link" href="/settings">Settings</a> carries a ready-made
-		block for eight clients. Each one already holds your token.
+		<a class="sk-link" href="/settings">Settings</a> carries a setup prompt
+		that already holds your token. Your agent does the setup.
 	</p>
 	<ol class="sk-mt-4 sk-steps">
 		<li>
 			<span class="sk-step-n text-xs-medium">1</span>
 			<p class="text-p-base sk-ink-7">
-				Copy the block for your client. Merge the <code>sketch</code> entry
-				into the config file you have. Replace the file and you lose your other
-				MCP servers.
+				Copy the setup prompt from
+				<a class="sk-link" href="/settings">Settings</a>.
 			</p>
 		</li>
 		<li>
 			<span class="sk-step-n text-xs-medium">2</span>
-			<p class="text-p-base sk-ink-7">Restart your client. Most read the config once, at start.</p>
+			<p class="text-p-base sk-ink-7">
+				Paste it into your agent session. The agent writes the
+				<code>sketch</code> entry into your client's own config.
+			</p>
 		</li>
 		<li>
 			<span class="sk-step-n text-xs-medium">3</span>
 			<p class="text-p-base sk-ink-7">
-				Ask your agent to list your prototypes. An empty list is a pass: the
-				token was accepted.
+				Restart your client if it did not restart itself, then ask the agent
+				to list your prototypes. An empty list is a pass: the token was
+				accepted.
 			</p>
 		</li>
 	</ol>
@@ -144,7 +146,8 @@
 			<p class="text-base-medium">A claude.ai connector cannot work</p>
 			<p class="sk-mt-1 text-p-sm">
 				The custom connector dialog takes a URL only. It sends no
-				Authorization header. Use one of the eight clients on Settings.
+				Authorization header. Use Claude Code, Codex, OpenCode, Cursor, VS
+				Code, Claude Desktop, Gemini CLI or Windsurf.
 			</p>
 		</div>
 	</div>
