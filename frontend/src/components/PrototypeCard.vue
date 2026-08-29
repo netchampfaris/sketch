@@ -166,7 +166,7 @@ const menuOptions = computed(() => [
 
 <template>
   <article class="min-w-0">
-    <PrototypePreview :src="prototype.viewer_path" :title="prototype.title" />
+    <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
 
     <!--
       Two rows under the preview, not four. Name and state on the first, every

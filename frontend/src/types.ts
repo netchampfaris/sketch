@@ -32,10 +32,23 @@ export interface Prototype {
   description: string
   modified: string
   updated: string
-  /** Same-origin path the iframe loads. */
+  /** Same-origin path the Viewer serves. The card links here. */
   viewer_path: string
   /** Absolute link a visitor can open. */
   public_url: string
+  /**
+   * The card picture, one same-origin path per theme.
+   *
+   * Null until an agent has run `check` with `screenshot: true`. A theme is
+   * absent when that capture failed, so a reader falls back to `light`.
+   */
+  thumbnail: PrototypeThumbnail | null
+}
+
+/** See `Prototype.thumbnail`. Written by `sketch/thumbnails.py`. */
+export interface PrototypeThumbnail {
+  light?: string
+  dark?: string
 }
 
 export interface PrototypeFileChange {
