@@ -74,8 +74,16 @@ const subtitle = computed(() => {
   return `${count} ${count === 1 ? 'file' : 'files'}`
 })
 
+/**
+ * A Prototype always opens in a new tab, so the gallery stays where it was.
+ *
+ * `noopener` is not optional here. The Viewer runs prototype code that the
+ * user's own agent wrote, and without it that page holds a live
+ * `window.opener` handle to Sketch. It also implies `noreferrer` in every
+ * current browser, which is why only the one token is passed.
+ */
 function openViewer(): void {
-  window.location.href = props.prototype.viewer_path
+  window.open(props.prototype.viewer_path, '_blank', 'noopener')
 }
 
 async function copyPublicUrl(): Promise<void> {
@@ -175,7 +183,13 @@ const menuOptions = computed(() => [
         an href and not a RouterLink.
       -->
       <h2 class="min-w-0 flex-1 truncate text-base-medium text-ink-gray-8">
-        <a class="hover:underline" :href="prototype.viewer_path">{{ prototype.title }}</a>
+        <a
+          class="hover:underline"
+          :href="prototype.viewer_path"
+          rel="noopener"
+          target="_blank"
+          >{{ prototype.title }}</a
+        >
       </h2>
       <!--
         The Badge reports the state. It does not set it: Share and Make
