@@ -226,7 +226,7 @@ function fileLabel(count: number): string {
         dialog is open, so this row cannot move the panel.
       -->
       <p class="mt-3 truncate border-t border-outline-gray-1 pt-3 text-xs text-ink-gray-5">
-        Pinned to frappe-ui {{ prototype.pin }}
+        Version {{ prototype.pin }}
       </p>
     </template>
   </Dialog>
