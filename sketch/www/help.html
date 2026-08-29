@@ -1,11 +1,12 @@
 {#
-  Setup and troubleshooting, in the order a stuck user hits the walls.
+  The page between "I have a token" and "my agent is connected". It is a
+  symptom list, not a manual: the reader is stuck and wants out in a minute.
 
-  The content is the same material the Settings page carries per client
-  (`frontend/src/pages/SettingsScreen.vue`, the `harnesses` list) plus the
-  `/mcp` error contract (`sketch/mcp/http.py`, `ERRORS`). It is repeated here
-  and not linked, because the two audiences differ: Settings holds the block
-  with your token in it, this page holds the reason a block does not work.
+  It does not repeat Settings. Settings
+  (`frontend/src/pages/SettingsScreen.vue`, the `harnesses` list) holds the
+  ready-made block with your token in it. This page holds the reason a block
+  does not work, and the three `/mcp` error codes
+  (`sketch/mcp/http.py`, `ERRORS`).
 #}
 {% extends "sketch/templates/sketch_page.html" %}
 
@@ -21,48 +22,44 @@
 <section class="sk-measure">
 	<h1 class="text-2xl-semibold">Help</h1>
 	<p class="sk-mt-1 text-p-xs sk-ink-5">Connect your agent, and fix a connection that stays quiet</p>
-
-	<p class="sk-mt-4 text-p-base sk-ink-7">
-		Sketch has no editor and no agent panel. Your own agent writes the files
-		over MCP, so all the setup happens in your client, not here.
-	</p>
 </section>
 
 <section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">What Sketch needs from your client</h2>
+	<h2 class="text-lg-semibold">Connect your agent</h2>
 	<p class="sk-mt-1 text-p-base sk-ink-7">
-		Four facts. Every ready-made block on
-		<a class="sk-link" href="/settings">Settings</a> already holds them.
+		<a class="sk-link" href="/settings">Settings</a> carries a ready-made
+		block for eight clients. Each one already holds your token.
 	</p>
-	<dl class="sk-mt-4 sk-card sk-rows">
-		<div>
-			<dt class="text-p-sm sk-ink-7">Endpoint</dt>
-			<dd class="text-xs sk-ink-5"><code>{{ mcp_url }}</code></dd>
-		</div>
-		<div>
-			<dt class="text-p-sm sk-ink-7">Transport</dt>
-			<dd class="text-xs sk-ink-5">Streamable HTTP, POST only</dd>
-		</div>
-		<div>
-			<dt class="text-p-sm sk-ink-7">Header name</dt>
-			<dd class="text-xs sk-ink-5"><code>Authorization</code></dd>
-		</div>
-		<div>
-			<dt class="text-p-sm sk-ink-7">Header value</dt>
-			<dd class="text-xs sk-ink-5"><code>Bearer &lt;your-token&gt;</code></dd>
-		</div>
-	</dl>
-	<p class="sk-mt-2 text-p-xs sk-ink-5">
-		One user, one token. Anyone who holds it can write your prototypes.
-	</p>
+	<ol class="sk-mt-4 sk-steps">
+		<li>
+			<span class="sk-step-n text-xs-medium">1</span>
+			<p class="text-p-base sk-ink-7">
+				Copy the block for your client. Merge the <code>sketch</code> entry
+				into the config file you have. Replace the file and you lose your other
+				MCP servers.
+			</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">2</span>
+			<p class="text-p-base sk-ink-7">Restart your client. Most read the config once, at start.</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">3</span>
+			<p class="text-p-base sk-ink-7">
+				Ask your agent to list your prototypes. An empty list is a pass: the
+				token was accepted.
+			</p>
+		</li>
+	</ol>
 </section>
 
 <section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">The top-level key is the usual failure</h2>
+	<h2 class="text-lg-semibold">It is not working</h2>
+
+	<h3 class="sk-mt-8 text-base-semibold">The client has no Sketch tools</h3>
 	<p class="sk-mt-1 text-p-base sk-ink-7">
-		Every client reads MCP servers from a different key. Paste a block under
-		the wrong one and the client starts with no error at all: it simply has no
-		Sketch tools.
+		The top-level key is wrong. Every client reads MCP servers from a
+		different one, and the wrong key fails without an error.
 	</p>
 	<dl class="sk-mt-4 sk-card sk-rows">
 		<div>
@@ -78,132 +75,53 @@
 			<dd class="text-xs sk-ink-5"><code>mcp_servers</code></dd>
 		</div>
 		<div>
-			<dt class="text-p-sm sk-ink-7">Cursor, Claude Desktop, Windsurf, Gemini CLI</dt>
+			<dt class="text-p-sm sk-ink-7">Every other client</dt>
 			<dd class="text-xs sk-ink-5"><code>mcpServers</code></dd>
 		</div>
 	</dl>
 
-	<h3 class="sk-mt-8 text-base-semibold">The other four traps</h3>
-	<ul class="sk-mt-4 sk-bullets">
-		<li>
-			<p class="text-p-base sk-ink-7">
-				Windsurf names the URL field <code>serverUrl</code>, not
-				<code>url</code>.
-			</p>
-		</li>
-		<li>
-			<p class="text-p-base sk-ink-7">
-				OpenCode wants <code>"type": "remote"</code>, not <code>http</code>.
-				Keep <code>oauth</code> false, or a refused token starts an OAuth flow
-				instead of failing with a message you can read.
-			</p>
-		</li>
-		<li>
-			<p class="text-p-base sk-ink-7">
-				Claude Desktop, Cursor and Codex mangle a space inside
-				<code>args</code>. Write <code>Authorization:${AUTH_HEADER}</code> with
-				no space after the colon.
-			</p>
-		</li>
-		<li>
-			<p class="text-p-base sk-ink-7">
-				A JSON block on Settings is a whole file. Merge the
-				<code>sketch</code> entry into the file you already have. Paste the
-				block over it and you lose every other MCP server.
-			</p>
-		</li>
-	</ul>
-</section>
-
-<section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">Claude Code: use <code>--scope user</code></h2>
+	<h3 class="sk-mt-8 text-base-semibold">The tools work in one project only</h3>
 	<p class="sk-mt-1 text-p-base sk-ink-7">
-		One command adds Sketch to every project on the machine. Settings prints
-		this line with your own token already in it.
+		Claude Code needs <code>--scope user</code>. Without it, it binds Sketch to
+		the directory you ran the command in.
 	</p>
 	<pre class="sk-mt-4 sk-code text-p-xs">claude mcp add --transport http --scope user sketch \
   {{ mcp_url }} \
   --header "Authorization: Bearer &lt;your-token&gt;"</pre>
 	<p class="sk-mt-2 text-p-xs sk-ink-5">
-		Without <code>--scope user</code>, Claude Code binds Sketch to the one
-		directory you ran the command in, and the tools vanish in the next
-		project. Check the result with <code>claude mcp list</code>.
-	</p>
-	<p class="sk-mt-3 text-p-base sk-ink-7">
 		Gemini CLI has the same default. Pass <code>-s user</code> there.
 	</p>
-</section>
 
-<section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">Check that it worked</h2>
-	<ol class="sk-mt-4 sk-steps">
-		<li>
-			<span class="sk-step-n text-xs-medium">1</span>
-			<p class="text-p-base sk-ink-7">
-				Restart your client. Most of them read the config file once, at start.
-			</p>
-		</li>
-		<li>
-			<span class="sk-step-n text-xs-medium">2</span>
-			<p class="text-p-base sk-ink-7">
-				Ask your agent to list your Sketch prototypes. An empty list is a
-				success: it means the token was accepted.
-			</p>
-		</li>
-		<li>
-			<span class="sk-step-n text-xs-medium">3</span>
-			<p class="text-p-base sk-ink-7">
-				Open <a class="sk-link" href="/settings">Settings</a>. It shows "Last
-				agent request" as soon as a good token reaches Sketch. That line is
-				stamped by your agent only, so it is the one honest signal that the
-				connection works.
-			</p>
-		</li>
-	</ol>
-</section>
-
-<section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">What the error means</h2>
+	<h3 class="sk-mt-8 text-base-semibold">The agent reports an error</h3>
 	<p class="sk-mt-1 text-p-base sk-ink-7">
-		Sketch answers a bad request with JSON, and the JSON names the mistake.
-		Your client may hide it, so here are the three you can hit.
+		Read it. Sketch answers a bad request with JSON that names the mistake and
+		the header to send. There are three.
 	</p>
+	<ul class="sk-mt-4 sk-bullets">
+		<li>
+			<p class="text-p-base sk-ink-7">
+				<code>no_credentials</code>. No <code>Authorization</code> header
+				arrived. Your client dropped it, or the token sits in a field it does
+				not send.
+			</p>
+		</li>
+		<li>
+			<p class="text-p-base sk-ink-7">
+				<code>wrong_auth_scheme</code>. Sketch reads <code>Bearer</code> only.
+				Send <code>Authorization: Bearer &lt;your-token&gt;</code>.
+			</p>
+		</li>
+		<li>
+			<p class="text-p-base sk-ink-7">
+				<code>invalid_token</code>. The header was right and the token was not.
+				Copy the current one from
+				<a class="sk-link" href="/settings">Settings</a>. A regenerated token
+				breaks every client that holds the old one.
+			</p>
+		</li>
+	</ul>
 
-	<div class="sk-mt-4 sk-card">
-		<h3 class="text-base-medium"><code>no_credentials</code></h3>
-		<p class="sk-mt-2 text-p-sm sk-ink-7">
-			The request carried no <code>Authorization</code> header. The client
-			read your entry but dropped the header, or you put the token in a field
-			the client does not send. Check the header block in your config.
-		</p>
-	</div>
-
-	<div class="sk-mt-4 sk-card">
-		<h3 class="text-base-medium"><code>wrong_auth_scheme</code></h3>
-		<p class="sk-mt-2 text-p-sm sk-ink-7">
-			The header arrived with the wrong scheme. Sketch reads
-			<code>Bearer</code> only, so <code>Basic</code>, <code>token</code> and a
-			bare token on its own are all refused. Send
-			<code>Authorization: Bearer &lt;your-token&gt;</code>, and do not invent a
-			header name of your own.
-		</p>
-	</div>
-
-	<div class="sk-mt-4 sk-card">
-		<h3 class="text-base-medium"><code>invalid_token</code></h3>
-		<p class="sk-mt-2 text-p-sm sk-ink-7">
-			The header was right and the token was not. It was regenerated,
-			mistyped, or it belongs to another account. Copy the current token from
-			<a class="sk-link" href="/settings">Settings</a> and paste it into the
-			client again. Regenerating a token breaks every client that holds the old
-			one, so update them all.
-		</p>
-	</div>
-</section>
-
-<section class="sk-mt-10 sk-measure">
-	<h2 class="text-lg-semibold">Two more things</h2>
-	<div class="sk-mt-4 sk-note">
+	<div class="sk-mt-8 sk-note">
 		{# lucide-triangle-alert, the glyph the Settings warning uses. Inline,
 		   because the `lucide-*` icon classes come from the frappe-ui Tailwind
 		   plugin and the website bundle does not carry them. #}
@@ -223,19 +141,13 @@
 			<path d="M12 17h.01"/>
 		</svg>
 		<div>
-			<p class="text-base-medium">claude.ai connectors do not work yet</p>
+			<p class="text-base-medium">A claude.ai connector cannot work</p>
 			<p class="sk-mt-1 text-p-sm">
-				A claude.ai custom connector takes a URL only. It cannot send the
-				Authorization header Sketch needs. Use Claude Code, Codex, OpenCode,
-				Cursor, VS Code, Claude Desktop, Gemini CLI or Windsurf today.
+				The custom connector dialog takes a URL only. It sends no
+				Authorization header. Use one of the eight clients on Settings.
 			</p>
 		</div>
 	</div>
-
-	<p class="sk-mt-4 text-p-base sk-ink-7">
-		Keep a prototype open in a tab while you work. It reloads itself as your
-		agent writes, so you do not have to close and reopen it after every turn.
-	</p>
 </section>
 
 <section class="sk-mt-10 sk-measure">
@@ -247,8 +159,8 @@
 			href="https://github.com/netchampfaris/sketch"
 			rel="noreferrer noopener"
 			target="_blank"
-		>the Sketch repository</a>. Say which client you use and paste the error
-		your agent reported. Never paste your token.
+		>the Sketch repository</a>. Name your client and paste the error. Never
+		paste your token.
 	</p>
 </section>
 {% endblock %}
