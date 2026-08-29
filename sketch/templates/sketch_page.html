@@ -1,0 +1,455 @@
+{#
+  The shell for every Sketch page that is not the SPA: the marketing page at
+  `/`, `/login` and `/help`.
+
+  It extends `templates/base.html`, not `templates/web.html`. web.html wraps
+  its content in the portal's breadcrumb bar, bootstrap container and sidebar
+  columns (`frappe/templates/web.html:8-53`), and Sketch has none of the three.
+  The navbar and footer blocks are emptied for the same reason: core fills them
+  with the Standard Navbar and Standard Footer web blocks
+  (`frappe/templates/base.html:66-74` and `80-88`), which are furniture from a
+  different design language.
+
+  Where the tokens come from. `frappe/templates/includes/head.html:9` loads
+  `website.bundle.css`, and that bundle carries the whole Espresso token layer:
+  the `--ink-*`, `--surface-*`, `--outline-*`, `--radius-*` and `--spacing`
+  custom properties (`frappe/public/css/espresso/colors.css`, `radius.css`,
+  `spacing.css`) and every `text-<size>-<weight>` type-style class
+  (`frappe/public/css/espresso/typography.css`). frappe-ui builds its Tailwind
+  theme from that same token set, so the type and colour on these pages and in
+  the SPA now resolve to one system (problem 8.4). The type classes below are
+  the ones the SPA writes, spelt the same way.
+
+  What the bundle does not carry is a full Tailwind utility layer. It is
+  JIT-built from frappe's own templates, so `rounded-6`, `grid`, `max-w-*` and
+  every `hover:` variant are missing. Hence the `sk-` classes. Every value in
+  them dereferences a token; this file holds no hex, no rgb and no invented
+  step.
+#}
+{% extends "templates/base.html" %}
+
+{% block banner %}{% endblock %}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block style %}
+<style>
+	@font-face {
+		/*
+		 * The SPA sets `html { font-family: InterVar }`
+		 * (frappe-ui `tailwind/plugin.js`, globalStyles). The web pages name
+		 * the same variable typeface `InterVariable` in `--font-stack`
+		 * (`frappe/public/scss/espresso/_typography.scss:12`). One alias points
+		 * the app's family name at the file the site already serves, so both
+		 * surfaces compute the same `font-family` from one download instead of
+		 * two names for one font (problem 8.4).
+		 */
+		font-family: InterVar;
+		font-style: normal;
+		font-weight: 100 900;
+		font-display: swap;
+		src: url("/assets/frappe/css/fonts/inter/InterVariable.woff2") format("woff2");
+	}
+
+	.sk-shell {
+		/*
+		 * Tailwind's `fontFamily.mono` default, character for character
+		 * (`frontend/node_modules/tailwindcss/stubs/config.full.js:313-322`).
+		 * The SPA writes `font-mono` and resolves to that stack, because the
+		 * frappe-ui preset never overrides the key. These pages used to read
+		 * `--font-family-monospace`, which is Bootstrap's stack from the same
+		 * website bundle (`bootstrap/scss/_variables.scss:279`). It drops
+		 * `ui-monospace`, so a snippet on /help and the same snippet in
+		 * Settings picked two different faces (problem 8.4). The bundle has no
+		 * mono token to point at, so the stack is written here once and both
+		 * mono rules below read it.
+		 */
+		--sk-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+			"Liberation Mono", "Courier New", monospace;
+		display: flex;
+		flex-direction: column;
+		min-height: 100dvh;
+		background-color: var(--surface-base);
+		/* gray-8 is the page default. TOKENS reserves gray-9 for unread titles
+		   and KPI figures, which these pages do not have (problem 4.8). */
+		color: var(--ink-gray-8);
+		font-family: InterVar, var(--font-stack);
+		font-optical-sizing: auto;
+		font-variation-settings: "opsz" 24, "cv11" 1;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	/* Bootstrap's reboot ships in the same bundle and puts a bottom margin on
+	   every heading, paragraph and list. `:where()` adds no specificity, so the
+	   `.sk-shell` class alone (0,1,0) outranks reboot's element rules (0,0,1)
+	   and every spacing step below stays the one written in the markup. */
+	.sk-shell :where(h1, h2, h3, p, ul, ol, dl, dd, pre, figure) {
+		margin: 0;
+	}
+
+	/* The frappe-ui global keyboard ring (frappe-ui `tailwind/plugin.js`,
+	   globalStyles `:focus-visible`). The token is in the bundle; the rule that
+	   applies it is not, because it lives in the Tailwind base layer. */
+	.sk-shell :focus-visible {
+		outline: var(--focus-outline-default);
+		outline-offset: 0;
+	}
+
+	/* One centred column, the same cap and the same gutters as the SPA shell
+	   (`frontend/src/App.vue`, `max-w-[940px]` and `px-3 sm:px-5`). DESIGN >
+	   Geometry: reading pages are 940px. */
+	.sk-wrap {
+		width: 100%;
+		max-width: 940px;
+		margin-inline: auto;
+		padding-inline: calc(var(--spacing) * 3);
+	}
+
+	@media (min-width: 640px) {
+		.sk-wrap {
+			padding-inline: calc(var(--spacing) * 5);
+		}
+	}
+
+	.sk-bar {
+		background-color: var(--surface-base);
+		border-bottom: 1px solid var(--outline-gray-1);
+	}
+
+	/* Fixed 48px, the `min-h-12` page header in DESIGN > Geometry and the exact
+	   height of `AppTopBar.vue`. Nothing in the bar depends on the session, so
+	   it reads the same signed in and signed out and never moves. */
+	.sk-bar-inner {
+		display: flex;
+		height: calc(var(--spacing) * 12);
+		align-items: center;
+		justify-content: space-between;
+		gap: calc(var(--spacing) * 2);
+	}
+
+	/* The brand block, class for class the one in `AppTopBar.vue`: `-mx-1 p-1
+	   rounded-4 hover:bg-surface-gray-2`, with a `size-6` mark. */
+	.sk-brand {
+		display: inline-flex;
+		align-items: center;
+		gap: calc(var(--spacing) * 2);
+		margin-inline: calc(var(--spacing) * -1);
+		padding: calc(var(--spacing) * 1);
+		border-radius: var(--radius-4);
+		color: var(--ink-gray-8);
+		text-decoration: none;
+		transition: background-color 150ms;
+	}
+
+	.sk-brand:hover {
+		background-color: var(--surface-gray-2);
+		color: var(--ink-gray-8);
+		text-decoration: none;
+	}
+
+	.sk-brand-mark {
+		display: block;
+		height: calc(var(--spacing) * 6);
+		width: calc(var(--spacing) * 6);
+	}
+
+	.sk-main {
+		flex: 1 1 auto;
+		padding-block: calc(var(--spacing) * 10) calc(var(--spacing) * 16);
+	}
+
+	.sk-foot {
+		border-top: 1px solid var(--outline-gray-1);
+		color: var(--ink-gray-5);
+	}
+
+	.sk-foot-inner {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: calc(var(--spacing) * 3);
+		padding-block: calc(var(--spacing) * 5);
+	}
+
+	.sk-foot-links {
+		display: flex;
+		gap: calc(var(--spacing) * 4);
+	}
+
+	.sk-link {
+		color: var(--ink-blue-link);
+		text-decoration: none;
+	}
+
+	.sk-link:hover {
+		color: var(--ink-blue-link);
+		text-decoration: underline;
+		text-underline-offset: calc(var(--spacing) * 0.5);
+	}
+
+	/*
+	 * The buttons. Sketch has no solid button (commit 54f7fdc), so these are
+	 * the frappe-ui gray `subtle` and gray `ghost` recipes, copied from
+	 * `Button.vue` (`subtleClasses.gray` and `ghostClasses.gray`) with the `md`
+	 * and `sm` size rows from the same file. Weight comes from the type class
+	 * in the markup, the way `sizeClasses` assigns it there.
+	 */
+	.sk-btn {
+		display: inline-flex;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		gap: calc(var(--spacing) * 2);
+		height: calc(var(--spacing) * 8);
+		padding-inline: calc(var(--spacing) * 2.5);
+		border: 0;
+		border-radius: var(--radius-4);
+		background-color: var(--surface-gray-2);
+		color: var(--ink-gray-8);
+		text-decoration: none;
+		cursor: pointer;
+		transition: background-color 150ms;
+	}
+
+	.sk-btn:hover {
+		background-color: var(--surface-gray-3);
+		color: var(--ink-gray-8);
+		text-decoration: none;
+	}
+
+	.sk-btn:active {
+		background-color: var(--surface-gray-4);
+	}
+
+	.sk-btn--ghost {
+		background-color: transparent;
+	}
+
+	.sk-btn--sm {
+		height: calc(var(--spacing) * 7);
+		padding-inline: calc(var(--spacing) * 2);
+	}
+
+	.sk-btn--full {
+		width: 100%;
+	}
+
+	/* A provider mark inside a button is the `size-4` default icon in
+	   DESIGN > Hierarchy. `frappe/www/login.py` hands the tag over as HTML. */
+	.sk-btn img {
+		display: block;
+		height: calc(var(--spacing) * 4);
+		width: auto;
+	}
+
+	.sk-card {
+		border: 1px solid var(--outline-gray-1);
+		border-radius: var(--radius-6);
+		padding: calc(var(--spacing) * 5);
+	}
+
+	/* The tinted status block from TOKENS > `bg-surface-*`. `Alert` is not used
+	   for this: its container is always gray, so a theme colours the icon and
+	   nothing else (problem 3.11). */
+	.sk-note {
+		display: flex;
+		gap: calc(var(--spacing) * 2);
+		border: 1px solid var(--outline-amber-3);
+		border-radius: var(--radius-6);
+		background-color: var(--surface-amber-2);
+		padding: calc(var(--spacing) * 3);
+		color: var(--ink-amber-7);
+	}
+
+	.sk-note-icon {
+		flex-shrink: 0;
+		height: calc(var(--spacing) * 4);
+		width: calc(var(--spacing) * 4);
+		margin-top: calc(var(--spacing) * 0.5);
+	}
+
+	/* Wrap, never scroll sideways. A command with a token in it measured wider
+	   than its box on the Settings page and hid the tail (problem 3.2). */
+	.sk-code {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		border-radius: var(--radius-4);
+		background-color: var(--surface-gray-1);
+		padding: calc(var(--spacing) * 3);
+		font-family: var(--sk-font-mono);
+		color: var(--ink-gray-8);
+	}
+
+	.sk-shell code {
+		border-radius: var(--radius-1);
+		background-color: var(--surface-gray-2);
+		padding-inline: calc(var(--spacing) * 1);
+		font-family: var(--sk-font-mono);
+		font-size: 1em;
+		color: var(--ink-gray-7);
+	}
+
+	.sk-shell .sk-code code {
+		background-color: transparent;
+		padding-inline: 0;
+		color: inherit;
+	}
+
+	/* A numbered list that keeps its own numbers, so the step count survives a
+	   `list-style` reset anywhere else in the bundle. */
+	.sk-steps {
+		list-style: none;
+		padding: 0;
+	}
+
+	.sk-steps > li {
+		display: flex;
+		gap: calc(var(--spacing) * 3);
+	}
+
+	.sk-steps > li + li {
+		margin-top: calc(var(--spacing) * 4);
+	}
+
+	.sk-step-n {
+		display: grid;
+		place-items: center;
+		flex-shrink: 0;
+		height: calc(var(--spacing) * 6);
+		width: calc(var(--spacing) * 6);
+		border-radius: var(--radius-full);
+		background-color: var(--surface-gray-2);
+		color: var(--ink-gray-7);
+	}
+
+	.sk-bullets {
+		list-style: none;
+		padding: 0;
+	}
+
+	.sk-bullets > li {
+		display: flex;
+		gap: calc(var(--spacing) * 2);
+	}
+
+	.sk-bullets > li + li {
+		margin-top: calc(var(--spacing) * 2);
+	}
+
+	.sk-bullets > li::before {
+		content: "";
+		flex-shrink: 0;
+		height: calc(var(--spacing) * 1.5);
+		width: calc(var(--spacing) * 1.5);
+		margin-top: calc(var(--spacing) * 2);
+		border-radius: var(--radius-full);
+		background-color: var(--surface-gray-4);
+	}
+
+	/* A label/value ladder. DESIGN principle 2 separates rows with
+	   `divide-y divide-outline-gray-1`, and principle 5 gives the repeating
+	   trailing element a fixed column so the right edge holds still. */
+	.sk-rows > div {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: calc(var(--spacing) * 4);
+		padding-block: calc(var(--spacing) * 2.5);
+	}
+
+	.sk-rows > div + div {
+		border-top: 1px solid var(--outline-gray-1);
+	}
+
+	/* Right aligned, and allowed to break. The endpoint row carries a URL with
+	   no space in it, and a fixed-width trailing column would either truncate
+	   it or push a horizontal scrollbar onto a narrow screen. */
+	.sk-rows dd {
+		min-width: 0;
+		text-align: right;
+		overflow-wrap: anywhere;
+	}
+
+	.sk-narrow {
+		max-width: calc(var(--spacing) * 96);
+		margin-inline: auto;
+	}
+
+	.sk-measure {
+		max-width: calc(var(--spacing) * 160);
+	}
+
+	.sk-ink-5 {
+		color: var(--ink-gray-5);
+	}
+
+	.sk-ink-7 {
+		color: var(--ink-gray-7);
+	}
+
+	.sk-mt-1 {
+		margin-top: calc(var(--spacing) * 1);
+	}
+
+	.sk-mt-2 {
+		margin-top: calc(var(--spacing) * 2);
+	}
+
+	.sk-mt-3 {
+		margin-top: calc(var(--spacing) * 3);
+	}
+
+	.sk-mt-4 {
+		margin-top: calc(var(--spacing) * 4);
+	}
+
+	.sk-mt-8 {
+		margin-top: calc(var(--spacing) * 8);
+	}
+
+	.sk-mt-10 {
+		margin-top: calc(var(--spacing) * 10);
+	}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sk-shell">
+	<header class="sk-bar">
+		<div class="sk-wrap sk-bar-inner">
+			<a class="sk-brand" href="/">
+				<img
+					alt=""
+					aria-hidden="true"
+					class="sk-brand-mark"
+					src="/assets/sketch/images/sketch-logo.svg"
+				>
+				<span class="text-base-medium">Sketch</span>
+			</a>
+			<div>{% block bar_actions %}{% endblock %}</div>
+		</div>
+	</header>
+
+	<main class="sk-main">
+		<div class="sk-wrap">
+			{% block sketch_content %}{% endblock %}
+		</div>
+	</main>
+
+	<footer class="sk-foot">
+		<div class="sk-wrap sk-foot-inner">
+			<p class="text-p-xs">A Frappe app. MIT licensed.</p>
+			<nav class="sk-foot-links">
+				<a class="sk-link text-p-xs" href="/help">Help</a>
+				<a
+					class="sk-link text-p-xs"
+					href="https://github.com/netchampfaris/sketch"
+					rel="noreferrer noopener"
+					target="_blank"
+				>Source</a>
+			</nav>
+		</div>
+	</footer>
+</div>
+{% endblock %}

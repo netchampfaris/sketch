@@ -1,0 +1,90 @@
+{#
+  /login for Sketch.
+
+  One line about the product, then one button. Core's page opened with "Sign In.
+  Welcome! Please sign in to continue." over a "Login with GitHub" button, and
+  never said that the same button also makes the account (problem 8.2).
+
+  Everything core's template draws for a password site is gone: the email and
+  password form, the forgot-password panel, the email-link panel and the signup
+  panel. `disable_user_pass_login` is 1, so none of them could be used, and the
+  signup panel printed a "Signups have been disabled" line that is not true of
+  the GitHub button (problem 8.2). `templates/includes/login/login.js` went with
+  them: it exists to switch between those panels on the URL hash, and there is
+  one panel here.
+
+  The button label is "Continue with {provider}", not "Login with {provider}".
+  It signs an existing account in and creates a new one, and "Login" is not a
+  verb in this app: the account menu says "Log out" (problem 8.3).
+#}
+{% extends "sketch/templates/sketch_page.html" %}
+
+{% block bar_actions %}
+<a class="sk-btn sk-btn--ghost sk-btn--sm text-base" href="/help">Help</a>
+{% endblock %}
+
+{% block sketch_content %}
+<section class="sk-narrow">
+	<h1 class="text-2xl-semibold">Sign in</h1>
+	<p class="sk-mt-1 text-p-sm sk-ink-7">
+		Sketch renders frappe-ui prototypes that your own agent writes over MCP.
+	</p>
+
+	{% if provider_logins %}
+	<div class="sk-mt-4 sk-card">
+		{% for provider in provider_logins %}
+		<a
+			class="sk-btn sk-btn--full text-base-medium {{ 'sk-mt-2' if not loop.first else '' }}"
+			href="{{ provider.auth_url }}"
+		>
+			{{ provider.icon or "" }}
+			Continue with {{ provider.provider_name }}
+		</a>
+		{% endfor %}
+		<p class="sk-mt-3 text-p-xs sk-ink-5">
+			This button signs you in. The first time, it also makes your Sketch
+			account. Sketch reads your GitHub name and email, and nothing else.
+		</p>
+	</div>
+	{% else %}
+	{#
+	  The honest state for a site with no credentials. Core's `get_context`
+	  drops a provider whose client id or client secret is blank
+	  (`frappe/www/login.py:70-92`), and `sketch/install.py` creates the GitHub
+	  key disabled and never writes a credential, so this is the state a fresh
+	  install is in. An empty card would read as a loading failure.
+
+	  The tinted block from TOKENS, the same one the Settings warning uses. It
+	  is the only tinted block on this page.
+	#}
+	<div class="sk-mt-4 sk-note">
+		<svg
+			aria-hidden="true"
+			class="sk-note-icon"
+			fill="none"
+			stroke="currentColor"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			stroke-width="2"
+			viewBox="0 0 24 24"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/>
+			<path d="M12 9v4"/>
+			<path d="M12 17h.01"/>
+		</svg>
+		<div>
+			<p class="text-base-medium">Sign-in is not set up yet</p>
+			<p class="sk-mt-1 text-p-sm">
+				This site holds no GitHub credentials, so there is no way in. The site
+				owner adds them to the GitHub Social Login Key.
+			</p>
+		</div>
+	</div>
+	{% endif %}
+
+	<p class="sk-mt-4 text-p-sm sk-ink-7">
+		<a class="sk-link" href="/">What is Sketch?</a>
+	</p>
+</section>
+{% endblock %}

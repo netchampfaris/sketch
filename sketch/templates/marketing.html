@@ -1,0 +1,176 @@
+{#
+  The page a signed-out visitor gets at `/`.
+
+  It lives in `sketch/templates/` and not in `sketch/templates/pages/`, because
+  `get_start_folders()`
+  (`frappe/website/page_renderers/template_page.py:315`) routes `www` and
+  `templates/pages` only. A file here has no URL of its own, so `/` stays the
+  single address of this page. `sketch/www/sketch.py` names it through
+  `context.template`.
+
+  Copy rule: say what Sketch does and what it does not do. The one constraint a
+  visitor has to know before signing in is that their own agent writes the
+  files, because Sketch ships no editor and no agent panel.
+#}
+{% extends "sketch/templates/sketch_page.html" %}
+
+{% block bar_actions %}
+<a class="sk-btn sk-btn--ghost sk-btn--sm text-base" href="/help">Help</a>
+{% endblock %}
+
+{% block sketch_content %}
+<section class="sk-measure">
+	{#
+	  The page title carries the same step as every other page title in Sketch,
+	  `text-2xl-semibold`. TOKENS offers a bigger hero step, and this page does
+	  not take it: one ladder, 18 over 16 over 14, reads across the app and the
+	  public pages alike.
+	#}
+	<h1 class="text-2xl-semibold">
+		High-fidelity frappe-ui prototypes, written by your own agent
+	</h1>
+	<p class="sk-mt-1 text-p-base sk-ink-7">
+		Sketch has no editor and no agent panel. You connect the agent you already
+		use, and you ask it to build a screen. The prototype renders in the browser
+		with real frappe-ui components and real design tokens. Not a mock, not an
+		image.
+	</p>
+	<div class="sk-mt-4">
+		<a class="sk-btn text-base-medium" href="{{ sign_in_url }}">Sign in</a>
+	</div>
+	<p class="sk-mt-2 text-p-xs sk-ink-5">
+		Sketch signs you in with GitHub. The same button makes your account.
+	</p>
+</section>
+
+<section class="sk-mt-10 sk-measure">
+	<h2 class="text-lg-semibold">How it works</h2>
+	<ol class="sk-mt-4 sk-steps">
+		<li>
+			<span class="sk-step-n text-xs-medium">1</span>
+			<p class="text-p-base sk-ink-7">
+				You sign in and copy your token from Settings.
+			</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">2</span>
+			<p class="text-p-base sk-ink-7">
+				You paste one block into your MCP client. Settings holds a ready-made
+				block for eight clients, and each one already carries your token.
+			</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">3</span>
+			<p class="text-p-base sk-ink-7">
+				You ask your agent to build a screen. It writes Vue files into a
+				prototype: <code>src/pages</code>, <code>src/components</code>,
+				<code>src/App.vue</code>, <code>src/router.ts</code>.
+			</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">4</span>
+			<p class="text-p-base sk-ink-7">
+				The agent runs <code>check</code>. Sketch compiles the tree in a real
+				browser, walks the routes, and answers with compile errors, console
+				errors and one screenshot per route.
+			</p>
+		</li>
+		<li>
+			<span class="sk-step-n text-xs-medium">5</span>
+			<p class="text-p-base sk-ink-7">
+				The agent runs <code>commit</code>. Sketch records a version, with the
+				prompt that produced it.
+			</p>
+		</li>
+	</ol>
+</section>
+
+<section class="sk-mt-10 sk-measure">
+	<h2 class="text-lg-semibold">What you need</h2>
+	<p class="sk-mt-1 text-p-base sk-ink-7">
+		A GitHub account, and an agent that speaks MCP.
+	</p>
+
+	<div class="sk-mt-4 sk-card">
+		<h3 class="text-base-medium">Clients that work today</h3>
+		<p class="sk-mt-2 text-p-sm sk-ink-7">
+			Claude Code, Codex, OpenCode, Cursor, VS Code, Claude Desktop, Gemini CLI
+			and Windsurf.
+		</p>
+		<p class="sk-mt-3 text-p-sm sk-ink-7">
+			Claude Code takes one command. Your own token replaces the placeholder,
+			and Settings prints the whole line for you.
+		</p>
+		<pre class="sk-mt-2 sk-code text-p-xs">claude mcp add --transport http --scope user sketch \
+  {{ mcp_url }} \
+  --header "Authorization: Bearer &lt;your-token&gt;"</pre>
+		<p class="sk-mt-2 text-p-xs sk-ink-5">
+			<code>--scope user</code> is not optional. Without it, Claude Code binds
+			Sketch to one directory.
+		</p>
+	</div>
+</section>
+
+<section class="sk-mt-10 sk-measure">
+	<h2 class="text-lg-semibold">Limits, before you sign in</h2>
+	<ul class="sk-mt-4 sk-bullets">
+		<li>
+			<p class="text-p-base sk-ink-7">
+				Sketch has no editor. Your agent writes every file, and you read the
+				result in the browser.
+			</p>
+		</li>
+		<li>
+			<p class="text-p-base sk-ink-7">
+				A prototype has no backend. Data lives in plain <code>ref</code>s
+				inside the files, so the tree renders anywhere.
+			</p>
+		</li>
+		<li>
+			<p class="text-p-base sk-ink-7">
+				A prototype is private until you turn on its public link.
+			</p>
+		</li>
+	</ul>
+
+	<div class="sk-mt-4 sk-note">
+		{# lucide-triangle-alert, the same glyph the Settings warning uses. Inline,
+		   because the `lucide-*` icon classes come from the frappe-ui Tailwind
+		   plugin and the website bundle does not carry them. #}
+		<svg
+			aria-hidden="true"
+			class="sk-note-icon"
+			fill="none"
+			stroke="currentColor"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			stroke-width="2"
+			viewBox="0 0 24 24"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/>
+			<path d="M12 9v4"/>
+			<path d="M12 17h.01"/>
+		</svg>
+		<div>
+			<p class="text-base-medium">claude.ai connectors do not work yet</p>
+			<p class="sk-mt-1 text-p-sm">
+				A claude.ai custom connector takes a URL only. It cannot send the
+				Authorization header Sketch needs. Use one of the clients above.
+			</p>
+		</div>
+	</div>
+</section>
+
+<section class="sk-mt-10 sk-measure">
+	<h2 class="text-lg-semibold">Start</h2>
+	<p class="sk-mt-1 text-p-base sk-ink-7">
+		Sign in, then copy your token. The
+		<a class="sk-link" href="/help">help page</a> holds the setup steps and the
+		errors you can hit on the way.
+	</p>
+	<div class="sk-mt-4">
+		<a class="sk-btn text-base-medium" href="{{ sign_in_url }}">Sign in</a>
+	</div>
+</section>
+{% endblock %}
