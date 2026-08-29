@@ -46,6 +46,25 @@ const rename = useCall<Prototype, { slug: string; title: string }>({
   onError: (error) => toast.error(error.message),
 })
 
+/**
+ * Re-take the card picture on demand.
+ *
+ * It runs a real browser on the server, so it is slower than the other rows
+ * in this menu, about two seconds. `busy` disables the whole menu while it is
+ * in flight, which is the only progress this card shows: a spinner inside a
+ * closed dropdown would be invisible, and the toast says when it is done.
+ */
+const refresh = useCall<Prototype, { slug: string }>({
+  url: method('refresh_preview'),
+  method: 'POST',
+  immediate: false,
+  onSuccess: () => {
+    toast.success('Preview updated')
+    emit('changed')
+  },
+  onError: (error) => toast.error(error.message),
+})
+
 const remove = useCall<{ name: string }, { slug: string }>({
   url: method('delete_prototype'),
   method: 'POST',
@@ -60,7 +79,9 @@ const remove = useCall<{ name: string }, { slug: string }>({
 // The dialog fetches on open, so the gallery never loads history per card.
 const historyOpen = ref(false)
 
-const busy = computed(() => setPublic.loading || rename.loading || remove.loading)
+const busy = computed(
+  () => setPublic.loading || rename.loading || remove.loading || refresh.loading,
+)
 
 /**
  * The line under the name. `description` is derived on the server and its
@@ -154,6 +175,17 @@ const menuOptions = computed(() => [
     icon: 'lucide-link',
     disabled: !props.prototype.is_public,
     onClick: copyPublicUrl,
+  },
+  // Above Rename, because it is about the picture the row sits under, and the
+  // rows below it are about the Prototype's name and history. It is one row
+  // whatever the card is showing: "there is no picture yet" and "the picture
+  // is of an older tree" are the same ask from the user, and a label that
+  // changed with the state would make the user read it before every click.
+  {
+    label: 'Refresh preview',
+    icon: 'lucide-refresh-cw',
+    disabled: busy.value,
+    onClick: () => refresh.submit({ slug: props.prototype.slug }),
   },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
   { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
