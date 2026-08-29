@@ -15,6 +15,10 @@ const warnings = []
 // registered globally by a plugin, so the check happens after mount.
 const candidates = []
 let router = null
+// The payload readData() returned. `report` needs it to paint the status, and
+// `report` also runs from the catch below, where readData() itself is what
+// threw, so it stays null until the read succeeds.
+let payload = null
 
 // ---------------------------------------------------------------- error trap
 window.addEventListener('error', (e) =>
@@ -113,6 +117,162 @@ function applyTheme(resolved) {
   document.documentElement.dataset.theme = theme
 }
 
+// ------------------------------------------------------------------- chrome
+// Sketch's own two pieces of DOM: the owner bar and the status screen. Both are
+// plain nodes styled by the <style> block in viewer.html, because no frappe-ui
+// component renders without Vue and neither screen mounts one.
+//
+// Every string a Prototype owns arrives through textContent. A title is user
+// input, and this document already carries the whole source tree.
+function el(tag, className, text) {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+function icon(name, size) {
+  const node = el('span', `${name} ${size} shrink-0`)
+  node.setAttribute('aria-hidden', 'true')
+  return node
+}
+
+// viewer.html still ships the constant "Prototype" in <title>, because the
+// renderer substitutes one slot and no more. Two open Prototypes were therefore
+// the same entry in the tab strip and in browser history, and every shared link
+// had the same name. The payload already carries the title, so stamp it here.
+function setTitle(data) {
+  const title = typeof data.title === 'string' ? data.title.trim() : ''
+  if (title) document.title = title
+}
+
+// The gallery embeds one Viewer per card in a same-origin iframe
+// (frontend/src/components/PrototypePreview.vue). A framed Viewer is a picture
+// of the Prototype: no Sketch chrome inside Sketch chrome, and no poller.
+const framed = window.top !== window.self
+
+// The one answer to "does this tab reload itself". startLiveReload and the
+// status copy both read it, so the promise can never outlive the poller. The
+// copy used to read `data.live` alone, so a card preview of the owner's own
+// empty Prototype promised a reload that startLiveReload never started.
+function reloadsItself(data) {
+  return Boolean(data.live) && Boolean(data.slug) && !framed
+}
+
+// A thin bar, owner only. PrototypeCard's "Open prototype" is a full page
+// navigation out of the Sketch UI, so without this the only route back is the
+// browser's back button. A visitor on a public link gets no Sketch chrome at
+// all: the page is the Prototype and nothing else.
+function addOwnerBar(data) {
+  if (!data.is_owner) return
+  if (framed) return
+
+  const home = el('a', 'sk-bar-home text-base-medium text-ink-gray-8')
+  home.href = '/'
+  home.append(icon('lucide-arrow-left', 'size-4'), el('span', null, 'Sketch'))
+
+  const bar = el('div', 'sk-bar')
+  bar.append(home, el('span', 'sk-bar-title text-xs text-ink-gray-5', data.title || ''))
+  // Before #app, so the bar is the first thing in the flow, and with the class
+  // that turns <body> into the column the bar and #app share.
+  document.body.classList.add('sk-chrome')
+  document.body.prepend(bar)
+}
+
+// The statuses that leave the page empty. `ok` and `errors` both mounted the
+// Prototype, so their paint is the Prototype's own and this must not replace it.
+const STATUS_SHAPE = {
+  empty: 'empty',
+  'compile-failed': 'failed',
+  'link-failed': 'failed',
+  'boot-failed': 'failed',
+}
+
+const FAILED_HEADING = {
+  'compile-failed': 'This prototype did not compile',
+  'link-failed': 'This prototype did not link',
+  'boot-failed': 'This prototype did not start',
+}
+
+// Enough to name the mistake. The rest is in window.__sketch, which is what
+// `check` reads, and a wall of them stops being legible.
+const SHOWN_ERRORS = 5
+
+// "src/pages/About.vue:12:4". compileSFC and compileTS both report line and
+// column; a resolve or boot error has neither, and some have no file, so the
+// kind labels the row instead of an empty line.
+function errorWhere(error) {
+  if (!error.file) return error.kind || 'error'
+  let where = error.file
+  if (Number.isFinite(error.line)) {
+    where += `:${error.line}`
+    if (Number.isFinite(error.column)) where += `:${error.column}`
+  }
+  return where
+}
+
+function emptyScreen(box, data, name) {
+  const owner = Boolean(data.is_owner)
+  box.append(el('p', 'text-base-medium text-ink-gray-8', owner ? 'Waiting for your agent' : 'Nothing to show yet'))
+
+  const lines = [`${name} has no files yet.`]
+  lines.push(owner ? 'Ask your agent to build a page.' : 'The owner has not built a page yet.')
+  // Only a page with a poller behind it may promise a reload.
+  if (reloadsItself(data)) lines.push('This tab reloads itself when the files arrive.')
+  box.append(el('p', 'sk-status-body text-p-sm text-ink-gray-5', lines.join(' ')))
+}
+
+function failedScreen(box, data, status) {
+  box.append(el('p', 'text-base-medium text-ink-gray-8', FAILED_HEADING[status]))
+
+  const lead = data.is_owner
+    ? reloadsItself(data)
+      ? 'Send these errors to your agent. This tab reloads itself after the fix.'
+      : 'Send these errors to your agent.'
+    : 'The owner has to fix these errors.'
+  box.append(el('p', 'sk-status-body text-p-sm text-ink-gray-5', lead))
+
+  const list = el('ul', 'sk-status-list')
+  for (const error of errors.slice(0, SHOWN_ERRORS)) {
+    const row = el('li', 'sk-error')
+    row.append(el('p', 'font-mono text-xs text-ink-gray-5', errorWhere(error)))
+    row.append(el('p', 'text-p-sm text-ink-gray-8', String(error.message || 'No message.')))
+    list.append(row)
+  }
+  box.append(list)
+
+  const rest = errors.length - SHOWN_ERRORS
+  if (rest > 0) box.append(el('p', 'text-p-xs text-ink-gray-5', `And ${rest} more.`))
+}
+
+// `report` used to write window.__sketch and post a message and nothing else,
+// so an empty tree and a failed build both left a white page. A new user's
+// first URL is a freshly created Prototype, so white was the first thing Sketch
+// showed them.
+function paintStatus(status, data) {
+  const shape = STATUS_SHAPE[status]
+  if (!shape) return
+
+  const root = document.getElementById('app')
+  // startTailwind runs after the mount and can still throw, and that reports
+  // boot-failed. The Prototype is on the screen by then, and a working page is
+  // worth more than the message.
+  if (!root || root.firstElementChild) return
+
+  const name = typeof data.title === 'string' && data.title.trim() ? data.title.trim() : 'This prototype'
+  const box = el('div', 'sk-status-box')
+  const glyph = el('span', shape === 'empty' ? 'sk-status-glyph' : 'sk-status-glyph sk-status-glyph-alert')
+  glyph.append(icon(shape === 'empty' ? 'lucide-file-plus' : 'lucide-triangle-alert', 'size-6'))
+  box.append(glyph)
+
+  if (shape === 'empty') emptyScreen(box, data, name)
+  else failedScreen(box, data, status)
+
+  const screen = el('div', 'sk-status')
+  screen.append(box)
+  root.append(screen)
+}
+
 // -------------------------------------------------------------- live reload
 // The owner's own tab polls one revision string and reloads when it moves.
 // Socket.io is not an option here: Frappe's realtime auth compares the request
@@ -120,15 +280,15 @@ function applyTheme(resolved) {
 //
 // The renderer sends `live: false` for everything except the owner reading
 // this Prototype in a session. `check` and a Guest on a public link therefore
-// make no request at all.
+// make no request at all. A framed Viewer drops out too, in reloadsItself
+// above: twenty cards in iframes would make ten requests a second, and the
+// gallery already polls once for the whole grid
+// (frontend/src/pages/PrototypesScreen.vue, POLL_MS 4000).
 const POLL_MS = 2000 // one poll every two seconds: a stat walk, cheap to answer
 const POLL_MAX_MS = 30000 // the ceiling the backoff climbs to after failures
 
 function startLiveReload(data) {
-  if (!data.live || !data.slug) return
-  // The studio gallery embeds one Viewer per card. Twenty cards in iframes
-  // would make ten requests a second, so only the top-level document polls.
-  if (window.top !== window.self) return
+  if (!reloadsItself(data)) return
 
   const url = '/api/method/sketch.api.prototype_revision?slug=' + encodeURIComponent(data.slug)
   // The renderer read the revision while it built this page, so the baseline
@@ -275,7 +435,12 @@ function makeRegistry(files, factories, bare) {
 // ------------------------------------------------------------------- run it
 async function run() {
   const data = readData()
+  payload = data
   applyTheme(data.theme)
+  setTitle(data)
+  // Before the compile, so the bar is in the flow before the Prototype paints
+  // and the Prototype never has to move for it.
+  addOwnerBar(data)
   // Before the early returns below: an empty or broken tree must reload too.
   try {
     startLiveReload(data)
@@ -436,6 +601,15 @@ function report(status) {
     tailwind: twStats,
   }
   window.__sketch = result
+  // Every caller passes through here, including the run().catch below, so one
+  // call covers every status that leaves the page empty. It runs before the
+  // message, because `check` screenshots as soon as the message arrives.
+  try {
+    paintStatus(status, payload || {})
+  } catch {
+    // The result is the contract `check` reads, and console.error is captured
+    // into it above. A DOM failure must take down neither.
+  }
   parent.postMessage({ type: 'sketch:check', result }, '*')
   return result
 }
