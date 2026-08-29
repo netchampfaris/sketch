@@ -6,6 +6,17 @@ export interface SketchSession {
   full_name: string
   user_image: string
   has_token: boolean
+  /**
+   * When the agent last called /mcp with a good token. Null until it does.
+   *
+   * This is the connection signal, not `has_token`: `get_agent_token` mints a
+   * token on read, so `has_token` turns true the moment a user opens Settings
+   * (plan v2, step 1.5). Optional here because the server field is new; every
+   * reader must survive an older reply.
+   */
+  last_used?: string | null
+  /** The same instant as "2 minutes ago". Null until the agent connects. */
+  last_used_pretty?: string | null
   mcp_endpoint: string
   logout_url: string
 }
@@ -60,4 +71,8 @@ export interface Recipe {
 export interface AgentToken {
   token: string
   endpoint: string
+  /** See `SketchSession.last_used`. Same field, same meaning. */
+  last_used?: string | null
+  /** See `SketchSession.last_used_pretty`. */
+  last_used_pretty?: string | null
 }

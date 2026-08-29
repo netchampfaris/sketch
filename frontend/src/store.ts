@@ -29,9 +29,12 @@ export const recipes = useCall<Recipe[]>({
   initialData: [],
 })
 
+// `initialData` keeps the connection card at full height while the token
+// loads. Without it the card collapses and the page jumps (problem C7).
 export const agentToken = useCall<AgentToken>({
   url: method('get_agent_token'),
   immediate: false,
+  initialData: { token: '', endpoint: '' },
 })
 
 /** Send a signed-out visitor to the login page and back again. */

@@ -1013,11 +1013,20 @@ invented spacing, radius or colour value.
 
 ### Shell
 
-- A persistent **14 rem sidebar** on desktop. It holds the Sketch identity,
-  Prototypes and Settings navigation, a small agent-connection status, and the
-  signed-in User at the bottom.
-- The **theme control sits in the sidebar footer**, next to the User. It is a
-  display preference, not an account setting.
+Revised 2026-08-29. Faris asked for a simpler UI. The 14 rem sidebar is gone.
+Sketch has two screens and one action, so a sidebar to hold two links was
+furniture.
+
+- A single **top bar** on every screen. Left: the Sketch mark, linking to the
+  Prototypes screen. Right: the signed-in User, as an account menu.
+- The account menu holds the username, **Agent connection**, the theme
+  control, and **Log out**.
+- The **theme control lives in that menu**. It is a display preference, not an
+  account setting.
+- The content sits in a centred column, so it does not stretch across a wide
+  monitor.
+- Every row of the bar has a fixed height. Nothing moves while the session
+  loads.
 
 ### Prototypes screen
 
@@ -1040,26 +1049,37 @@ Prototype).
 
 ### Settings
 
-Same app sidebar and header. The body has a narrow local navigation column and
-a content column: **Profile**, then **Agent connection**.
+Revised 2026-08-29. One column, no local navigation column and no tab query.
+**Agent connection** comes first, because that is why anyone opens the page.
+**Profile** follows.
 
+- Agent connection shows one Token, masked, with **Copy token**, a
+  **Show** / **Hide** toggle, and **Regenerate** behind a destructive
+  confirmation. It is not a token list: one user, one token. Under the field,
+  `Last agent request: <relative time>`, or `No agent has connected yet.`
+- Then the endpoint, with **Copy endpoint**, the transport, the header name and
+  the header value.
+- Then **Set up your client**: one ready-made block per harness, carrying the
+  live token. Claude Code, Codex, OpenCode, Cursor, VS Code, Claude Desktop,
+  Gemini CLI and Windsurf. The snippets are in
+  `.scratch/sketch-onboarding/harnesses.md`, each verified against the vendor's
+  own documentation.
+- claude.ai gets a notice, not a block. A claude.ai custom connector takes a
+  URL only and cannot send the `Authorization` header Sketch needs.
 - Profile shows Username with this help text, verbatim: **3–30 characters. Use
   lowercase letters, numbers, and hyphens. Start with a letter.** The field is
   read-only after signup (section 3).
-- Agent connection shows one readable Token with **Copy token** and
-  **Regenerate** actions, then the `https://sketch.netchamp.dev/mcp` endpoint
-  and a **Copy config** action. It is not a token list: one user, one token.
 
 ### Viewer route
 
 The Prototype document at `/u/<username>/<slug>` fills the viewport and has
-**no Sketch sidebar, header, account controls, or other Sketch chrome**.
+**no Sketch top bar, account controls, or other Sketch chrome**.
 Everything visible there belongs to the Prototype.
 
 ### Components
 
-`Button`, `Dropdown`, `Switch`, `FormControl`, `Avatar`, `Badge`, the
-imperative `dialog` and `toast` APIs, and the modern `List`, `ListRow` and
+`Button`, `Dropdown`, `Switch`, `FormControl`, `Avatar`, `Badge`, `Tabs`,
+`Alert`, the imperative `dialog` and `toast` APIs, and the modern `List`, `ListRow` and
 `ListCell` family from `frappe-ui/list`. Semantic surface, ink and outline
 tokens throughout.
 
