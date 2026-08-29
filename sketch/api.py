@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 import frappe
 from frappe.utils import convert_utc_to_system_timezone, pretty_date
 
-from sketch import prototype, prototype_files, versions
+from sketch import prototype, prototype_files, thumbnail, thumbnails, versions
 from sketch.sketch.doctype.sketch_token import sketch_token
 
 #: The eight recipes from ui.frappe.io/recipes, plus Blank (spec 10). The trees
@@ -113,35 +113,76 @@ def _apply_title(files: list[dict], title: str) -> list[dict]:
 	return [dict(entry, content=entry["content"].replace(TITLE_TOKEN, safe)) for entry in files]
 
 
-def _content_modified(name: str, files: list[dict]) -> str:
-	"""When this Prototype's files last changed, on the site clock.
+def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
+	"""When this Prototype's files last changed, and the revision string.
 
-	Not `Sketch Prototype.modified`. Every doc write moves that field, so
-	flipping the public switch reset the card to "Updated 1 second ago" and
-	jumped it to the head of the gallery, which sorted on the same field
-	(review 5.7). Only an agent writing files is a change the user asked for,
-	so the newest mtime in the tree is what the label and the order both read.
+	Two answers from one stat pass, because both callers need both and the
+	tree is on disk. `files` is the listing the caller already walked, so this
+	costs one stat per file and no second walk. Asking
+	`prototype_files.revision()` for the second answer would walk it again.
 
-	`files` is the listing the caller already walked, so this costs one stat
-	per file and no second walk. Returns "" when nothing can be stat'ed,
-	including an empty tree.
+	The first value is the timestamp on the site clock. Not
+	`Sketch Prototype.modified`: every doc write moves that field, so flipping
+	the public switch reset the card to "Updated 1 second ago" and jumped it to
+	the head of the gallery, which sorted on the same field (review 5.7). Only
+	an agent writing files is a change the user asked for, so the newest mtime
+	in the tree is what the label and the order both read.
+
+	The second is `prototype_files.revision()`'s own format, file count and
+	newest mtime in nanoseconds, and it must stay that format: the thumbnail
+	sidecar is written against one and compared against the other
+	(`sketch/thumbnails.py`).
+
+	Both are "" when nothing can be stat'ed, including an empty tree.
 	"""
 	base = prototype_files.prototype_dir(name)
-	newest = 0.0
+	count = 0
+	newest_ns = 0
 	for row in files:
 		try:
-			newest = max(newest, os.stat(os.path.join(base, row["path"])).st_mtime)
+			stat = os.stat(os.path.join(base, row["path"]))
 		except OSError:
 			continue
 
-	if not newest:
-		return ""
+		count += 1
+		if stat.st_mtime_ns > newest_ns:
+			newest_ns = stat.st_mtime_ns
+
+	if not newest_ns:
+		return "", ""
 
 	# st_mtime is epoch UTC. `pretty_date` subtracts against `now_datetime()`,
 	# which is the site's timezone (frappe/utils/data.py:1866), so an
 	# unconverted stamp reads hours out and can print a time in the future.
-	local = convert_utc_to_system_timezone(datetime.fromtimestamp(newest, tz=UTC))
-	return local.strftime("%Y-%m-%d %H:%M:%S")
+	local = convert_utc_to_system_timezone(datetime.fromtimestamp(newest_ns / 1e9, tz=UTC))
+	return local.strftime("%Y-%m-%d %H:%M:%S"), f"{count}-{newest_ns}"
+
+
+def _card_image(name: str, username: str, slug: str, rev: str) -> dict | None:
+	"""The card pictures, one URL per theme, and a refresh when they are old.
+
+	Returns None when this Prototype has never been captured. The card then
+	draws its placeholder, which is the ordinary state of a Prototype whose
+	agent has not run `check` with `screenshot: true` yet.
+
+	Only the themes actually on disk are named. A dark capture that failed
+	leaves `dark` absent rather than pointing at a 404, so the reader falls
+	back to `light` without a request that it knows will fail.
+
+	A stale picture is still returned. A card that blanked itself the moment a
+	file changed would flicker on every agent write, and the old picture is a
+	true picture of an older tree. The refresh is asked for in the background,
+	and the gallery poll that follows picks up the new one.
+	"""
+	state = thumbnails.state(name, rev)
+	if state != "fresh":
+		thumbnails.request_refresh(name)
+
+	if state == "missing":
+		return None
+
+	themes = thumbnails.meta(name).get("themes") or []
+	return {theme: thumbnail.url(username, slug, theme, rev) for theme in themes}
 
 
 def _public_base() -> str:
@@ -183,7 +224,8 @@ def _row(doc_or_dict) -> dict:
 	# Falls back to `creation`, never to `modified`. `modified` is the field
 	# that moves on a visibility toggle, which is the jump this stamp exists to
 	# stop, and an empty tree has no mtime of its own to report.
-	updated_at = _content_modified(name, files) or str(doc_or_dict.get("creation") or "")
+	updated_at, rev = _tree_stamp(name, files)
+	updated_at = updated_at or str(doc_or_dict.get("creation") or "")
 	return {
 		"name": name,
 		"title": doc_or_dict.get("title"),
@@ -191,6 +233,10 @@ def _row(doc_or_dict) -> dict:
 		"pin": pin,
 		"is_public": bool(doc_or_dict.get("is_public")),
 		"file_count": count,
+		# One URL per theme, or None for a Prototype nobody has checked yet.
+		# The gallery draws a picture, never a live Viewer: twelve iframes meant
+		# twelve Runtimes (`sketch/thumbnails.py`).
+		"thumbnail": _card_image(name, username, slug, rev),
 		# The pin is deliberately out of this line. It used to lead it, which
 		# made the frappe-ui version the loudest fact about a Prototype and told
 		# a new user nothing they could act on (review 5.8). It stays in the
@@ -342,12 +388,17 @@ def _public_row(row, username: str) -> dict:
 	# Falls back to `creation`, never to `modified`, for the reason
 	# `public_prototypes` gives: `modified` moves on a visibility toggle, and
 	# the toggle is what puts a Prototype on this page.
-	updated_at = _content_modified(row.name, files) or str(row.creation or "")
+	updated_at, rev = _tree_stamp(row.name, files)
+	updated_at = updated_at or str(row.creation or "")
 	return {
 		"title": row.title,
 		"username": username,
 		"slug": row.slug,
 		"viewer_path": f"/u/{username}/{row.slug}",
+		# The same pictures the gallery card draws. The feed prints the light
+		# one: these pages carry no theme control and core's token layer only
+		# turns dark on `[data-theme="dark"]`, which nothing here sets.
+		"thumbnail": _card_image(row.name, username, row.slug, rev),
 		"description": f"{count} {'file' if count == 1 else 'files'}",
 		"modified": updated_at,
 		"updated": pretty_date(updated_at) if updated_at else "",

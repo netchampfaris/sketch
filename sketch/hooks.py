@@ -100,10 +100,12 @@ website_route_rules = [
 # the resolver skips the map while the path is "index" (spec 3).
 home_page = "sketch"
 
-# The Viewer serves /u/<username>/<slug>. Custom renderers run first inside
+# The Viewer serves /u/<username>/<slug>, and the card image serves
+# /t/<username>/<slug>/<theme>.png. Custom renderers run first inside
 # PathResolver.resolve(), ahead of every built-in page type.
 page_renderer = [
 	"sketch.viewer.SketchViewerRenderer",
+	"sketch.thumbnail.SketchThumbnailRenderer",
 	"sketch.mcp.http.McpPageRenderer",
 ]
 

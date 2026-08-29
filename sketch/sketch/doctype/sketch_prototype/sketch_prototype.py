@@ -24,12 +24,16 @@ class SketchPrototype(Document):
 	def on_trash(self):
 		"""Delete the on-disk tree. Without this, orphan directories build up.
 
-		A force delete skips the link check, so the Version rows go too.
+		A force delete skips the link check, so the Version rows go too. The
+		card images live outside the tree, so they need their own line
+		(`sketch/thumbnails.py`).
 		"""
 		from sketch.prototype_files import delete_tree
+		from sketch.thumbnails import forget
 
 		frappe.db.delete("Sketch Prototype Version", {"prototype": self.name})
 		delete_tree(self.name)
+		forget(self.name)
 
 
 def on_doctype_update():
