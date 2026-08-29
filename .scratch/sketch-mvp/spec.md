@@ -1031,7 +1031,8 @@ furniture.
 ### Prototypes screen
 
 - Header reads **Your studio**, shows the Prototype count, and carries one
-  solid **New prototype** action.
+  **New prototype** action. Revised 2026-08-29: no button in the UI is
+  `solid`. `subtle` leads and `outline` follows.
 - A responsive visual gallery. Each item has a rendered-preview area, name,
   short description, updated time, a Public/Private switch, and an overflow
   menu.

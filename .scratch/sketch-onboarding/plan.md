@@ -177,8 +177,9 @@ takes a URL only and cannot send the `Authorization` header Sketch needs.
 ### Prototypes empty state
 
 `No prototypes yet` / `Sketch has no editor. Your own agent writes the prototypes over
-MCP.` / `Connect an agent first, then ask it to build something.` / solid
-`Connect your agent` -> `/settings` / outline `New prototype`.
+MCP.` / `Connect an agent first, then ask it to build something.` / subtle
+`Connect your agent` -> `/settings` / outline `New prototype`. No button is
+solid, anywhere.
 
 ## Decisions Faris already made
 

@@ -2,12 +2,14 @@
   <title>Sketch</title>
   <!-- The mark is a wireframe: one header bar and two panels.
        Sketch draws a user interface, so the mark draws one.
-       The tile carries its own background. The mark holds its
-       contrast on a light page and on a dark page.
-       Tile colour is the frappe-ui token surface-blue-6.
+       The tile carries its own background, so one file works on
+       a light page and, inverted, on a dark one.
+       Tile colour is the frappe-ui token surface-gray-9,
+       oklch(20.5% 0 0), written as its sRGB hex because a
+       favicon must render without a colour function.
        Tile radius 16 is the token radius rounded-7.
        Panel radius 4 is the token radius rounded-1. -->
-  <rect width="64" height="64" rx="16" fill="#0C8EF8"/>
+  <rect width="64" height="64" rx="16" fill="#262626"/>
   <rect x="16" y="16" width="32" height="8" rx="4" fill="#FFFFFF"/>
   <rect x="16" y="29" width="13" height="19" rx="4" fill="#FFFFFF"/>
   <rect x="35" y="29" width="13" height="19" rx="4" fill="#FFFFFF" fill-opacity="0.6"/>

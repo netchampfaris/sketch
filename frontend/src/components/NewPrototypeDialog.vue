@@ -78,7 +78,7 @@ async function submit(): Promise<void> {
     :actions="[
       {
         label: 'Create prototype',
-        variant: 'solid',
+        variant: 'subtle',
         theme: 'gray',
         disabled: !canCreate,
         onClick: submit,

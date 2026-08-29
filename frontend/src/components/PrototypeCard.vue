@@ -116,7 +116,7 @@ const menuOptions = computed(() => [
         icon-left="lucide-external-link"
         label="Open prototype"
         theme="gray"
-        variant="solid"
+        variant="subtle"
         @click="openViewer"
       />
     </div>

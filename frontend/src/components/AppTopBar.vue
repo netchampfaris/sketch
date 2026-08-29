@@ -99,7 +99,7 @@ const menu = computed<DropdownOptions>(() => [
         <img
           alt=""
           aria-hidden="true"
-          class="size-6 shrink-0"
+          class="size-6 shrink-0 dark:invert"
           :src="logo"
         />
         <span class="text-base-medium text-ink-gray-8">Sketch</span>

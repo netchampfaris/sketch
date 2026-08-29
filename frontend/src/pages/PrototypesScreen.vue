@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Your studio: the Prototype gallery (spec 11).
+ * Your prototypes: the Prototype gallery (spec 11).
  *
- * The header holds the count and the one solid action. The body is a
+ * The header holds the count and the one primary action. The body is a
  * responsive grid of cards, each with a live preview of the Prototype.
  */
 import { computed, onMounted, ref } from 'vue'
@@ -34,7 +34,7 @@ onMounted(() => {
 <template>
   <PageHeader>
     <div class="min-w-0">
-      <h1 class="truncate text-lg font-semibold text-ink-gray-8">Your studio</h1>
+      <h1 class="truncate text-lg font-semibold text-ink-gray-8">Your prototypes</h1>
       <p class="text-xs text-ink-gray-5">
         {{ count }} {{ count === 1 ? 'prototype' : 'prototypes' }}
       </p>
@@ -43,7 +43,7 @@ onMounted(() => {
       icon-left="lucide-plus"
       label="New prototype"
       theme="gray"
-      variant="solid"
+      variant="subtle"
       @click="showPicker = true"
     />
   </PageHeader>
@@ -84,8 +84,9 @@ onMounted(() => {
       </p>
       <div class="mt-2 flex flex-wrap items-center justify-center gap-2">
         <!--
-          `Connect your agent` is solid here, and only here. The header keeps
-          the one solid `New prototype` action (spec 11). An agent that has
+          `Connect your agent` leads here, and only here. The header keeps
+          the one `New prototype` action (spec 11). No button is solid: subtle
+          leads, outline follows. An agent that has
           already called /mcp needs no invitation, so the button goes.
         -->
         <Button
@@ -94,7 +95,7 @@ onMounted(() => {
           label="Connect your agent"
           route="/settings"
           theme="gray"
-          variant="solid"
+          variant="subtle"
         />
         <Button
           icon-left="lucide-plus"
