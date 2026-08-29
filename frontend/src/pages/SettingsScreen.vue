@@ -1,192 +1,58 @@
 <script setup lang="ts">
 /**
- * Settings: one scroll, two sections (plan v2, step 2.3).
+ * Settings: one scroll, two sections.
  *
  * Agent connection comes first, then Profile, because connecting an agent is
- * why anyone opens this page. The local nav column and the `?tab=` query are
- * gone. Nothing reads the query now, so an old `/settings?tab=agent` link
- * still lands here and does nothing.
+ * why anyone opens this page. Agent connection is one token, not a token list.
+ * One user, one token.
  *
- * Agent connection is one token, not a token list. One user, one token.
+ * The eight per-client panels are gone. They were eight tabs, eight config
+ * snippets and eight notes, and the user still had to find the right file and
+ * merge into it by hand. The per-client facts that made those panels worth
+ * reading now live inside `SETUP_PROMPT`, which the user's own agent reads.
+ * The agent knows which client it runs in, so one prompt covers every client
+ * the tabs listed and the clients they did not.
+ *
+ * The token is never in a field on this page. It appears once, inside the
+ * prompt, masked until the user asks for it.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import {
-  Button,
-  FormControl,
-  PageHeader,
-  TabList,
-  TabPanel,
-  TabTrigger,
-  Tabs,
-  dialog,
-  toast,
-  useCall,
-} from 'frappe-ui'
+import { Button, FormControl, PageHeader, dialog, toast, useCall } from 'frappe-ui'
 import { usePoll } from '../poll'
 import { agentToken, copyText, method, session } from '../store'
 import type { AgentToken } from '../types'
 
-/** One ready-made block per MCP client. */
-interface Harness {
-  /** Tab value and tab label. */
-  value: string
-  /** What the user must do. One sentence. Backticks render as code. */
-  help: string
-  /** The file to edit. Empty when the snippet is itself a command. */
-  paths: string[]
-  /** `<token>` and `<endpoint>` are replaced with the live values. */
-  snippet: string
-  /**
-   * True when the snippet is a whole config file rather than a fragment.
-   *
-   * A user who already runs MCP servers loses every one of them by pasting
-   * such a block over the file, so those panels carry a merge line (problem
-   * 3.4). Codex is false on purpose: its snippet is a TOML section, and a
-   * section appends instead of replacing.
-   */
-  merge: boolean
-  /** The one mistake this client invites. Backticks render as code. */
-  note: string
-}
-
 /**
- * Every snippet is verified against the vendor's own documentation
- * (.scratch/sketch-onboarding/harnesses.md). The top-level key is the number
- * one setup failure, so each snippet carries its own: VS Code uses `servers`,
- * OpenCode uses `mcp`, Codex uses `mcp_servers`, the rest use `mcpServers`.
+ * The whole setup, as one instruction to the user's agent.
  *
- * One data structure, so the eight panels share one piece of markup.
+ * `<endpoint>` and `<token>` are the placeholders `fill()` substitutes, the
+ * same pair the old snippets used.
  *
- * VS Code is the one snippet that does not carry the live token. It reads the
- * token from a VS Code input on purpose, so the token never lands in a file.
+ * The three client facts in the second paragraph are the number one setup
+ * failure, and each one is verified against the vendor's own documentation
+ * (.scratch/sketch-onboarding/harnesses.md): the top-level key differs per
+ * client, a whole-file paste destroys the user's other MCP servers, and a 401
+ * starts an OAuth flow in clients that assume OAuth. They must survive
+ * verbatim. An agent that guesses these writes a config that loads without an
+ * error and serves no tools.
+ *
+ * The last sentence asks for a tool call, so the agent proves the connection
+ * instead of reporting that it edited a file.
  */
-const harnesses: Harness[] = [
-  {
-    value: 'Claude Code',
-    help: 'Run this once. It adds Sketch to every project on this machine.',
-    paths: [],
-    snippet:
-      'claude mcp add --transport http --scope user sketch <endpoint> --header "Authorization: Bearer <token>"',
-    merge: false,
-    note: '`--scope user` is not optional. Without it Claude Code binds Sketch to one directory. Check it with `claude mcp list`.',
-  },
-  {
-    value: 'Codex',
-    help: 'Add this to the Codex config file, then restart Codex.',
-    paths: ['~/.codex/config.toml'],
-    snippet: `[mcp_servers.sketch]
-url = "<endpoint>"
-http_headers = { Authorization = "Bearer <token>" }`,
-    merge: false,
-    note: '`codex mcp add` has no header flag, so edit the file by hand.',
-  },
-  {
-    value: 'OpenCode',
-    help: 'Add this to the OpenCode config file, then restart OpenCode.',
-    paths: ['~/.config/opencode/opencode.json'],
-    snippet: `{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "sketch": {
-      "type": "remote",
-      "url": "<endpoint>",
-      "enabled": true,
-      "oauth": false,
-      "headers": { "Authorization": "Bearer <token>" }
-    }
-  }
-}`,
-    merge: true,
-    note: 'The type is `remote`, not `http`. Keep `oauth` false, or a 401 starts an OAuth flow instead of failing cleanly.',
-  },
-  {
-    value: 'Cursor',
-    help: 'Add this to the Cursor config file.',
-    paths: ['~/.cursor/mcp.json'],
-    snippet: `{
-  "mcpServers": {
-    "sketch": {
-      "url": "<endpoint>",
-      "headers": { "Authorization": "Bearer <token>" }
-    }
-  }
-}`,
-    merge: true,
-    note: 'There is no `type` field. Cursor reads the transport from the URL. Do not use the `auth` object, that is OAuth.',
-  },
-  {
-    value: 'VS Code',
-    help: 'Run "MCP: Open User Configuration" and add this there, or add it to a workspace file. VS Code asks for the token the first time and keeps it out of the file, so this block carries no token.',
-    paths: ['.vscode/mcp.json'],
-    snippet: `{
-  "inputs": [
-    { "type": "promptString", "id": "sketch-token", "description": "Sketch MCP token", "password": true }
-  ],
-  "servers": {
-    "sketch": {
-      "type": "http",
-      "url": "<endpoint>",
-      "headers": { "Authorization": "Bearer \${input:sketch-token}" }
-    }
-  }
-}`,
-    merge: true,
-    note: 'The key is `servers`, not `mcpServers`. VS Code is the odd one out.',
-  },
-  {
-    value: 'Claude Desktop',
-    help: 'Claude Desktop reads stdio servers only, so it needs the mcp-remote bridge. Add this, then restart Claude Desktop. Node 18 or newer is required.',
-    paths: [
-      'macOS: ~/Library/Application Support/Claude/claude_desktop_config.json',
-      'Windows: %APPDATA%\\Claude\\claude_desktop_config.json',
-    ],
-    snippet: `{
-  "mcpServers": {
-    "sketch": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "<endpoint>", "--transport", "http-only",
-               "--header", "Authorization:\${AUTH_HEADER}"],
-      "env": { "AUTH_HEADER": "Bearer <token>" }
-    }
-  }
-}`,
-    merge: true,
-    note: 'Write `Authorization:${AUTH_HEADER}` with no space. Claude Desktop, Cursor and Codex all mangle a space inside `args`.',
-  },
-  {
-    value: 'Gemini CLI',
-    help: 'Run this once.',
-    paths: [],
-    snippet:
-      'gemini mcp add -s user -t http -H "Authorization: Bearer <token>" sketch <endpoint>',
-    merge: false,
-    note: 'The scope defaults to `project`, so pass `-s user`. Older documents say to use `httpUrl`; that field is deprecated.',
-  },
-  {
-    value: 'Windsurf',
-    help: 'Add this to the Windsurf config file.',
-    paths: ['~/.codeium/windsurf/mcp_config.json'],
-    snippet: `{
-  "mcpServers": {
-    "sketch": {
-      "serverUrl": "<endpoint>",
-      "headers": { "Authorization": "Bearer <token>" }
-    }
-  }
-}`,
-    merge: true,
-    note: 'The key is `serverUrl`, not `url`.',
-  },
-]
+const SETUP_PROMPT = `Add the Sketch MCP server to this client, at user scope so it works in all my projects, not just this one.
 
-const client = ref(harnesses[0].value)
+  URL: <endpoint>
+  Transport: streamable HTTP, POST only
+  Header: Authorization: Bearer <token>
+
+Use this client's own way to add an MCP server: its CLI command if it has one, otherwise its MCP config file. Merge the entry into that file, do not overwrite it, or I lose my other MCP servers. The top-level key differs per client: \`servers\` in VS Code, \`mcp\` in OpenCode, \`mcp_servers\` in Codex, \`mcpServers\` in the rest. Sketch authenticates with the static header above, so do not set up OAuth. Restart the client if it reads its config only at start, then call the Sketch tool that lists my prototypes and tell me what it returned.`
 
 /**
  * The token reads as bullets until the user asks for it (problem C6).
  *
- * One toggle drives the field and every snippet (problem 3.3). A masked field
- * above a clear-text block was false comfort: the token was on screen the
- * whole time in a screen share or a screenshot.
+ * A masked field above a clear-text block was false comfort: the token was on
+ * screen the whole time in a screen share or a screenshot. One toggle, one
+ * place the token can appear.
  */
 const revealed = ref(false)
 
@@ -209,7 +75,7 @@ const endpoint = computed(() => agentToken.data?.endpoint ?? '')
 const username = computed(() => session.data?.username ?? '')
 
 /**
- * The mask is the token's own length, so revealing it cannot rewrap a block
+ * The mask is the token's own length, so revealing it cannot rewrap the block
  * and move everything below it.
  */
 const maskedToken = computed(() => '•'.repeat(token.value.length))
@@ -272,35 +138,7 @@ watch(lastUsed, (value) => {
 
 onMounted(() => agentToken.reload())
 
-/**
- * Its own flag, not `agentToken.loading`: that one flips on every poll tick,
- * so the button would spin every five seconds without anybody pressing it.
- */
-const testing = ref(false)
-
-/**
- * Test connection re-reads the state. It never calls /mcp itself, because a
- * browser request carrying the token would stamp `last_used` and make the page
- * report a connection the user's agent never made.
- */
-async function testConnection(): Promise<void> {
-  testing.value = true
-  await agentToken.reload()
-  testing.value = false
-  if (agentToken.error) {
-    toast.error('Could not reach Sketch. Try again.')
-    return
-  }
-  if (lastUsed.value) {
-    toast.success(`Your agent is connected. Last request: ${lastUsed.value}`)
-    return
-  }
-  toast.info(
-    'No agent has called Sketch yet. Set up your client below, then ask it to list your prototypes.',
-  )
-}
-
-/** Put the live token and endpoint into a snippet. This is what Copy sends. */
+/** Put the live token and endpoint into the prompt. This is what Copy sends. */
 function fill(text: string): string {
   let out = text
   if (endpoint.value) out = out.split('<endpoint>').join(endpoint.value)
@@ -309,24 +147,13 @@ function fill(text: string): string {
 }
 
 /**
- * What a block shows. Copy calls `fill`, so a masked block still puts the real
- * token on the clipboard.
+ * What the screen shows. Copy calls `fill`, so a masked block still puts the
+ * real token on the clipboard.
  */
 function shown(text: string): string {
   const filled = fill(text)
   if (revealed.value || !token.value) return filled
   return filled.split(token.value).join(maskedToken.value)
-}
-
-/**
- * Split a line on backticks, so the template can draw the odd runs as `<code>`
- * (problem 3.10). The source strings keep their markdown, which is how they
- * read in a diff, and the page never prints a raw backtick.
- */
-function runs(text: string): { text: string; code: boolean }[] {
-  return text
-    .split('`')
-    .map((part, index) => ({ text: part, code: index % 2 === 1 }))
 }
 
 /**
@@ -338,7 +165,7 @@ function askToRegenerate(): void {
   dialog.confirm({
     title: 'Regenerate token?',
     message:
-      'Every agent that holds the old token stops working at once. You must paste the new token into each client again.',
+      'Every agent that holds the old token stops working at once. You must run the setup prompt again in each client.',
     confirmLabel: 'Regenerate',
     theme: 'red',
     onConfirm: () => regenerate.submit(),
@@ -361,11 +188,20 @@ async function copy(text: string, done: string): Promise<void> {
 </script>
 
 <template>
-  <PageHeader>
-    <div class="min-w-0">
-      <h1 class="truncate text-2xl-semibold text-ink-gray-8">Settings</h1>
-      <p class="text-p-xs text-ink-gray-5">Account and connection</p>
-    </div>
+  <!--
+    No rule under the title, and no subtitle. The top bar already draws a line,
+    and a second one 12px below it read as a double border.
+
+    `border-b-0` beats `PageHeader.vue`'s own `border-b` on source order, not
+    on specificity: Tailwind emits `.border-b-0` after `.border-b`. The
+    component hard-codes the border and exposes no prop, and its class lands on
+    the same element as ours through `PageHeaderBase`'s `$attrs`.
+
+    `pt-6` matches the body's own top padding below. Same header as
+    `PrototypesScreen.vue`, so the title sits at the same height on both.
+  -->
+  <PageHeader class="border-b-0 pt-6">
+    <h1 class="truncate text-2xl-semibold text-ink-gray-8">Settings</h1>
   </PageHeader>
 
   <!--
@@ -377,26 +213,51 @@ async function copy(text: string, done: string): Promise<void> {
     <section>
       <h2 class="text-lg-semibold text-ink-gray-8">Agent connection</h2>
       <p class="mt-1 text-p-sm text-ink-gray-7">
-        Your agent talks to Sketch over MCP. Copy the token, then paste one block
-        below into your client.
+        Paste this prompt into your agent session. The agent sets Sketch up by
+        itself.
       </p>
 
       <div class="mt-4 rounded-6 border border-outline-gray-1 p-5">
-        <FormControl
-          class="[&_input]:font-mono"
-          label="Token"
-          readonly
-          :model-value="token"
-          :type="revealed ? 'text' : 'password'"
-        />
         <!--
-          A sibling paragraph, not FormControl's `description` prop: that prop
-          renders 13px and cannot be retuned, so the card held two helper sizes
-          (problem 3.15).
+          Fixed height, so Show and Hide swapping labels cannot move the block.
+          The actions sit above the code, never over it: the block wraps, so
+          text reaches the top-right corner a floating button would cover
+          (problem 3.2).
         -->
-        <p class="mt-2 text-p-xs text-ink-gray-5">
-          One user, one token. Anyone who holds it can write your prototypes.
-        </p>
+        <div class="flex h-7 items-center justify-between gap-3">
+          <p class="min-w-0 truncate text-p-sm text-ink-gray-8">Setup prompt</p>
+          <div class="flex shrink-0 items-center gap-2">
+            <Button
+              :icon-left="revealed ? 'lucide-eye-off' : 'lucide-eye'"
+              :label="revealed ? 'Hide' : 'Show'"
+              @click="revealed = !revealed"
+            />
+            <!--
+              Disabled until the token lands. A copy sent early carries the
+              literal `<token>` placeholder, and the agent then writes a config
+              that fails with a 401 the user cannot explain.
+            -->
+            <Button
+              :disabled="!token"
+              icon-left="lucide-copy"
+              label="Copy"
+              @click="copy(fill(SETUP_PROMPT), 'Prompt copied')"
+            />
+          </div>
+        </div>
+        <!--
+          Wrap, never scroll sideways: the endpoint line alone runs past the
+          box (problem 3.2). `text-p-xs` gives 12px at paragraph leading, so do
+          not add a leading class on top (problem 3.9).
+
+          `break-words`, not the `break-all` the old snippets used. Most of this
+          block is sentences now, and `break-all` splits an ordinary word at
+          whatever character hits the edge. `break-words` leaves words whole and
+          still breaks the one string that cannot fit, the token.
+        -->
+        <pre
+          class="mt-2 whitespace-pre-wrap break-words rounded-4 bg-surface-gray-1 p-3 font-mono text-p-xs text-ink-gray-8"
+        >{{ shown(SETUP_PROMPT) }}</pre>
         <!--
           Fixed height, so the row does not move when a poll lands. The dot
           carries the state at a glance and the sentence names it, which is the
@@ -414,32 +275,6 @@ async function copy(text: string, done: string): Promise<void> {
               <template v-else>No agent has connected yet.</template>
             </span>
           </p>
-          <!--
-            Disabled without a token, like "Copy token" and "Copy endpoint"
-            below. There is nothing to test until the token lands, and pressing
-            it early answered with a toast that read as a failure of the agent
-            rather than of the page.
-          -->
-          <Button
-            :disabled="!token"
-            icon-left="lucide-refresh-cw"
-            label="Test connection"
-            :loading="testing"
-            @click="testConnection()"
-          />
-        </div>
-        <div class="mt-3 flex flex-wrap justify-end gap-2">
-          <Button
-            icon-left="lucide-copy"
-            label="Copy token"
-            :disabled="!token"
-            @click="copy(token, 'Token copied')"
-          />
-          <Button
-            :icon-left="revealed ? 'lucide-eye-off' : 'lucide-eye'"
-            :label="revealed ? 'Hide' : 'Show'"
-            @click="revealed = !revealed"
-          />
           <Button
             label="Regenerate"
             :loading="regenerate.loading"
@@ -448,135 +283,6 @@ async function copy(text: string, done: string): Promise<void> {
           />
         </div>
       </div>
-
-      <div class="mt-4 rounded-6 border border-outline-gray-1 p-5">
-        <FormControl
-          class="[&_input]:font-mono"
-          label="Endpoint"
-          readonly
-          :model-value="endpoint"
-        />
-        <div class="mt-3 space-y-1 text-p-xs text-ink-gray-5">
-          <p>Transport: streamable HTTP. POST only.</p>
-          <p>Header name: Authorization</p>
-          <p>Header value: Bearer &lt;token&gt;</p>
-        </div>
-        <div class="mt-3 flex justify-end">
-          <Button
-            icon-left="lucide-copy"
-            label="Copy endpoint"
-            :disabled="!endpoint"
-            @click="copy(endpoint, 'Endpoint copied')"
-          />
-        </div>
-      </div>
-
-      <h3 class="mt-8 text-base-semibold text-ink-gray-8">Set up your client</h3>
-      <p class="mt-1 text-p-sm text-ink-gray-7">
-        Every block below already holds your token and your endpoint.
-      </p>
-
-      <!--
-        A side rail, not a strip. Eight clients across the top crowd the line
-        and leave the panel a wide, short box.
-
-        `self-start` stops the flex row from stretching the rail to the panel's
-        height, which used to run the rail border 111px past the last tab
-        (problem 3.6).
-      -->
-      <Tabs v-model="client" class="mt-4 flex gap-6" vertical>
-        <TabList class="w-40 shrink-0 self-start">
-          <!--
-            The vertical underline rail marks the active tab with a 1px line
-            and an ink step, which read as nothing on screen (problem 3.1).
-            These classes are the active nav item from TOKENS, the same pair
-            SidebarItem paints: elevation-3 with shadow-sm. `data-state` sits
-            on the trigger shell, so the class merges onto the element that
-            already carries the state.
-          -->
-          <TabTrigger
-            v-for="item in harnesses"
-            :key="item.value"
-            class="rounded-4 transition-colors data-[state=active]:bg-surface-elevation-3 data-[state=active]:shadow-sm data-[state=inactive]:hover:bg-surface-gray-2"
-            :label="item.value"
-            :value="item.value"
-          />
-        </TabList>
-        <!--
-          `min-h-80` (320px) holds the panel taller than the 250px rail, so the
-          rail never hangs below its own panel. It is a scale value: the old
-          reserve was an invented 361.6px and left 225px empty (problem 3.7).
-
-          It is a floor, not a full reserve. The block below wraps now, so a
-          panel's height depends on the column width and no static number can
-          cover the tallest one. Switching client reflows, which finding 3.7
-          allows.
-        -->
-        <TabPanel
-          v-for="item in harnesses"
-          :key="item.value"
-          class="min-h-80 min-w-0 flex-1"
-          :value="item.value"
-        >
-          <p class="text-p-sm text-ink-gray-7">
-            <template v-for="(run, index) in runs(item.help)" :key="index">
-              <code
-                v-if="run.code"
-                class="rounded-1 bg-surface-gray-2 px-1 font-mono text-ink-gray-7"
-                >{{ run.text }}</code
-              >
-              <template v-else>{{ run.text }}</template>
-            </template>
-          </p>
-          <p v-if="item.merge" class="mt-1 text-p-sm text-ink-gray-7">
-            Merge the
-            <code class="rounded-1 bg-surface-gray-2 px-1 font-mono">sketch</code>
-            entry into your existing file. Do not replace it.
-          </p>
-          <!--
-            Paths only. A sentence in this slot rendered as monospace prose
-            (problem 3.14); the prose lives in the help line above.
-          -->
-          <p
-            v-for="path in item.paths"
-            :key="path"
-            class="mt-1 truncate font-mono text-xs text-ink-gray-5"
-          >
-            {{ path }}
-          </p>
-          <!--
-            The copy action sits above the block, never over it: the block wraps
-            now, so text reaches the top-right corner a floating button would
-            cover.
-          -->
-          <div class="mt-3 flex justify-end">
-            <Button
-              icon-left="lucide-copy"
-              label="Copy"
-              @click="copy(fill(item.snippet), 'Copied')"
-            />
-          </div>
-          <!--
-            Wrap, never scroll sideways. The Claude Code line measured 1241px
-            against a 672px box, so the `Bearer <token>` tail was off screen
-            (problem 3.2). `text-p-xs` gives 12px at paragraph leading, which
-            the 12-line JSON blocks need (problem 3.9).
-          -->
-          <pre
-            class="mt-2 whitespace-pre-wrap break-all rounded-4 bg-surface-gray-1 p-3 font-mono text-p-xs text-ink-gray-8"
-          >{{ shown(item.snippet) }}</pre>
-          <p class="mt-3 text-p-xs text-ink-gray-5">
-            <template v-for="(run, index) in runs(item.note)" :key="index">
-              <code
-                v-if="run.code"
-                class="rounded-1 bg-surface-gray-2 px-1 font-mono text-ink-gray-7"
-                >{{ run.text }}</code
-              >
-              <template v-else>{{ run.text }}</template>
-            </template>
-          </p>
-        </TabPanel>
-      </Tabs>
 
       <!--
         Built from tokens, not `Alert`. Alert's container is always gray, so
@@ -590,26 +296,22 @@ async function copy(text: string, done: string): Promise<void> {
         <div class="min-w-0">
           <p class="text-base-medium">claude.ai connectors do not work yet</p>
           <p class="mt-1 text-p-sm">
-            A claude.ai custom connector takes a URL only. It cannot send the
-            Authorization header Sketch needs. Sketch will support claude.ai when
-            OAuth ships. Use Claude Code, Codex, OpenCode, Cursor, VS Code, Claude
-            Desktop, Gemini CLI or Windsurf today.
+            A claude.ai custom connector takes a URL only and sends no
+            Authorization header, so it cannot reach Sketch.
           </p>
         </div>
       </div>
 
-      <p class="mt-4 text-p-sm text-ink-gray-7">
-        After setup, ask the agent to list your prototypes. If the token is wrong,
-        Sketch answers with JSON that names the mistake.
-      </p>
       <!--
-        The viewer already polls and reloads itself while the agent writes
-        (runtime/viewer/boot.js:116-166). Nothing said so, and users closed and
-        reopened the tab after every agent turn (problem 3.17).
+        A plain anchor. /help is a server-rendered page (`sketch/www/help.html`)
+        and the SPA router does not declare it, so a RouterLink or a Button
+        `route` prop would call `router.push()` and 404 inside the app.
+        `AppTopBar.vue` carries the same note for the same reason.
       -->
-      <p class="mt-1 text-p-sm text-ink-gray-7">
-        Keep a prototype open while you work. It reloads itself as your agent
-        writes.
+      <p class="mt-4 text-p-sm text-ink-gray-7">
+        Is your connection still quiet?
+        <a class="text-ink-blue-link hover:underline" href="/help">Help</a>
+        lists what to check.
       </p>
     </section>
 
@@ -619,27 +321,23 @@ async function copy(text: string, done: string): Promise<void> {
         This name is in every public prototype link.
       </p>
       <!--
-        The same card shell as the connection cards above. The fields were
-        `max-w-md` under 856px cards, so the right edge zig-zagged down the page
-        (problem 3.18).
+        One card for both fields. The fields were `max-w-md` under 856px cards,
+        so the right edge zig-zagged down the page (problem 3.18).
       -->
-      <div class="mt-4 rounded-6 border border-outline-gray-1 p-5">
-        <FormControl label="Username" readonly :model-value="username" />
-        <p class="mt-2 text-p-xs text-ink-gray-5">
-          3–30 characters. Use lowercase letters, numbers, and hyphens. Start with
-          a letter.
-        </p>
-        <p class="mt-1 text-p-xs text-ink-gray-5">
-          Set at signup and frozen after it, because a shared link must never point
-          at somebody else.
-        </p>
-      </div>
-      <div class="mt-4 rounded-6 border border-outline-gray-1 p-5">
-        <FormControl
-          label="Email"
-          :model-value="session.data?.user ?? ''"
-          readonly
-        />
+      <div class="mt-4 space-y-4 rounded-6 border border-outline-gray-1 p-5">
+        <div>
+          <FormControl label="Username" readonly :model-value="username" />
+          <!--
+            A sibling paragraph, not FormControl's `description` prop: that prop
+            renders 13px and cannot be retuned, so the card held two helper
+            sizes (problem 3.15).
+          -->
+          <p class="mt-2 text-p-xs text-ink-gray-5">
+            Set at signup and frozen after it, because a shared link must never
+            point at somebody else.
+          </p>
+        </div>
+        <FormControl label="Email" :model-value="session.data?.user ?? ''" readonly />
       </div>
     </section>
   </div>
