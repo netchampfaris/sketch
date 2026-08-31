@@ -210,21 +210,22 @@ onMounted(() => {
       column does not grow.
     -->
     <!--
-      Every placeholder repeats the loaded card's own height and margin
-      classes and replaces only the text, so the grid does not resize when the
-      rows arrive. The four blocks match PrototypeCard.vue one for one:
-      preview, the `h-10` title block, the `h-9` state row, the `h-7` link
-      row.
+      Every placeholder repeats the loaded card's own height and margin classes
+      and replaces only the text, so the grid does not resize when the rows
+      arrive (finding 4.2). The blocks match PrototypeCard.vue one for one:
+      the picture, then the two `h-7` rows.
+
+      Those heights are load-bearing, not decoration. The card was four rows
+      once, and this block kept its four after the card became two, so the
+      placeholder measured 124px below the picture against the card's 68px and
+      the whole grid rose 56px a row when the list landed. Change a row here
+      only with the matching row in `PrototypeCard.vue:209,271`.
     -->
     <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2">
       <div v-for="n in 3" :key="n">
         <Skeleton class="aspect-[16/10] w-full rounded-6" />
-        <div class="mt-3 flex h-10 flex-col gap-2">
-          <Skeleton class="h-4 w-40" />
-          <Skeleton class="h-3.5 w-56" />
-        </div>
-        <div class="mt-2 flex h-9 items-center pt-2"><Skeleton class="h-4 w-32" /></div>
-        <div class="flex h-7 items-center"><Skeleton class="h-3.5 w-48" /></div>
+        <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
+        <div class="flex h-7 items-center"><Skeleton class="h-3.5 w-56" /></div>
       </div>
     </div>
 
