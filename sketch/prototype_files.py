@@ -9,13 +9,20 @@ unique per owner only, so two users with `dashboard` would share a directory.
 Every agent-supplied path goes through `safe_join` and nothing else.
 """
 
+import io
 import os
 import posixpath
 import shutil
+import zipfile
 
 import frappe
 
 ROOT = ("private", "files", "sketch")
+
+#: The most bytes `read_text` returns for one file. A Prototype file is a Vue
+#: single-file component or a small module, so this is far above any real one.
+#: It caps the reply for a file that is not.
+MAX_TEXT_BYTES = 512 * 1024
 
 
 def prototype_dir(name: str) -> str:
@@ -105,6 +112,65 @@ def list_files(name: str) -> list[dict]:
 			continue
 
 	return sorted(out, key=lambda row: row["path"])
+
+
+def read_text(name: str, path: str, limit: int = MAX_TEXT_BYTES) -> dict:
+	"""One file as {"path", "size", "content", "truncated"}, for a reader.
+
+	`read_files` is the agent's door and it returns a file whole. This one
+	answers a browser, so it stops at `limit` bytes and says when it did. The
+	size is the file's own size, not the length of the content returned.
+
+	Refuses a file that is not UTF-8 text. Every file an agent writes is
+	source, so this only fires for something no viewer could print anyway.
+	"""
+	absolute = safe_join(name, path)
+	if not os.path.isfile(absolute):
+		frappe.throw(frappe._("No such file: {0}").format(path), frappe.ValidationError)
+
+	size = os.path.getsize(absolute)
+	with open(absolute, "rb") as handle:
+		raw = handle.read(limit)
+
+	# A null byte is the one cheap proof that this is not source. It is checked
+	# before the decode, because a binary file that happens to decode would
+	# otherwise reach the browser as a screen of control characters.
+	if b"\x00" in raw:
+		frappe.throw(frappe._("{0} is not a text file").format(path), frappe.ValidationError)
+
+	truncated = size > len(raw)
+	try:
+		content = raw.decode("utf-8")
+	except UnicodeDecodeError:
+		if not truncated:
+			frappe.throw(frappe._("{0} is not a text file").format(path), frappe.ValidationError)
+		# The cut landed inside a character. Dropping that one partial
+		# character is the whole repair: the caller already knows the tail is
+		# missing, because `truncated` says so.
+		content = raw.decode("utf-8", errors="ignore")
+
+	return {"path": path, "size": size, "content": content, "truncated": truncated}
+
+
+def zip_bytes(name: str, folder: str) -> bytes:
+	"""The whole tree as one zip, with every file under `folder`/.
+
+	The folder is why an unzip does not scatter `src/` and `README.md` into
+	whatever directory the user ran it in.
+
+	Symlinks never appear, because `_walk` skips them. A file that cannot be
+	read, or whose timestamp predates 1980 and so has no place in a zip
+	header, is left out rather than failing the whole archive.
+	"""
+	buffer = io.BytesIO()
+	with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+		for rel, absolute in _walk(name):
+			try:
+				archive.write(absolute, arcname=f"{folder}/{rel}")
+			except (OSError, ValueError):
+				continue
+
+	return buffer.getvalue()
 
 
 def read_files(name: str, paths: list[str]) -> list[dict]:

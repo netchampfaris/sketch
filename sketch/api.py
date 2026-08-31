@@ -455,6 +455,54 @@ def prototype_revision(slug: str) -> dict:
 
 
 @frappe.whitelist()
+def list_prototype_files(slug: str) -> list[dict]:
+	"""Every file in one Prototype's tree, as {"path", "size"}, sorted by path.
+
+	The Files browser opens on this. It is a stat walk, so it stays cheap for a
+	tree of any size, and it carries no source: a browser reads one file at a
+	time, through `read_prototype_file`.
+
+	`resolve_owned` is the permission check. Only the owner may list a tree,
+	public or not: the Viewer shows what a Prototype renders, never its source.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return prototype_files.list_files(doc.name)
+
+
+@frappe.whitelist()
+def read_prototype_file(slug: str, path: str) -> dict:
+	"""One file of a Prototype, as source the browser prints.
+
+	`resolve_owned` is the permission check, and `prototype_files.safe_join`
+	is the path guard. The client names the file, so both have to run: the
+	first says whose tree it is, the second says the path stays inside it.
+
+	Answers {"path", "size", "content", "truncated"}. Raises for a missing
+	file, and for a file that is not UTF-8 text.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return prototype_files.read_text(doc.name, path)
+
+
+@frappe.whitelist()
+def export_prototype(slug: str) -> None:
+	"""Send the whole tree as one zip, named after the Prototype.
+
+	`resolve_owned` is the permission check. A Prototype is public to look at,
+	never public to take: the Viewer renders what a Prototype draws, and this
+	hands over the source it was drawn from.
+
+	The answer is a file, not a value, so this fills the download slots
+	`frappe.utils.response.as_raw` reads and returns nothing. The mimetype
+	comes off the filename.
+	"""
+	doc = prototype.resolve_owned(slug)
+	frappe.response["filename"] = f"{doc.slug}.zip"
+	frappe.response["filecontent"] = prototype_files.zip_bytes(doc.name, doc.slug)
+	frappe.response["type"] = "download"
+
+
+@frappe.whitelist()
 def list_recipes() -> list[dict]:
 	"""The Recipes the picker offers.
 
