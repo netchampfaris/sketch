@@ -61,7 +61,12 @@ ESBUILD="$ESBUILD" sh "$HERE/tailwind/build.sh" "$OUT"
 cp "$NM/frappe-ui/src/fonts/Inter/Inter.var.woff2" "$OUT/Inter.var.woff2"
 
 echo "[5/5] viewer + manifest"
+# boot.js is cached by the browser and by Cloudflare. The document names it
+# with this hash, so a changed file is a changed URL and reaches every client
+# on the next page load.
+BOOT_VERSION=$(md5sum "$HERE/viewer/boot.js" | cut -c1-8)
 sed -e "s#RUNTIME#$BASE#g" -e "s#SKETCH_DATA_SLOT#$DATA_SLOT#" \
+  -e "s#BOOT_VERSION#$BOOT_VERSION#" \
   "$HERE/viewer/viewer.html" > "$OUT/viewer.html"
 cp "$HERE/viewer/boot.js" "$OUT/boot.js"
 node "$HERE/make-manifest.mjs" "$VERSION" "$OUT/manifest.json"

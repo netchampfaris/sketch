@@ -122,6 +122,13 @@
          not appear anywhere above this line: the renderer replaces the
          first occurrence and nothing else. -->
     SKETCH_DATA_SLOT
-    <script type="module" src="RUNTIME/boot.js"></script>
+    <!-- The query is boot.js's own content hash, stamped by build.sh. The
+         asset is served with `max-age=43200`, and Cloudflare caches it at the
+         edge, so a changed boot.js used to reach a warm client up to twelve
+         hours late. A hard reload does not help: it revalidates against the
+         edge, which answers from its own copy. A new hash is a new URL, which
+         no cache can match. This document is safe to key on, because the
+         renderer serves it with `no-store` on every request. -->
+    <script type="module" src="RUNTIME/boot.js?v=BOOT_VERSION"></script>
   </body>
 </html>
