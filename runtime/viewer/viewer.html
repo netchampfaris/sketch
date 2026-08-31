@@ -31,10 +31,10 @@
       }
     </script>
 
-    <!-- Sketch's own chrome: the owner bar and the status screen boot.js
-         paints when a Prototype is empty or does not build. It cannot use a
-         frappe-ui component, because those need Vue and neither screen mounts
-         one, and it must not import the Sketch SPA.
+    <!-- Sketch's own chrome: the status screen boot.js paints when a
+         Prototype is empty or does not build. It cannot use a frappe-ui
+         component, because those need Vue and the screen mounts none, and it
+         must not import the Sketch SPA.
 
          Layer 1 above is compiled from frappe-ui's own source, so it carries
          every token utility a frappe-ui component uses (`text-p-sm`,
@@ -51,57 +51,9 @@
          `website.bundle.css` and that bundle declares `--spacing`. Neither
          `frappe-ui.css` nor `frappe-ui-components.css` declares it, and this
          document loads nothing else, so the same `calc` would resolve to
-         nothing on the owner bar and the status screen. Lengths stay in rem
-         on the same 0.25rem step Tailwind uses. -->
+         nothing on the status screen. Lengths stay in rem on the same 0.25rem
+         step Tailwind uses. -->
     <style>
-      /* boot.js adds this class with the owner bar, so the bar takes its height
-         out of the Prototype rather than floating over the Prototype's own
-         header. It lands before the mount, so the Prototype paints once at its
-         final height and nothing moves afterwards. */
-      body.sk-chrome {
-        display: flex;
-        flex-direction: column;
-      }
-      body.sk-chrome > #app {
-        height: auto;
-        min-height: 0;
-        flex: 1 1 auto;
-      }
-
-      .sk-bar {
-        display: flex;
-        flex: 0 0 auto;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
-        height: 2.25rem;
-        padding: 0 0.75rem;
-        border-bottom: 1px solid var(--outline-gray-1);
-        background-color: var(--surface-base);
-      }
-      /* The negative margin hangs the hover surface into the gutter, so the
-         word "Sketch" still starts on the bar's own left edge. */
-      .sk-bar-home {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-left: -0.375rem;
-        padding: 0.25rem 0.375rem;
-        border-radius: var(--radius-4);
-        text-decoration: none;
-      }
-      /* Only the surface changes on hover, so the bar never moves. Focus is
-         already covered: layer 1 puts an outline on every :focus-visible. */
-      .sk-bar-home:hover {
-        background-color: var(--surface-gray-2);
-      }
-      .sk-bar-title {
-        min-width: 0;
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-      }
-
       .sk-status {
         display: flex;
         min-height: 100%;

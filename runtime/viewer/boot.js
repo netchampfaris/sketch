@@ -118,9 +118,9 @@ function applyTheme(resolved) {
 }
 
 // ------------------------------------------------------------------- chrome
-// Sketch's own two pieces of DOM: the owner bar and the status screen. Both are
-// plain nodes styled by the <style> block in viewer.html, because no frappe-ui
-// component renders without Vue and neither screen mounts one.
+// Sketch's one piece of DOM inside a Viewer: the status screen. It is plain
+// nodes styled by the <style> block in viewer.html, because no frappe-ui
+// component renders without Vue and the screen mounts none.
 //
 // Every string a Prototype owns arrives through textContent. A title is user
 // input, and this document already carries the whole source tree.
@@ -148,7 +148,7 @@ function setTitle(data) {
 
 // The gallery embeds one Viewer per card in a same-origin iframe
 // (frontend/src/components/PrototypePreview.vue). A framed Viewer is a picture
-// of the Prototype: no Sketch chrome inside Sketch chrome, and no poller.
+// of the Prototype: no poller.
 const framed = window.top !== window.self
 
 // The one answer to "does this tab reload itself". startLiveReload and the
@@ -157,26 +157,6 @@ const framed = window.top !== window.self
 // empty Prototype promised a reload that startLiveReload never started.
 function reloadsItself(data) {
   return Boolean(data.live) && Boolean(data.slug) && !framed
-}
-
-// A thin bar, owner only. PrototypeCard's "Open prototype" is a full page
-// navigation out of the Sketch UI, so without this the only route back is the
-// browser's back button. A visitor on a public link gets no Sketch chrome at
-// all: the page is the Prototype and nothing else.
-function addOwnerBar(data) {
-  if (!data.is_owner) return
-  if (framed) return
-
-  const home = el('a', 'sk-bar-home text-base-medium text-ink-gray-8')
-  home.href = '/'
-  home.append(icon('lucide-arrow-left', 'size-4'), el('span', null, 'Sketch'))
-
-  const bar = el('div', 'sk-bar')
-  bar.append(home, el('span', 'sk-bar-title text-xs text-ink-gray-5', data.title || ''))
-  // Before #app, so the bar is the first thing in the flow, and with the class
-  // that turns <body> into the column the bar and #app share.
-  document.body.classList.add('sk-chrome')
-  document.body.prepend(bar)
 }
 
 // The statuses that leave the page empty. `ok` and `errors` both mounted the
@@ -438,9 +418,6 @@ async function run() {
   payload = data
   applyTheme(data.theme)
   setTitle(data)
-  // Before the compile, so the bar is in the flow before the Prototype paints
-  // and the Prototype never has to move for it.
-  addOwnerBar(data)
   // Before the early returns below: an empty or broken tree must reload too.
   try {
     startLiveReload(data)
