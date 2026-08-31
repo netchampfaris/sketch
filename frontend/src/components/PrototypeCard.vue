@@ -11,9 +11,10 @@
  * on the card, which put a control that publishes to the internet one stray
  * click away from the artwork, and cost a row to say what the Badge says.
  *
- * Rename, Files, History and Delete sit in the same menu, because they are
- * UI-only actions. Files reads the source the agent wrote, History reads when
- * it wrote it. Delete uses the destructive confirm preset.
+ * Rename, Files, Export as zip, History and Delete sit in the same menu,
+ * because they are UI-only actions. Files reads the source the agent wrote,
+ * Export takes it away, History reads when it was written. Delete uses the
+ * destructive confirm preset.
  *
  * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
  * the card.
@@ -23,7 +24,7 @@ import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
-import { copyText, method } from '../store'
+import { copyText, downloadFile, method } from '../store'
 import type { Prototype } from '../types'
 
 const props = defineProps<{ prototype: Prototype }>()
@@ -83,8 +84,16 @@ const remove = useCall<{ name: string }, { slug: string }>({
 const historyOpen = ref(false)
 const filesOpen = ref(false)
 
+/** True while the zip is on the wire. It disables the menu, like a write. */
+const exporting = ref(false)
+
 const busy = computed(
-  () => setPublic.loading || rename.loading || remove.loading || refresh.loading,
+  () =>
+    setPublic.loading ||
+    rename.loading ||
+    remove.loading ||
+    refresh.loading ||
+    exporting.value,
 )
 
 /**
@@ -122,6 +131,32 @@ async function copyPublicUrl(): Promise<void> {
     return
   }
   toast.success('Link copied')
+}
+
+/**
+ * Take the whole tree away as one zip.
+ *
+ * The server names the file too (`sketch.api.export_prototype`), and both
+ * name it after the slug, because that is the one part of a Prototype that
+ * never changes.
+ *
+ * The toast reports the name to look for. A browser can hide its download
+ * shelf, and then nothing else on screen says the file arrived.
+ */
+async function exportZip(): Promise<void> {
+  const filename = `${props.prototype.slug}.zip`
+  exporting.value = true
+  try {
+    await downloadFile(
+      `${method('export_prototype')}?slug=${encodeURIComponent(props.prototype.slug)}`,
+      filename,
+    )
+    toast.success(`Downloaded ${filename}`)
+  } catch (error) {
+    toast.error(`Could not export. ${(error as Error).message}`)
+  } finally {
+    exporting.value = false
+  }
 }
 
 function askRename(): void {
@@ -193,6 +228,15 @@ const menuOptions = computed(() => [
   },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
   { label: 'Files', icon: 'lucide-file-code', onClick: () => (filesOpen.value = true) },
+  // Disabled on an empty tree, the same way Copy public link is disabled
+  // without a link. A zip of nothing is a file the user has to open to
+  // learn it holds nothing.
+  {
+    label: 'Export as zip',
+    icon: 'lucide-file-archive',
+    disabled: busy.value || !props.prototype.file_count,
+    onClick: exportZip,
+  },
   { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
   // `theme: 'red'` colours the whole row, not the icon alone: frappe-ui
   // `Menu/utils.ts:164` returns `text-ink-red-7` for the label too, so this

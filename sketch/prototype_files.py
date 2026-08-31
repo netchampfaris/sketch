@@ -9,9 +9,11 @@ unique per owner only, so two users with `dashboard` would share a directory.
 Every agent-supplied path goes through `safe_join` and nothing else.
 """
 
+import io
 import os
 import posixpath
 import shutil
+import zipfile
 
 import frappe
 
@@ -148,6 +150,27 @@ def read_text(name: str, path: str, limit: int = MAX_TEXT_BYTES) -> dict:
 		content = raw.decode("utf-8", errors="ignore")
 
 	return {"path": path, "size": size, "content": content, "truncated": truncated}
+
+
+def zip_bytes(name: str, folder: str) -> bytes:
+	"""The whole tree as one zip, with every file under `folder`/.
+
+	The folder is why an unzip does not scatter `src/` and `README.md` into
+	whatever directory the user ran it in.
+
+	Symlinks never appear, because `_walk` skips them. A file that cannot be
+	read, or whose timestamp predates 1980 and so has no place in a zip
+	header, is left out rather than failing the whole archive.
+	"""
+	buffer = io.BytesIO()
+	with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+		for rel, absolute in _walk(name):
+			try:
+				archive.write(absolute, arcname=f"{folder}/{rel}")
+			except (OSError, ValueError):
+				continue
+
+	return buffer.getvalue()
 
 
 def read_files(name: str, paths: list[str]) -> list[dict]:

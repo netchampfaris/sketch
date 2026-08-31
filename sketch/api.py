@@ -485,6 +485,24 @@ def read_prototype_file(slug: str, path: str) -> dict:
 
 
 @frappe.whitelist()
+def export_prototype(slug: str) -> None:
+	"""Send the whole tree as one zip, named after the Prototype.
+
+	`resolve_owned` is the permission check. A Prototype is public to look at,
+	never public to take: the Viewer renders what a Prototype draws, and this
+	hands over the source it was drawn from.
+
+	The answer is a file, not a value, so this fills the download slots
+	`frappe.utils.response.as_raw` reads and returns nothing. The mimetype
+	comes off the filename.
+	"""
+	doc = prototype.resolve_owned(slug)
+	frappe.response["filename"] = f"{doc.slug}.zip"
+	frappe.response["filecontent"] = prototype_files.zip_bytes(doc.name, doc.slug)
+	frappe.response["type"] = "download"
+
+
+@frappe.whitelist()
 def list_recipes() -> list[dict]:
 	"""The Recipes the picker offers.
 

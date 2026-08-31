@@ -68,6 +68,33 @@ export async function logout(): Promise<void> {
 }
 
 /**
+ * Save a file the server sends, under the name given.
+ *
+ * `fetch`, not a link and not `window.open`. A download that fails has to say
+ * so: an `<a href>` to a whitelisted method answers a JSON error page, and
+ * the user reads a traceback in a stray tab instead of a message. Here the
+ * failure is an exception the caller reports.
+ *
+ * Rejects on any answer that is not 200, and on a network error. The caller
+ * shows the message.
+ */
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  const response = await fetch(url, { credentials: 'same-origin' })
+  if (!response.ok) throw new Error(`The server answered ${response.status}.`)
+
+  const objectUrl = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  // Not in this task. The click only starts the download; the browser reads
+  // the blob after the handler returns, and a revoke before that cancels it.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+/**
  * The textarea fallback for a browser with no async clipboard.
  *
  * `execCommand('copy')` returns false instead of throwing when the write is
