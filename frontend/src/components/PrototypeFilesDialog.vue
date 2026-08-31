@@ -14,11 +14,40 @@
  * The list is one stat walk (`sketch.api.list_prototype_files`); source
  * arrives one file at a time (`sketch.api.read_prototype_file`) and is kept
  * for as long as the dialog is open, so going back to a file costs nothing.
+ *
+ * The highlighter is a lazy chunk. It is fetched when the dialog opens and
+ * never with the gallery, so a user who only looks at pictures pays nothing
+ * for it, and the source reads in plain ink until it lands.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { Dialog, ErrorMessage, LoadingText, useCall } from 'frappe-ui'
 import { method } from '../store'
 import type { Prototype, PrototypeFile, PrototypeFileSource } from '../types'
+
+/**
+ * The language each file extension is highlighted as.
+ *
+ * A `.vue` file is `xml`: highlight.js reads the `<script>` and `<style>`
+ * blocks inside it as JavaScript and CSS on its own. An extension that is not
+ * here is drawn as plain source, which is the honest answer for a file this
+ * app cannot name.
+ */
+const LANGUAGES: Record<string, string> = {
+  vue: 'xml',
+  html: 'xml',
+  svg: 'xml',
+  xml: 'xml',
+  ts: 'typescript',
+  tsx: 'typescript',
+  mts: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  json: 'json',
+  css: 'css',
+  md: 'markdown',
+}
 
 const props = defineProps<{ prototype: Prototype }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -42,10 +71,64 @@ const sources = ref<Record<string, PrototypeFileSource>>({})
 /** Why a read failed, by path. A failed file is not read again on a re-click. */
 const failures = ref<Record<string, string>>({})
 
+/**
+ * The highlighter, once its chunk has landed. Null until then.
+ *
+ * `shallowRef`, because this is a library object with a large internal graph
+ * and nothing in it is reactive state.
+ */
+const highlighter = shallowRef<Awaited<
+  typeof import('highlight.js/lib/core')
+>['default'] | null>(null)
+
+/** The in-flight load. It is the lock: one fetch per page, not per open. */
+let pending: Promise<void> | null = null
+
+/**
+ * Fetch the highlighter and the languages this app can meet.
+ *
+ * `highlight.js/lib/core` carries no language of its own, so each one is a
+ * separate import and the whole set lands as one chunk beside the gallery
+ * bundle. The caller does not await it: the pane draws plain source first and
+ * colours it when this resolves.
+ *
+ * A failed chunk is not an error the user has to read. The source is on
+ * screen either way, so the lock is released and the next open tries again.
+ */
+function loadHighlighter(): void {
+  if (highlighter.value || pending) return
+
+  pending = (async () => {
+    const [core, xml, javascript, typescript, json, css, markdown] = await Promise.all([
+      import('highlight.js/lib/core'),
+      import('highlight.js/lib/languages/xml'),
+      import('highlight.js/lib/languages/javascript'),
+      import('highlight.js/lib/languages/typescript'),
+      import('highlight.js/lib/languages/json'),
+      import('highlight.js/lib/languages/css'),
+      import('highlight.js/lib/languages/markdown'),
+    ])
+
+    const engine = core.default
+    engine.registerLanguage('xml', xml.default)
+    engine.registerLanguage('javascript', javascript.default)
+    engine.registerLanguage('typescript', typescript.default)
+    engine.registerLanguage('json', json.default)
+    engine.registerLanguage('css', css.default)
+    engine.registerLanguage('markdown', markdown.default)
+    highlighter.value = engine
+  })().catch(() => {
+    pending = null
+  })
+}
+
 // The card holds one dialog per Prototype, so nothing is read until the user
 // opens this. The same rule as PrototypeHistoryDialog.vue.
 watch(open, async (value) => {
   if (!value) return
+  // Beside the listing, not before it. The two requests do not wait for each
+  // other, and the source draws as soon as the file lands.
+  loadHighlighter()
   selected.value = ''
   sources.value = {}
   failures.value = {}
@@ -102,6 +185,31 @@ const groups = computed(() => {
 const current = computed<PrototypeFileSource | undefined>(() => sources.value[selected.value])
 const failure = computed<string | undefined>(() => failures.value[selected.value])
 
+/**
+ * The file on screen, marked up. Empty until the highlighter lands, and for
+ * an extension it does not name: the plain branch draws those.
+ *
+ * `highlight()` escapes the source it returns (highlight.js `escapeHTML`),
+ * and that is what makes `v-html` safe here. Nothing else in this dialog may
+ * reach the DOM as markup: every file in it was written by an agent.
+ */
+const highlighted = computed(() => {
+  const file = current.value
+  const engine = highlighter.value
+  if (!file || !engine) return ''
+
+  const language = LANGUAGES[extensionOf(file.path)]
+  if (!language) return ''
+
+  try {
+    return engine.highlight(file.content, { language, ignoreIllegals: true }).value
+  } catch {
+    // A grammar that throws is not worth a message. The plain branch draws
+    // the same file, in the same box.
+    return ''
+  }
+})
+
 /** The size line for the pane header. */
 const meta = computed(() => {
   if (!current.value) return ''
@@ -111,6 +219,13 @@ const meta = computed(() => {
 
 function fileName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/** The extension, lowercased, without the dot. Empty for a dotfile. */
+function extensionOf(path: string): string {
+  const name = fileName(path)
+  const dot = name.lastIndexOf('.')
+  return dot < 1 ? '' : name.slice(dot + 1).toLowerCase()
 }
 
 function formatSize(bytes: number): string {
@@ -229,11 +344,15 @@ function formatSize(bytes: number): string {
                 `whitespace-pre` and no wrapping: a wrapped line of source
                 hides where the real line ends. Long lines scroll sideways in
                 the box above instead.
+
+                Two branches, one box. The colours arrive when the highlighter
+                chunk lands, and they change no size, no font and no padding,
+                so the swap moves nothing on screen.
               -->
               <pre
                 v-else
-                class="whitespace-pre font-mono text-xs leading-5 text-ink-gray-8"
-              ><code>{{ current.content }}</code></pre>
+                class="sketch-code whitespace-pre font-mono text-xs leading-5 text-ink-gray-8"
+              ><code v-if="highlighted" v-html="highlighted" /><code v-else>{{ current.content }}</code></pre>
             </div>
           </div>
         </div>
@@ -241,3 +360,45 @@ function formatSize(bytes: number): string {
     </template>
   </Dialog>
 </template>
+
+<!--
+  The source theme. Not scoped: `v-html` content carries no scope attribute,
+  so a scoped rule would never reach a single token. Every rule is under
+  `.sketch-code`, which is the one element that holds highlighted markup.
+
+  Four hues and no more, on the ink scale, so the theme flips with
+  `data-theme` and nothing here is a hard-coded colour. Everything the
+  grammar does not name stays `ink-gray-8`, the pane's own ink.
+-->
+<style>
+.sketch-code .hljs-comment,
+.sketch-code .hljs-quote {
+  color: var(--ink-gray-5);
+}
+
+.sketch-code .hljs-keyword,
+.sketch-code .hljs-name,
+.sketch-code .hljs-selector-tag,
+.sketch-code .hljs-section,
+.sketch-code .hljs-meta {
+  color: var(--ink-violet-6);
+}
+
+.sketch-code .hljs-string,
+.sketch-code .hljs-regexp,
+.sketch-code .hljs-symbol,
+.sketch-code .hljs-addition {
+  color: var(--ink-green-7);
+}
+
+.sketch-code .hljs-attr,
+.sketch-code .hljs-attribute,
+.sketch-code .hljs-property,
+.sketch-code .hljs-number,
+.sketch-code .hljs-literal,
+.sketch-code .hljs-built_in,
+.sketch-code .hljs-title,
+.sketch-code .hljs-type {
+  color: var(--ink-blue-7);
+}
+</style>
