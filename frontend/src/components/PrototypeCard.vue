@@ -11,14 +11,16 @@
  * on the card, which put a control that publishes to the internet one stray
  * click away from the artwork, and cost a row to say what the Badge says.
  *
- * Rename, History and Delete sit in the same menu, because they are UI-only
- * actions. Delete uses the destructive confirm preset.
+ * Rename, Files, History and Delete sit in the same menu, because they are
+ * UI-only actions. Files reads the source the agent wrote, History reads when
+ * it wrote it. Delete uses the destructive confirm preset.
  *
  * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
  * the card.
  */
 import { computed, ref } from 'vue'
 import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import { copyText, method } from '../store'
@@ -76,8 +78,10 @@ const remove = useCall<{ name: string }, { slug: string }>({
   onError: (error) => toast.error(error.message),
 })
 
-// The dialog fetches on open, so the gallery never loads history per card.
+// Both dialogs fetch on open, so the gallery never loads history or source
+// per card.
 const historyOpen = ref(false)
+const filesOpen = ref(false)
 
 const busy = computed(
   () => setPublic.loading || rename.loading || remove.loading || refresh.loading,
@@ -188,6 +192,7 @@ const menuOptions = computed(() => [
     onClick: () => refresh.submit({ slug: props.prototype.slug }),
   },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
+  { label: 'Files', icon: 'lucide-file-code', onClick: () => (filesOpen.value = true) },
   { label: 'History', icon: 'lucide-history', onClick: () => (historyOpen.value = true) },
   // `theme: 'red'` colours the whole row, not the icon alone: frappe-ui
   // `Menu/utils.ts:164` returns `text-ink-red-7` for the label too, so this
@@ -288,6 +293,7 @@ const menuOptions = computed(() => [
       </Tooltip>
     </div>
 
+    <PrototypeFilesDialog v-model:open="filesOpen" :prototype="prototype" />
     <PrototypeHistoryDialog v-model:open="historyOpen" :prototype="prototype" />
   </article>
 </template>

@@ -51,6 +51,20 @@ export interface PrototypeThumbnail {
   dark?: string
 }
 
+/** One row in the Files browser. `sketch.api.list_prototype_files`. */
+export interface PrototypeFile {
+  path: string
+  /** Bytes on disk. */
+  size: number
+}
+
+/** One file's source. `sketch.api.read_prototype_file`. */
+export interface PrototypeFileSource extends PrototypeFile {
+  content: string
+  /** True when the file is longer than the server sends. */
+  truncated: boolean
+}
+
 export interface PrototypeFileChange {
   path: string
   /** One of "added", "modified", "deleted". */
