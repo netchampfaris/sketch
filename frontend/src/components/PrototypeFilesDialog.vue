@@ -127,11 +127,18 @@ function formatSize(bytes: number): string {
   <Dialog v-model:open="open" size="5xl" :title="`${prototype.title} files`">
     <template #default>
       <!--
-        One fixed height for every state, the same rule the history dialog
-        follows. The two panes scroll inside it, so the dialog itself never
-        grows with a long file.
+        One height for every state, so the loading, empty, error and loaded
+        states are the same size and the dialog never jumps. The two panes
+        scroll inside it, so the dialog never grows with a long file.
+
+        The height follows the screen, because this box holds source and a
+        taller box reads more of it. The chrome around it is 192px: the panel
+        margin, the padding and the title row. 70vh therefore fits any window
+        at least 640px tall, and the shorter one scrolls, which is what the
+        dialog's own container already does. `min-h-96` is the floor, and it
+        is the height the history dialog beside it uses.
       -->
-      <div class="h-96">
+      <div class="h-[70vh] min-h-96">
         <LoadingText v-if="files.loading && !files.data?.length" />
 
         <ErrorMessage v-else-if="files.error" :message="files.error.message" />
