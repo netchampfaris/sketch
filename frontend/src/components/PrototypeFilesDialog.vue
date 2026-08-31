@@ -15,6 +15,12 @@
  * arrives one file at a time (`sketch.api.read_prototype_file`) and is kept
  * for as long as the dialog is open, so going back to a file costs nothing.
  *
+ * Two cards open this one dialog. The gallery card names a slug and means its
+ * own Prototype; the feed card names a `username` too and means somebody
+ * else's public one. The server reads the same pair and `is_public` is the
+ * check there (`sketch.prototype.resolve_readable`), so this component takes
+ * the address and asserts nothing about who owns it.
+ *
  * The highlighter is a lazy chunk. It is fetched when the dialog opens and
  * never with the gallery, so a user who only looks at pictures pays nothing
  * for it, and the source reads in plain ink until it lands.
@@ -22,7 +28,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { Dialog, ErrorMessage, LoadingText, useCall } from 'frappe-ui'
 import { method } from '../store'
-import type { Prototype, PrototypeFile, PrototypeFileSource } from '../types'
+import type { PrototypeFile, PrototypeFileSource } from '../types'
 
 /**
  * The language each file extension is highlighted as.
@@ -49,17 +55,32 @@ const LANGUAGES: Record<string, string> = {
   md: 'markdown',
 }
 
-const props = defineProps<{ prototype: Prototype }>()
+const props = defineProps<{
+  /** The dialog title. The Prototype's display name. */
+  title: string
+  slug: string
+  /**
+   * The owner's handle, on a Prototype the reader does not own. Empty means
+   * "mine", which is what the gallery card passes.
+   */
+  username?: string
+}>()
 const open = defineModel<boolean>('open', { required: true })
 
-const files = useCall<PrototypeFile[], { slug: string }>({
+/** The address every read here carries. See the `username` prop. */
+const address = computed(() => ({ slug: props.slug, username: props.username ?? '' }))
+
+const files = useCall<PrototypeFile[], { slug: string; username: string }>({
   url: method('list_prototype_files'),
-  params: () => ({ slug: props.prototype.slug }),
+  params: () => address.value,
   immediate: false,
   initialData: [],
 })
 
-const source = useCall<PrototypeFileSource, { slug: string; path: string }>({
+const source = useCall<
+  PrototypeFileSource,
+  { slug: string; path: string; username: string }
+>({
   url: method('read_prototype_file'),
   immediate: false,
 })
@@ -150,7 +171,7 @@ async function select(path: string): Promise<void> {
   selected.value = path
   if (sources.value[path] || failures.value[path]) return
 
-  const answer = await source.submit({ slug: props.prototype.slug, path })
+  const answer = await source.submit({ ...address.value, path })
   if (answer?.path) {
     sources.value[answer.path] = answer
     return
@@ -239,7 +260,7 @@ function formatSize(bytes: number): string {
 </script>
 
 <template>
-  <Dialog v-model:open="open" size="5xl" :title="`${prototype.title} files`">
+  <Dialog v-model:open="open" size="5xl" :title="`${title} files`">
     <template #default>
       <!--
         One height for every state, so the loading, empty, error and loaded

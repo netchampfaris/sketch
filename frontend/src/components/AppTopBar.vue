@@ -18,6 +18,7 @@
  * every Prototype (spec 12). They replace the old ThemeControl.vue.
  */
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   Avatar,
   Button,
@@ -26,9 +27,10 @@ import {
   type ColorScheme,
   type DropdownOptions,
 } from 'frappe-ui'
-import { logout, session } from '../store'
+import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
 
 const { colorScheme, setColorScheme } = useColorScheme()
+const route = useRoute()
 
 /**
  * The mark that `sketch/install.py` already puts on the pages before the SPA.
@@ -40,6 +42,22 @@ const logo = '/assets/sketch/images/sketch-logo.svg'
 
 const fullName = computed(() => session.data?.full_name ?? '')
 const username = computed(() => session.data?.username ?? '')
+
+/**
+ * Which side of the bar to draw, before the session read has answered.
+ *
+ * The route is the guess, and on every route but the public ones it is a
+ * certainty: `sketch/www/sketch.py` refuses a Guest the bundle there, so
+ * anybody reading /settings is signed in. On /feed and /about a Guest is the
+ * common reader, so the bar opens signed out and swaps once if a session
+ * lands. It never swaps twice, and it never changes height either way.
+ */
+const account = computed(() =>
+  sessionSettled.value ? signedIn.value : !route.meta.public,
+)
+
+/** Where the mark leads. A Guest has no gallery, so it leads to the feed. */
+const home = computed(() => (account.value ? '/' : '/feed'))
 
 const schemes: { label: string; value: ColorScheme; icon: string }[] = [
   { label: 'Light', value: 'light', icon: 'lucide-sun' },
@@ -63,21 +81,15 @@ const menu = computed<DropdownOptions>(() => [
     group: username.value ? '@' + username.value : ' ',
     options: [
       // Settings left this menu and became a labelled button in the bar, so
-      // the route to the token is visible without opening anything. Help
-      // stays here: it is read once, not returned to.
+      // the route to the token is visible without opening anything. The feed
+      // and About stay here: both are read now and then, not returned to.
       //
-      // `onClick`, not `route`. /help is a server-rendered page
-      // (`sketch/www/help.html`), and the SPA router declares `/` and
-      // `/settings` only (`frontend/src/router.ts`). Menu.vue answers `route`
-      // with `router.push()` and `onClick` only when there is no `route`
-      // (frappe-ui Menu/Menu.vue, `handleItemSelect`), so a `route` here
-      // pushed a path that matched nothing and painted a blank column. A full
-      // page load is correct: /help is outside the SPA.
-      {
-        label: 'Help',
-        icon: 'lucide-circle-help',
-        onClick: () => (window.location.href = '/help'),
-      },
+      // `route`, not `onClick`. Both are routes of the SPA now
+      // (`frontend/src/router.ts`), so Menu.vue pushes them and neither costs
+      // a page load. They used to be server-rendered pages, and this row used
+      // to set `window.location`.
+      { label: 'Public feed', icon: 'lucide-layout-grid', route: '/feed' },
+      { label: 'About', icon: 'lucide-info', route: '/about' },
       {
         label: 'Theme',
         icon: 'lucide-sun-moon',
@@ -111,7 +123,7 @@ const menu = computed<DropdownOptions>(() => [
     >
       <router-link
         class="-mx-1 flex items-center gap-2 rounded-4 px-1 py-1 transition hover:bg-surface-gray-2 focus-visible:ring-0 focus-visible:focus-ring"
-        to="/"
+        :to="home"
       >
         <img
           alt=""
@@ -124,6 +136,29 @@ const menu = computed<DropdownOptions>(() => [
 
       <div class="flex items-center gap-2">
         <!--
+          Signed out, on /feed or /about. Two controls, both labelled: the
+          page that explains Sketch, and the way in. Neither is solid, which
+          is the standing rule, and the row is the same 32px tall as the
+          signed-in one, so the bar does not move when the session lands.
+        -->
+        <template v-if="!account">
+          <Button
+            v-if="route.path !== '/about'"
+            label="About"
+            route="/about"
+            theme="gray"
+            variant="ghost"
+          />
+          <Button
+            icon-left="lucide-log-in"
+            label="Sign in"
+            theme="gray"
+            variant="subtle"
+            @click="goToLogin"
+          />
+        </template>
+
+        <!--
           Settings is a labelled control in the bar, not a row inside the
           account menu. The token lives on that page, and the only route to it
           used to be an unlabelled "S" avatar: a user reconnecting on a second
@@ -132,6 +167,7 @@ const menu = computed<DropdownOptions>(() => [
           the menu row's "Agent connection" did not.
         -->
         <Button
+          v-if="account"
           icon-left="lucide-settings"
           label="Settings"
           route="/settings"
@@ -139,7 +175,7 @@ const menu = computed<DropdownOptions>(() => [
           variant="ghost"
         />
 
-        <Dropdown align="end" :options="menu">
+        <Dropdown v-if="account" align="end" :options="menu">
           <template #default="{ open }">
             <!-- Only the surface changes on hover and on open, so the bar
                  never moves. The Avatar holds its size with no label and no

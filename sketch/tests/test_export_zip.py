@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""Export sends one user's whole tree, and only that one.
+"""Export sends the caller's own tree, or anybody's public one.
 
 `sketch.api.export_prototype` answers a file, not a value: it fills the
 download slots `frappe.utils.response.as_raw` reads. So the cases here read
@@ -11,8 +11,12 @@ zip and not a traceback.
 Every entry sits under a folder named for the slug. Without it an unzip
 scatters `src/` and `README.md` into whatever directory the user ran it in.
 
-A Prototype is public to look at, never public to take, so the owner check is
-the same one the Files browser carries.
+A public Prototype is public to take as well as to look at: the feed card
+offers this beside its Files browser, so what a stranger can read one file at a
+time they can also take in one file. The check is therefore the browser's own,
+`prototype.resolve_readable`. A bare slug means the caller's own Prototype; a
+slug with a `username` means the one at `/u/<username>/<slug>`, and `is_public`
+is the whole check there.
 """
 
 import io
@@ -42,11 +46,15 @@ class TestExportZip(IntegrationTestCase):
 		cls.addClassCleanup(utils.drop_user, cls.owner)
 		cls.other = utils.make_user("zipoth", "d2tzipoth")
 		cls.addClassCleanup(utils.drop_user, cls.other)
-		# Public on purpose. A visitor may render it and must still not take it.
+		# Public on purpose. A visitor may render it and, from the feed card,
+		# take it.
 		cls.doc = utils.make_prototype(cls.owner, "d2t-zip", files=FILES, is_public=True)
 		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
 		cls.empty = utils.make_prototype(cls.owner, "d2t-zip-empty")
 		cls.addClassCleanup(utils.drop_prototype, cls.empty.name)
+		cls.shut = utils.make_prototype(cls.owner, "d2t-zip-private", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.shut.name)
+		cls.handle = utils.username_of(cls.owner)
 
 	@classmethod
 	def tearDownClass(cls):
@@ -56,10 +64,14 @@ class TestExportZip(IntegrationTestCase):
 	def setUp(self):
 		frappe.local.response = frappe._dict({"type": None})
 
-	def export(self, slug: str) -> dict:
-		"""Run the method as the owner and hand back the download slots."""
-		with set_user(self.owner):
-			api.export_prototype(slug)
+	def export(self, slug: str, username: str = "", as_user: str = "") -> dict:
+		"""Run the method and hand back the download slots.
+
+		Defaults to the owner asking for their own tree, which is the gallery
+		card's export.
+		"""
+		with set_user(as_user or self.owner):
+			api.export_prototype(slug, username)
 
 		return frappe.local.response
 
@@ -99,12 +111,39 @@ class TestExportZip(IntegrationTestCase):
 		with zipfile.ZipFile(io.BytesIO(content)) as archive:
 			self.assertEqual(archive.namelist(), [])
 
-	# ------------------------------------------------------------ the owner
+	# ---------------------------------------------------------- who may take
 
-	def test_another_user_cannot_export(self):
+	def test_another_user_cannot_export_by_slug_alone(self):
+		"""A bare slug means "mine", so it never reaches somebody else's row."""
 		with set_user(self.other):
 			with self.assertRaises(frappe.DoesNotExistError):
 				api.export_prototype(self.doc.slug)
+
+		self.assertIsNone(frappe.local.response.get("filecontent"))
+
+	def test_a_stranger_takes_a_public_prototype(self):
+		"""The feed card's export."""
+		response = self.export(self.doc.slug, self.handle, as_user=self.other)
+
+		self.assertEqual(response["filename"], "d2t-zip.zip")
+		with zipfile.ZipFile(io.BytesIO(response["filecontent"])) as archive:
+			self.assertEqual(
+				sorted(archive.namelist()), sorted(f"d2t-zip/{path}" for path in FILES)
+			)
+
+	def test_a_guest_takes_a_public_prototype(self):
+		"""/feed is read with no session, so `allow_guest` has to hold here as
+		well as on the listing."""
+		response = self.export(self.doc.slug, self.handle, as_user="Guest")
+
+		self.assertEqual(response["type"], "download")
+
+	def test_nobody_takes_a_private_prototype(self):
+		"""The line the address does not cross."""
+		for user in (self.other, "Guest"):
+			with self.subTest(user=user), set_user(user):
+				with self.assertRaises(frappe.DoesNotExistError):
+					api.export_prototype(self.shut.slug, self.handle)
 
 		self.assertIsNone(frappe.local.response.get("filecontent"))
 

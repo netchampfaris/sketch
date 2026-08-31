@@ -11,6 +11,13 @@ if (path === '/sketch' || path.startsWith('/sketch/')) {
 
 // The Viewer route /u/<username>/<slug> belongs to the Python renderer and is
 // deliberately not claimed here.
+//
+// `meta.public` marks a route that renders with no session. `App.vue` reads it
+// instead of bouncing every failed `get_session` to /login, and
+// `sketch/www/sketch.py` PUBLIC_PATHS has to name the same paths, or the
+// server sends the Guest away before the bundle loads. `hooks.py`
+// `website_route_rules` has to name every route here, public or not, or a
+// direct load of it is a 404.
 export const router = createRouter({
   history: createWebHistory('/'),
   routes: [
@@ -18,6 +25,18 @@ export const router = createRouter({
       path: '/',
       name: 'Prototypes',
       component: () => import('./pages/PrototypesScreen.vue'),
+    },
+    {
+      path: '/feed',
+      name: 'Feed',
+      component: () => import('./pages/FeedScreen.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/about',
+      name: 'About',
+      component: () => import('./pages/AboutScreen.vue'),
+      meta: { public: true },
     },
     {
       path: '/settings',

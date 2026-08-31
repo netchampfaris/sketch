@@ -3,15 +3,18 @@
 
 """Who gets the SPA bundle.
 
-A signed-out visitor used to download the whole bundle, watch it call
-`get_session`, and only then bounce to /login. `sketch/www/sketch.py` now
+A signed-out visitor used to download the whole bundle on every path, watch it
+call `get_session`, and only then bounce to /login. `sketch/www/sketch.py`
 stops that at the server (problem B4).
 
-The site root sends a Guest to /feed, and a deep link such as /settings still
-sends one to /login. Both answers keep the bundle away from a Guest, which is
-what B4 asked for. The destination is what changed: a visitor met a login form
-for a product they had never read a sentence about (problem 8.1), and /feed
-says what Sketch is before it asks for anything (`sketch/tests/test_feed.py`).
+Two of the SPA's routes are public now, /feed and /about, and a Guest is
+served the bundle on those. That is the trade: the feed was a server-rendered
+template and is a frappe-ui screen, so the page a signed-out visitor lands on
+costs a bundle. Every other path keeps the guard, and the destination is
+/login.
+
+The site root still sends a Guest to /feed, because a visitor met a login form
+for a product they had never read a sentence about (problem 8.1).
 
 The Viewer is a different renderer and must not move. A public Prototype
 belongs to whoever holds the link, signed in or not (spec 6.3).
@@ -57,18 +60,29 @@ class TestSpaAccess(IntegrationTestCase):
 		self.assertEqual(response.status_code, 301)
 		self.assertEqual(response.headers["Location"], "/login?redirect-to=%2Fsettings")
 
-	def test_a_guest_never_downloads_the_bundle(self):
-		"""The point of the guard. No answer to a Guest may carry the SPA.
+	def test_a_guest_never_downloads_the_bundle_on_a_private_path(self):
+		"""The point of the guard. No answer to a Guest on a path that needs a
+		session may carry the SPA.
 
 		Both Guest paths are read, because the two take different exits from
-		`get_context` and only one of them existed when this guard was
-		written.
+		`get_context`.
 		"""
 		for path in ("/", "/settings"):
 			response = utils.request("GET", path)
 
 			for mark in BUNDLE_MARKS:
 				self.assertNotIn(mark, response.text, f"{path} carried {mark}")
+
+	def test_a_guest_does_download_the_bundle_on_a_public_route(self):
+		"""`sketch/www/sketch.py` PUBLIC_PATHS, and the same paths in
+		`hooks.py` `website_route_rules`. Either one missing is a 404 or a
+		redirect for the page the front door points at."""
+		for path in ("/feed", "/about"):
+			response = utils.request("GET", path)
+
+			self.assertEqual(response.status_code, 200, path)
+			for mark in BUNDLE_MARKS:
+				self.assertIn(mark, response.text, f"{path} lost {mark}")
 
 	def test_the_viewer_still_serves_a_stranger(self):
 		"""Do not break this. A public link works with no session."""

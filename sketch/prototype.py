@@ -113,6 +113,37 @@ def resolve_owned(slug: str):
 	return doc
 
 
+def resolve_readable(slug: str, username: str = ""):
+	"""Look a Prototype up for reading source, by owner or by public link.
+
+	Two callers, one door. Without `username` this is `resolve_owned`: the
+	gallery names a slug and means its own, and nothing about that read
+	changes. With a `username` the caller is on /feed, looking at somebody
+	else's card, and the answer is the Prototype at `/u/<username>/<slug>`.
+
+	`is_public` is the whole permission check on that second path, the same one
+	the Viewer runs (`sketch/viewer.py`) and the same one the feed listing runs
+	(`sketch.api.public_prototypes`). A Prototype a stranger may render is now
+	a Prototype a stranger may read and take: the feed card carries a Files
+	browser and an Export, so the source is public exactly as far as the
+	rendered page is.
+
+	The owner reaches their own private Prototype through this door too, so a
+	signed-in user reading their own card is not refused.
+
+	Raises frappe.DoesNotExistError for anything else, never PermissionError: a
+	403 confirms the URL exists.
+	"""
+	if not username:
+		return resolve_owned(slug)
+
+	doc = resolve_public(username, slug)
+	if not doc or not (doc.is_public or doc.owner == frappe.session.user):
+		raise frappe.DoesNotExistError(frappe._("No prototype with slug {0}").format(slug))
+
+	return doc
+
+
 def public_url(doc) -> str:
 	"""The absolute https://sketch.netchamp.dev/u/<username>/<slug> URL."""
 	username = frappe.db.get_value("User", doc.owner, "username")

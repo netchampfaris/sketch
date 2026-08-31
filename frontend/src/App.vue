@@ -1,17 +1,38 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { FrappeUIProvider, useColorScheme } from 'frappe-ui'
 import AppTopBar from './components/AppTopBar.vue'
-import { goToLogin, prototypes, session } from './store'
+import { goToLogin, prototypes, session, sessionSettled } from './store'
 
 // Restores the saved preference and writes localStorage["theme"], which the
 // Viewer reads to theme the iframe (spec 12).
 useColorScheme()
 
+const router = useRouter()
+
+/**
+ * One session read at boot, and what a failed one means.
+ *
+ * `get_session` throws for a Guest, and on a public route that is the ordinary
+ * answer, not an error: /feed and /about render with no session
+ * (`router.ts`, `meta.public`). Every other route needs one, so the browser
+ * leaves for /login and comes back to the path it asked for.
+ *
+ * `router.isReady()` comes first and is not optional. Every route component is
+ * a lazy import, so at `onMounted` the first navigation has not resolved yet
+ * and `currentRoute` is still the router's initial location, whose `meta` is
+ * empty. Reading it there sent a Guest on /feed to /login about half the time.
+ *
+ * The gallery is only loaded for a signed-in user. A Guest on /feed reads
+ * `public_prototypes` instead, which the feed screen owns.
+ */
 onMounted(async () => {
+  await router.isReady()
   await session.reload()
+  sessionSettled.value = true
   if (session.error) {
-    goToLogin()
+    if (!router.currentRoute.value.meta.public) goToLogin()
     return
   }
   prototypes.reload()

@@ -24,7 +24,7 @@ import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
-import { copyText, downloadFile, method } from '../store'
+import { copyText, downloadPrototypeZip, method } from '../store'
 import type { Prototype } from '../types'
 
 const props = defineProps<{ prototype: Prototype }>()
@@ -136,24 +136,14 @@ async function copyPublicUrl(): Promise<void> {
 /**
  * Take the whole tree away as one zip.
  *
- * The server names the file too (`sketch.api.export_prototype`), and both
- * name it after the slug, because that is the one part of a Prototype that
- * never changes.
- *
- * The toast reports the name to look for. A browser can hide its download
- * shelf, and then nothing else on screen says the file arrived.
+ * `downloadPrototypeZip` owns the request and both toasts, because the feed
+ * card runs the same action against somebody else's public Prototype. This
+ * only holds the flag that disables the menu while it is on the wire.
  */
 async function exportZip(): Promise<void> {
-  const filename = `${props.prototype.slug}.zip`
   exporting.value = true
   try {
-    await downloadFile(
-      `${method('export_prototype')}?slug=${encodeURIComponent(props.prototype.slug)}`,
-      filename,
-    )
-    toast.success(`Downloaded ${filename}`)
-  } catch (error) {
-    toast.error(`Could not export. ${(error as Error).message}`)
+    await downloadPrototypeZip(props.prototype.slug)
   } finally {
     exporting.value = false
   }
@@ -337,7 +327,11 @@ const menuOptions = computed(() => [
       </Tooltip>
     </div>
 
-    <PrototypeFilesDialog v-model:open="filesOpen" :prototype="prototype" />
+    <PrototypeFilesDialog
+      v-model:open="filesOpen"
+      :slug="prototype.slug"
+      :title="prototype.title"
+    />
     <PrototypeHistoryDialog v-model:open="historyOpen" :prototype="prototype" />
   </article>
 </template>

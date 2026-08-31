@@ -4,8 +4,15 @@
  * Writes are not here. A card owns its own rename, delete and public toggle,
  * so one card's spinner never disables the others.
  */
+import { computed, ref } from 'vue'
 import { call, toast, useCall } from 'frappe-ui'
-import type { AgentToken, Prototype, Recipe, SketchSession } from './types'
+import type {
+  AgentToken,
+  Prototype,
+  PublicPrototype,
+  Recipe,
+  SketchSession,
+} from './types'
 
 /** A whitelisted method in `sketch/api.py`. */
 export function method(name: string): string {
@@ -22,6 +29,36 @@ export const prototypes = useCall<Prototype[]>({
   immediate: false,
   initialData: [],
 })
+
+/**
+ * The /feed listing: every public Prototype on the site, newest first.
+ *
+ * `allow_guest` on the server, so this is the one read here that answers with
+ * no session. `initialData` keeps the grid a grid while it loads.
+ */
+export const publicPrototypes = useCall<PublicPrototype[]>({
+  url: method('public_prototypes'),
+  immediate: false,
+  initialData: [],
+})
+
+/**
+ * True once the boot session read has answered, either way.
+ *
+ * `App.vue` sets it. The top bar reads it to know whether `signedIn` is an
+ * answer or an unfilled default, so it can draw the chrome the route implies
+ * until the real one is known and never draw the wrong one twice.
+ */
+export const sessionSettled = ref(false)
+
+/**
+ * True once `get_session` has answered with a user.
+ *
+ * The public routes render for a Guest, so a screen cannot assume a session.
+ * `session.error` is not the opposite of this: it stays set after a failed
+ * read, and a Guest on /feed is not an error.
+ */
+export const signedIn = computed(() => Boolean(session.data?.user))
 
 export const recipes = useCall<Recipe[]>({
   url: method('list_recipes'),
@@ -92,6 +129,33 @@ export async function downloadFile(url: string, filename: string): Promise<void>
   // Not in this task. The click only starts the download; the browser reads
   // the blob after the handler returns, and a revoke before that cancels it.
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+/**
+ * Take one Prototype's whole tree away as one zip.
+ *
+ * Both cards call this: the gallery card names a slug and means its own, the
+ * feed card names a username too and means somebody else's public one. The
+ * server reads the same pair (`sketch.api.export_prototype`).
+ *
+ * The server names the file as well, and both name it after the slug, because
+ * that is the one part of a Prototype that never changes.
+ *
+ * The toast reports the name to look for. A browser can hide its download
+ * shelf, and then nothing else on screen says the file arrived. Nothing is
+ * thrown: the caller's only job is its own busy flag.
+ */
+export async function downloadPrototypeZip(slug: string, username = ''): Promise<void> {
+  const filename = `${slug}.zip`
+  const query = new URLSearchParams({ slug })
+  if (username) query.set('username', username)
+
+  try {
+    await downloadFile(`${method('export_prototype')}?${query}`, filename)
+    toast.success(`Downloaded ${filename}`)
+  } catch (error) {
+    toast.error(`Could not export. ${(error as Error).message}`)
+  }
 }
 
 /**

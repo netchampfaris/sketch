@@ -1,13 +1,19 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The Files browser reads one user's tree, and only that one.
+"""The Files browser reads the caller's own tree, or anybody's public one.
 
 `sketch.api.read_prototype_file` takes a path from the browser, so it carries
-the two checks the MCP tools carry: `resolve_owned` says whose tree it is, and
-`prototype_files.safe_join` says the path stays inside it. Trap 9 applies to a
-read the same way it applies to a write, and a listing that leaks is a source
-leak: a Prototype is public to look at, never public to read.
+the two checks the MCP tools carry: `prototype.resolve_readable` says whose
+tree it is, and `prototype_files.safe_join` says the path stays inside it.
+Trap 9 applies to a read the same way it applies to a write.
+
+The address decides which tree. A bare slug means the caller's own, which is
+the gallery card's read and is unchanged. A slug with a `username` means the
+Prototype at `/u/<username>/<slug>`, which is the feed card's read, and
+`is_public` is the whole check there: the feed carries this same browser, so a
+Prototype a stranger may render is one a stranger may read. A private one is
+still refused, and that is the case that matters most here.
 
 `read_text` is the viewer's own reader. `read_files` is the agent's and returns
 a file whole; this one stops at a limit and says so, and refuses a file that is
@@ -38,10 +44,13 @@ class TestFileBrowser(IntegrationTestCase):
 		cls.addClassCleanup(utils.drop_user, cls.owner)
 		cls.other = utils.make_user("browseoth", "d2tbrowseoth")
 		cls.addClassCleanup(utils.drop_user, cls.other)
-		# Public on purpose. A visitor may render this Prototype, and must
-		# still not read its source.
+		# Public on purpose. A visitor may render this Prototype and, through
+		# the feed card, read it.
 		cls.doc = utils.make_prototype(cls.owner, "d2t-browse", files=FILES, is_public=True)
 		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+		cls.shut = utils.make_prototype(cls.owner, "d2t-browse-private", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.shut.name)
+		cls.handle = utils.username_of(cls.owner)
 
 	@classmethod
 	def tearDownClass(cls):
@@ -58,10 +67,43 @@ class TestFileBrowser(IntegrationTestCase):
 		for row in rows:
 			self.assertEqual(row["size"], len(FILES[row["path"]].encode()))
 
-	def test_another_user_cannot_list_the_tree(self):
+	def test_another_user_cannot_list_the_tree_by_slug_alone(self):
+		"""A bare slug means "mine". It never reaches somebody else's row, so
+		the gallery's read cannot cross a user by accident."""
 		with set_user(self.other):
 			with self.assertRaises(frappe.DoesNotExistError):
 				api.list_prototype_files(self.doc.slug)
+
+	def test_a_stranger_lists_a_public_tree_by_address(self):
+		"""The feed card's read. `username` plus slug, and `is_public` is the
+		check."""
+		with set_user(self.other):
+			rows = api.list_prototype_files(self.doc.slug, self.handle)
+
+		self.assertEqual([row["path"] for row in rows], sorted(FILES))
+
+	def test_a_guest_lists_a_public_tree(self):
+		"""/feed is read with no session, so the browser on it must answer
+		one. `allow_guest` on the method is what makes that work."""
+		with set_user("Guest"):
+			rows = api.list_prototype_files(self.doc.slug, self.handle)
+
+		self.assertEqual([row["path"] for row in rows], sorted(FILES))
+
+	def test_a_stranger_cannot_list_a_private_tree(self):
+		"""The line the address does not cross. `is_public` is the whole
+		check, so this is the case that holds it."""
+		for user in (self.other, "Guest"):
+			with self.subTest(user=user), set_user(user):
+				with self.assertRaises(frappe.DoesNotExistError):
+					api.list_prototype_files(self.shut.slug, self.handle)
+
+	def test_the_owner_reads_their_own_private_tree_by_address(self):
+		"""A signed-in owner looking at their own card is not refused."""
+		with set_user(self.owner):
+			rows = api.list_prototype_files(self.shut.slug, self.handle)
+
+		self.assertEqual([row["path"] for row in rows], sorted(FILES))
 
 	# ---------------------------------------------------------------- read
 
@@ -74,10 +116,29 @@ class TestFileBrowser(IntegrationTestCase):
 		self.assertEqual(answer["size"], len(FILES["src/App.vue"].encode()))
 		self.assertFalse(answer["truncated"])
 
-	def test_another_user_cannot_read_a_file(self):
+	def test_another_user_cannot_read_a_file_by_slug_alone(self):
 		with set_user(self.other):
 			with self.assertRaises(frappe.DoesNotExistError):
 				api.read_prototype_file(self.doc.slug, "src/App.vue")
+
+	def test_a_stranger_reads_a_file_of_a_public_prototype(self):
+		with set_user(self.other):
+			answer = api.read_prototype_file(self.doc.slug, "src/App.vue", self.handle)
+
+		self.assertEqual(answer["content"], FILES["src/App.vue"])
+
+	def test_a_stranger_cannot_read_a_file_of_a_private_prototype(self):
+		for user in (self.other, "Guest"):
+			with self.subTest(user=user), set_user(user):
+				with self.assertRaises(frappe.DoesNotExistError):
+					api.read_prototype_file(self.shut.slug, "src/App.vue", self.handle)
+
+	def test_the_path_guard_still_runs_on_a_public_read(self):
+		"""Trap 9 does not relax because the Prototype is public. The reader
+		names the path, so `safe_join` runs whoever is asking."""
+		with set_user(self.other):
+			with self.assertRaises(frappe.ValidationError):
+				api.read_prototype_file(self.doc.slug, "../../../../etc/passwd", self.handle)
 
 	def test_a_missing_file_raises(self):
 		with set_user(self.owner):

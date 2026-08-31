@@ -1,7 +1,7 @@
 """The one page that boots the Sketch SPA, and where a Guest goes instead.
 
 `home_page = "sketch"` in hooks.py points the site root here, and
-`website_route_rules` sends `/settings` here as well.
+`website_route_rules` sends `/settings`, `/feed` and `/about` here as well.
 """
 
 from urllib.parse import quote
@@ -10,10 +10,23 @@ import frappe
 
 no_cache = 1
 
-#: Where a signed-out visitor at the site root is sent. `sketch/www/feed.py`
-#: renders it on the server, so a Guest can read it with no session and no
-#: role.
+#: Where a signed-out visitor at the site root is sent. It is a route of the
+#: SPA (`frontend/src/router.ts`), served through this same page.
 FEED_PATH = "/feed"
+
+#: The SPA routes a Guest is served, rather than redirected away from.
+#:
+#: /feed is the front door and /about is the page it links to, and neither
+#: needs a session: `sketch.api.public_prototypes` carries `allow_guest`, and
+#: /about is prose. Both are routes of the SPA, so a Guest on one of them does
+#: download the bundle. That is the trade this page used to refuse (problem
+#: B4): the feed was a server-rendered template, and it is a frappe-ui screen
+#: now, with the same card, the same Files browser and the same Export the
+#: gallery has.
+#:
+#: `website_route_rules` in hooks.py has to name each one as well, or a direct
+#: load of it is a 404.
+PUBLIC_PATHS = ("/feed", "/about")
 
 #: The request paths that count as the site root. `/` resolves through
 #: `home_page`, and `/index` reaches the same renderer, so both are the root as
@@ -24,8 +37,9 @@ ROOT_PATHS = ("", "/index")
 
 def get_context():
 	if frappe.session.user == "Guest":
-		# Never returns. Both answers leave this page, so nothing below runs
-		# for a Guest and no Guest is handed the bundle.
+		# Returns only for a path in PUBLIC_PATHS. Every other Guest leaves
+		# this page, so no Guest is handed the bundle for a screen that needs
+		# a session.
 		_redirect_guest()
 
 	csrf_token = frappe.sessions.get_csrf_token()
@@ -37,16 +51,18 @@ def get_context():
 
 
 def _redirect_guest() -> None:
-	"""Send a signed-out visitor away, without serving the SPA bundle.
+	"""Decide what a signed-out visitor gets: the bundle, /feed, or /login.
 
-	Two destinations, decided by the path.
+	Three answers, decided by the path.
+
+	A path in PUBLIC_PATHS is served. /feed and /about are SPA routes a Guest
+	may read, so this returns and the bundle goes out with no session.
 
 	The site root goes to /feed. Every public URL used to redirect to /login,
 	so the first thing a visitor met was a login form for a product they had
 	never read a sentence about (problem 8.1). The feed answers that: it says
 	what Sketch is in one line, it carries the sign-in action, and it shows
-	real work. It is server rendered for this reason, so a Guest reads it with
-	no session and no role (`sketch/www/feed.py`).
+	real work.
 
 	The status is 302, not core's default 301. A 301 on the site root is a
 	permanent instruction: a browser may keep it, and the same person, now
@@ -63,6 +79,9 @@ def _redirect_guest() -> None:
 	"""
 	request = getattr(frappe.local, "request", None)
 	path = (getattr(request, "path", "/") or "/").rstrip("/")
+	if path in PUBLIC_PATHS:
+		return
+
 	if path not in ROOT_PATHS:
 		_redirect_to_login(request)
 

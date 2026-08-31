@@ -1,7 +1,7 @@
 {#
-  The shell for every Sketch page that is not the SPA: `/feed`, `/login` and
-  `/help`. `/feed` is the one a signed-out visitor at `/` is sent to
-  (`sketch/www/sketch.py`).
+  The shell for every Sketch page that is not the SPA. That is `/login`, and
+  only `/login`: `/feed` and `/about` are routes of the SPA now
+  (`frontend/src/router.ts`), served to a Guest as well.
 
   It extends `templates/base.html`, not `templates/web.html`. web.html wraps
   its content in the portal's breadcrumb bar, bootstrap container and sidebar
@@ -60,7 +60,7 @@
 		 * frappe-ui preset never overrides the key. These pages used to read
 		 * `--font-family-monospace`, which is Bootstrap's stack from the same
 		 * website bundle (`bootstrap/scss/_variables.scss:279`). It drops
-		 * `ui-monospace`, so a snippet on /help and the same snippet in
+		 * `ui-monospace`, so a snippet on a web page and the same snippet in
 		 * Settings picked two different faces (problem 8.4). The bundle has no
 		 * mono token to point at, so the stack is written here once and both
 		 * mono rules below read it.
@@ -599,7 +599,7 @@
 		<div class="sk-wrap sk-foot-inner">
 			<p class="text-p-xs">A Frappe app. MIT licensed.</p>
 			<nav class="sk-foot-links">
-				<a class="sk-link text-p-xs" href="/help">Help</a>
+				<a class="sk-link text-p-xs" href="/about">About</a>
 				<a
 					class="sk-link text-p-xs"
 					href="https://github.com/netchampfaris/sketch"

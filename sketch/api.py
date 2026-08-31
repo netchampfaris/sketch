@@ -314,12 +314,18 @@ def list_prototypes() -> list[dict]:
 	return items
 
 
+@frappe.whitelist(allow_guest=True)
 def public_prototypes() -> list[dict]:
 	"""Every public Prototype on the site, newest first. The /feed listing.
 
-	Not whitelisted, on purpose. `sketch/www/feed.py` renders the page on the
-	server, so nothing calls this over HTTP and the method surface a Guest can
-	reach does not grow by one.
+	`allow_guest`, because /feed is the front door: a signed-out visitor at `/`
+	is sent there (`sketch/www/sketch.py`) and reads it with no session and no
+	role. The page is a route of the SPA now, not a server-rendered template,
+	so this call is the listing and there is no second copy of it in `www`.
+
+	No page size. The old template capped the page at 24 rows and printed a
+	line saying so; the page prints no count line any more, so a cap here would
+	be a silent truncation. The whole set is walked to sort it in any case.
 
 	This is the one read in this file that drops the permission check, and the
 	filter is why. `list_prototypes` above keeps `get_list` because a role can
@@ -352,20 +358,25 @@ def public_prototypes() -> list[dict]:
 		order_by="creation desc",
 		limit_page_length=0,
 	)
-	usernames = _usernames([row.owner for row in rows])
-	items = [_public_row(row, usernames[row.owner]) for row in rows if usernames.get(row.owner)]
+	authors = _authors([row.owner for row in rows])
+	items = [_public_row(row, authors[row.owner]) for row in rows if authors.get(row.owner)]
 	# Python's sort is stable, so the SQL order above survives as the tiebreak
 	# between two Prototypes whose newest file carries the same second.
 	items.sort(key=lambda item: item["modified"], reverse=True)
 	return items
 
 
-def _usernames(owners: list[str]) -> dict[str, str]:
-	"""The username of each owner, in one read.
+def _authors(owners: list[str]) -> dict[str, dict]:
+	"""The username, name and picture of each owner, in one read.
 
 	One query for the whole feed, not one per row. A user with no username is
 	absent from the answer rather than present with an empty value, so the
-	caller has one thing to test.
+	caller has one thing to test: `/u/<username>/<slug>` is the only address a
+	Prototype has, so a row without one has no link the feed could print.
+
+	The three fields are what one card draws: the handle, and the Avatar's
+	image with the name behind it for the initials. Nothing else about a User
+	is read here, because this answer is public.
 	"""
 	if not owners:
 		return {}
@@ -373,22 +384,40 @@ def _usernames(owners: list[str]) -> dict[str, str]:
 	rows = frappe.get_all(
 		"User",
 		filters={"name": ("in", sorted(set(owners)))},
-		fields=["name", "username"],
+		fields=["name", "username", "full_name", "user_image"],
 		limit_page_length=0,
 	)
-	return {row.name: row.username for row in rows if row.username}
+	return {
+		row.name: {
+			"username": row.username,
+			"full_name": row.full_name or row.username,
+			"user_image": row.user_image or "",
+		}
+		for row in rows
+		if row.username
+	}
 
 
-def _public_row(row, username: str) -> dict:
+def _public_row(row, author: dict) -> dict:
 	"""One feed item.
 
 	`_row` cannot serve here. Its username is the session user's, and on a
 	feed of every owner's work that addresses the wrong Viewer.
 
+	`author` carries the face beside the username. A feed of strangers' work
+	that prints a bare handle reads as a list of paths, so the card draws the
+	same Avatar the top bar draws, from the same `User.user_image` field.
+	`full_name` is the Avatar's fallback: it makes the initials when a user has
+	no picture.
+
+	`file_count` is the number the card's own actions read: Export is disabled
+	on an empty tree, the way it is in the gallery.
+
 	No `pin` and no `is_public`: every row on the feed is public, and the Pin
 	is a build detail that told a reader nothing they could act on
 	(review 5.8).
 	"""
+	username = author["username"]
 	files = prototype_files.list_files(row.name)
 	count = len(files)
 	# Falls back to `creation`, never to `modified`, for the reason
@@ -399,8 +428,12 @@ def _public_row(row, username: str) -> dict:
 	return {
 		"title": row.title,
 		"username": username,
+		"full_name": author["full_name"],
+		"user_image": author["user_image"],
 		"slug": row.slug,
+		"file_count": count,
 		"viewer_path": f"/u/{username}/{row.slug}",
+		"public_url": f"{_public_base()}/u/{username}/{row.slug}",
 		# The same pictures the gallery card draws. The feed prints the light
 		# one: these pages carry no theme control and core's token layer only
 		# turns dark on `[data-theme="dark"]`, which nothing here sets.
@@ -454,49 +487,54 @@ def prototype_revision(slug: str) -> dict:
 	return {"rev": prototype_files.revision(doc.name)}
 
 
-@frappe.whitelist()
-def list_prototype_files(slug: str) -> list[dict]:
+@frappe.whitelist(allow_guest=True)
+def list_prototype_files(slug: str, username: str = "") -> list[dict]:
 	"""Every file in one Prototype's tree, as {"path", "size"}, sorted by path.
 
 	The Files browser opens on this. It is a stat walk, so it stays cheap for a
 	tree of any size, and it carries no source: a browser reads one file at a
 	time, through `read_prototype_file`.
 
-	`resolve_owned` is the permission check. Only the owner may list a tree,
-	public or not: the Viewer shows what a Prototype renders, never its source.
+	`prototype.resolve_readable` is the permission check. Without `username` it
+	is the owner's own tree, which is the gallery's read and is unchanged. With
+	one it is the Prototype at `/u/<username>/<slug>`, and `is_public` is the
+	check. `allow_guest` follows from that: /feed is read with no session, and
+	the card there carries this browser.
 	"""
-	doc = prototype.resolve_owned(slug)
+	doc = prototype.resolve_readable(slug, username)
 	return prototype_files.list_files(doc.name)
 
 
-@frappe.whitelist()
-def read_prototype_file(slug: str, path: str) -> dict:
+@frappe.whitelist(allow_guest=True)
+def read_prototype_file(slug: str, path: str, username: str = "") -> dict:
 	"""One file of a Prototype, as source the browser prints.
 
-	`resolve_owned` is the permission check, and `prototype_files.safe_join`
-	is the path guard. The client names the file, so both have to run: the
-	first says whose tree it is, the second says the path stays inside it.
+	`prototype.resolve_readable` is the permission check, and
+	`prototype_files.safe_join` is the path guard. The client names the file,
+	so both have to run: the first says whose tree it is, the second says the
+	path stays inside it.
 
 	Answers {"path", "size", "content", "truncated"}. Raises for a missing
 	file, and for a file that is not UTF-8 text.
 	"""
-	doc = prototype.resolve_owned(slug)
+	doc = prototype.resolve_readable(slug, username)
 	return prototype_files.read_text(doc.name, path)
 
 
-@frappe.whitelist()
-def export_prototype(slug: str) -> None:
+@frappe.whitelist(allow_guest=True)
+def export_prototype(slug: str, username: str = "") -> None:
 	"""Send the whole tree as one zip, named after the Prototype.
 
-	`resolve_owned` is the permission check. A Prototype is public to look at,
-	never public to take: the Viewer renders what a Prototype draws, and this
-	hands over the source it was drawn from.
+	`prototype.resolve_readable` is the permission check. A public Prototype is
+	public to take as well as to look at: the feed card offers this beside its
+	Files browser, so what a stranger can read one file at a time they can also
+	take in one file.
 
 	The answer is a file, not a value, so this fills the download slots
 	`frappe.utils.response.as_raw` reads and returns nothing. The mimetype
 	comes off the filename.
 	"""
-	doc = prototype.resolve_owned(slug)
+	doc = prototype.resolve_readable(slug, username)
 	frappe.response["filename"] = f"{doc.slug}.zip"
 	frappe.response["filecontent"] = prototype_files.zip_bytes(doc.name, doc.slug)
 	frappe.response["type"] = "download"
@@ -561,6 +599,47 @@ def create_prototype(title: str, recipe: str = "blank") -> dict:
 	doc = prototype.create(title)
 	prototype_files.write_files(doc.name, _apply_title(files, doc.title))
 
+	return _row(doc.as_dict())
+
+
+@frappe.whitelist(methods=["POST"])
+def fork_prototype(username: str, slug: str) -> dict:
+	"""Copy somebody's public Prototype into the caller's own gallery.
+
+	The one write on /feed. A reader who likes what an agent wrote there wants
+	to keep going from it, and until now the only route was Export, unzip, and
+	ask their own agent to paste the tree back in.
+
+	`prototype.resolve_readable` is the permission check, and `username` is
+	required here: a fork is always of a card on the feed, and `is_public` is
+	what that check reads. No `allow_guest`, unlike the reads beside it. A fork
+	makes a document owned by the caller, so the caller has to be somebody.
+
+	The copy is the tree and the Pin, and nothing else.
+
+	- The title is the source's. Two people may hold the same title, and the
+	  new slug is freed per owner (`prototype._free_slug`), so the fork gets
+	  its own address under the caller's own username.
+	- The Pin is the source's, not `newest_pin()`. The tree was written against
+	  that Runtime, and a fork that renders differently from the card it was
+	  taken from is not a copy.
+	- `is_public` is 0. Publishing is the new owner's decision, never inherited.
+	- No version row and no thumbnail. A Prototype from a Recipe carries
+	  neither either, and the first `check` writes both.
+
+	Answers the new gallery row, so the caller can draw it without a re-read.
+	"""
+	source = prototype.resolve_readable(slug, (username or "").strip())
+	tree = prototype_files.read_tree(source.name)
+
+	doc = prototype.create(source.title)
+	if source.pin and source.pin != doc.pin:
+		doc.pin = source.pin
+		doc.save()
+
+	prototype_files.write_files(
+		doc.name, [{"path": path, "content": content} for path, content in sorted(tree.items())]
+	)
 	return _row(doc.as_dict())
 
 

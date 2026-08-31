@@ -295,25 +295,13 @@ async function copy(text: string, done: string): Promise<void> {
       <!--
         Two sentences, not a tinted block. The claude.ai warning (problem 3.11)
         was a full amber panel, which is the loudest treatment on the page for
-        the rarest client. /help carries the same warning and this paragraph
-        links to it. The failure is no longer silent either: paste the prompt
+        the rarest client. The failure is not silent either: paste the prompt
         above into claude.ai and the model answers that it cannot add an MCP
-        server, so the reader gets an explanation without this page.
+        server, so the reader gets an explanation without leaving this page.
       -->
       <p class="mt-4 text-p-sm text-ink-gray-7">
         A claude.ai custom connector cannot reach Sketch. It sends a URL only,
         with no Authorization header.
-      </p>
-      <!--
-        A plain anchor. /help is a server-rendered page (`sketch/www/help.html`)
-        and the SPA router does not declare it, so a RouterLink or a Button
-        `route` prop would call `router.push()` and 404 inside the app.
-        `AppTopBar.vue` carries the same note for the same reason.
-      -->
-      <p class="mt-1 text-p-sm text-ink-gray-7">
-        Is your connection still quiet?
-        <a class="text-ink-blue-link hover:underline" href="/help">Help</a>
-        lists what to check.
       </p>
     </section>
   </div>

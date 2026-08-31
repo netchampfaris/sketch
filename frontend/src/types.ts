@@ -45,6 +45,34 @@ export interface Prototype {
   thumbnail: PrototypeThumbnail | null
 }
 
+/**
+ * One card on /feed: a public Prototype, and who wrote it.
+ *
+ * Not a `Prototype`. `sketch.api.public_prototypes` answers a different row
+ * (`_public_row`): it names the owner, because the feed crosses users, and it
+ * drops `pin` and `is_public`, because every row on it is public and the Pin
+ * is a build detail. Nothing here may be written, so there is no `name`: the
+ * document id is the owner's, and the address is `username` plus `slug`.
+ */
+export interface PublicPrototype {
+  title: string
+  /** The owner's handle. The first half of every Viewer address. */
+  username: string
+  /** The Avatar's fallback. It makes the initials when there is no image. */
+  full_name: string
+  /** `User.user_image`, or "" for a user who has none. */
+  user_image: string
+  slug: string
+  file_count: number
+  /** Derived on the server, like `Prototype.description`. */
+  description: string
+  modified: string
+  updated: string
+  viewer_path: string
+  public_url: string
+  thumbnail: PrototypeThumbnail | null
+}
+
 /** See `Prototype.thumbnail`. Written by `sketch/thumbnails.py`. */
 export interface PrototypeThumbnail {
   light?: string
