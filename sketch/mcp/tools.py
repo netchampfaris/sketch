@@ -88,7 +88,23 @@ def call_tool(name: str, arguments: dict) -> dict:
 
 
 def failure_text(name: str, e: Exception) -> str:
-	"""One readable line for the agent. No traceback, no HTML."""
+	"""One readable line for the agent. No traceback, no HTML, no host path.
+
+	A filesystem OSError prints the absolute path it failed on, which names
+	the bench root, the OS user and the private files layout. `filename` is
+	what carries that path, and it is set by `open`, `os.mkdir` and every
+	other call that takes a name. So a file error answers with one fixed line
+	and the whole exception stays in the log.
+
+	The test is `filename` and not the class, because OSError is a much wider
+	family than the filesystem: `requests.exceptions.RequestException` is an
+	OSError too, and one escapes `sketch/checkd.py` when the network drops
+	mid-answer. Calling that a failed write would send the agent to debug the
+	wrong thing. It names no path, so it answers with its own message.
+	"""
+	if isinstance(e, OSError) and (e.filename or e.filename2):
+		return f"{name} failed: the file could not be written."
+
 	message = strip_html(str(e)).strip() or type(e).__name__
 	if isinstance(e, frappe.DoesNotExistError):
 		return f"{name} failed: {message}. Call list_prototypes for the slugs you own."
@@ -316,10 +332,16 @@ def do_check(args: dict) -> ToolResult:
 	The stamp is read before the run and not after. A file written while the
 	browser was open must leave the pictures stale, so the next card view asks
 	for another capture.
+
+	The browser runs inline on a web worker, so one account with many agents
+	must not hold them all. `claim_slot` is what stops that, and it sits
+	against the run it guards: `run` gives the claim back on every way out, so
+	nothing between here and there can leave a slot held (`sketch/checkd.py`).
 	"""
 	doc = owned(args)
 	screenshot = bool(args.get("screenshot"))
 	rev = prototype_files.revision(doc.name) if screenshot else ""
+	checkd.claim_slot()
 	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot)
 
 	shots = report.pop("screenshots", None) or []

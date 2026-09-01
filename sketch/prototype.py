@@ -12,6 +12,10 @@ from frappe.utils import get_url
 RUNTIMES_PATH = ("public", "runtimes")
 SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
+#: The most Prototypes one account may hold. Each one carries a tree of its
+#: own, so an unbounded create loop is the cheapest way to fill the disk.
+MAX_PROTOTYPES_PER_USER = 100
+
 
 def slugify(title: str) -> str:
 	"""Lowercase, [a-z0-9-], no doubled or trailing hyphen. Raises if empty."""
@@ -56,7 +60,15 @@ def create(title: str) -> "frappe.model.document.Document":
 
 	Derives a unique slug from title, sets pin to newest_pin(). Does not create
 	the directory.
+
+	Refuses the create once the account holds MAX_PROTOTYPES_PER_USER of them.
 	"""
+	if frappe.db.count("Sketch Prototype", {"owner": frappe.session.user}) >= MAX_PROTOTYPES_PER_USER:
+		frappe.throw(
+			frappe._("You have reached the limit of {0} prototypes.").format(MAX_PROTOTYPES_PER_USER),
+			frappe.ValidationError,
+		)
+
 	doc = frappe.new_doc("Sketch Prototype")
 	doc.title = (title or "").strip()
 	doc.slug = _free_slug(slugify(title), frappe.session.user)
