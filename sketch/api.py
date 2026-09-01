@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 import frappe
 from frappe.utils import convert_utc_to_system_timezone, pretty_date
 
-from sketch import prototype, prototype_files, thumbnail, thumbnails, versions
+from sketch import checkd, prototype, prototype_files, signature, thumbnail, thumbnails, versions
 from sketch.sketch.doctype.sketch_token import sketch_token
 
 #: The eight recipes from ui.frappe.io/recipes, plus Blank (spec 10). The trees
@@ -158,7 +158,7 @@ def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
 	return local.strftime("%Y-%m-%d %H:%M:%S"), f"{count}-{newest_ns}"
 
 
-def _card_image(name: str, username: str, slug: str, rev: str) -> dict | None:
+def _card_image(name: str, username: str, slug: str, rev: str, owner: str) -> dict | None:
 	"""The card pictures, one URL per theme, and a refresh when they are old.
 
 	Returns None when this Prototype has never been captured. The card then
@@ -178,9 +178,16 @@ def _card_image(name: str, username: str, slug: str, rev: str) -> dict | None:
 	tree the picture is of, which is the staleness question above; it does not
 	change when a picture is re-taken of a tree that did not move, and that is
 	what Refresh preview does.
+
+	Only the owner's own read asks for a refresh. `public_prototypes` carries
+	`allow_guest`, and a POST to it commits, so the queued jobs fire: a
+	stranger reading the feed used to buy one Chromium capture per stale card,
+	and a tree that never mounts writes no sidecar and so stays stale for ever
+	(review 3.9). `owner` is passed in, because both callers already hold it.
+	A stranger still sees the picture on disk; only the capture is the owner's.
 	"""
 	state = thumbnails.state(name, rev)
-	if state != "fresh":
+	if state != "fresh" and frappe.session.user == owner:
 		thumbnails.request_refresh(name)
 
 	if state == "missing":
@@ -224,6 +231,9 @@ def _row(doc_or_dict) -> dict:
 	name = doc_or_dict.get("name")
 	slug = doc_or_dict.get("slug")
 	pin = doc_or_dict.get("pin")
+	# Every caller here hands over a row the session user owns, and `owner` is
+	# read for `_card_image`, which asks for a capture only for the owner.
+	owner = doc_or_dict.get("owner")
 	files = prototype_files.list_files(name)
 	count = len(files)
 	username = _username()
@@ -242,7 +252,7 @@ def _row(doc_or_dict) -> dict:
 		# One URL per theme, or None for a Prototype nobody has checked yet.
 		# The gallery draws a picture, never a live Viewer: twelve iframes meant
 		# twelve Runtimes (`sketch/thumbnails.py`).
-		"thumbnail": _card_image(name, username, slug, rev),
+		"thumbnail": _card_image(name, username, slug, rev, owner),
 		# The pin is deliberately out of this line. It used to lead it, which
 		# made the frappe-ui version the loudest fact about a Prototype and told
 		# a new user nothing they could act on (review 5.8). It stays in the
@@ -303,7 +313,7 @@ def list_prototypes() -> list[dict]:
 	rows = frappe.get_list(
 		"Sketch Prototype",
 		filters={"owner": frappe.session.user},
-		fields=["name", "title", "slug", "pin", "is_public", "creation"],
+		fields=["name", "title", "slug", "pin", "is_public", "creation", "owner"],
 		order_by="creation desc",
 		limit_page_length=0,
 	)
@@ -437,7 +447,7 @@ def _public_row(row, author: dict) -> dict:
 		# The same pictures the gallery card draws. The feed prints the light
 		# one: these pages carry no theme control and core's token layer only
 		# turns dark on `[data-theme="dark"]`, which nothing here sets.
-		"thumbnail": _card_image(row.name, username, row.slug, rev),
+		"thumbnail": _card_image(row.name, username, row.slug, rev, row.owner),
 		"description": f"{count} {'file' if count == 1 else 'files'}",
 		"modified": updated_at,
 		"updated": pretty_date(updated_at) if updated_at else "",
@@ -477,14 +487,53 @@ def list_versions(slug: str) -> list[dict]:
 
 @frappe.whitelist()
 def prototype_revision(slug: str) -> dict:
-	"""The current revision of one Prototype's tree, for the Viewer's poller.
+	"""The current revision of one Prototype's tree, for a caller with a session.
 
-	`resolve_owned` is the permission check, so only the owner may poll. The
-	Viewer reloads itself when the revision it reads differs from the one it
-	started with.
+	`resolve_owned` is the permission check, so only the owner may read it.
+
+	The Viewer does not call this. Its document is sandboxed into an opaque
+	origin, which sends no cookie, so it calls `signed_revision` below. This
+	stays for the Sketch UI, which is a plain same-origin page with a session.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return {"rev": prototype_files.revision(doc.name)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
+	"""The current revision of one Prototype's tree, for the Viewer's poller.
+
+	The Viewer serves every Prototype from an opaque origin (`sketch/viewer.py`
+	SANDBOX), because a Prototype is JavaScript one user wrote and a fork puts
+	a stranger's code inside the reader's own tree. An opaque origin sends no
+	session cookie, so `prototype_revision` above cannot answer the owner's own
+	tab. This one takes the short-lived signature the Viewer minted into the
+	page instead, and `allow_guest` follows from that: there is no session to
+	read.
+
+	The signature is not a session. It authenticates this read and nothing
+	else:
+
+	- the scope is REVISION, which is inside the HMAC message, so the same
+	  string opens no Viewer document (`sketch/signature.py`);
+	- it covers one Prototype hash id, so it cannot be replayed against
+	  another Prototype;
+	- it expires;
+	- the answer is the revision string and nothing else. No title, no owner,
+	  no file.
+
+	A bad or expired signature answers 404, which is the Viewer's own answer
+	to the same question. A named error would confirm which hash ids exist.
+
+	`Access-Control-Allow-Origin: *` because the caller's origin is "null" and
+	matches no allowlist. No `Access-Control-Allow-Credentials`: the signature
+	is the whole authentication, and a cookie must never widen it.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.REVISION):
+		raise frappe.DoesNotExistError
+
+	return {"rev": prototype_files.revision(name)}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -637,10 +686,28 @@ def fork_prototype(username: str, slug: str) -> dict:
 		doc.pin = source.pin
 		doc.save()
 
-	prototype_files.write_files(
-		doc.name, [{"path": path, "content": content} for path, content in sorted(tree.items())]
-	)
+	_copy_tree(doc.name, tree)
 	return _row(doc.as_dict())
+
+
+def _copy_tree(name: str, tree: dict[str, str]) -> None:
+	"""Write a whole source tree into an empty Prototype, in batches.
+
+	`prototype_files.MAX_BATCH_FILES` bounds the work one MCP request buys. A
+	fork is not an MCP request: the source tree already passed every quota,
+	and a tree may hold `MAX_TREE_FILES` (500) files, five times the batch
+	cap. Without the slicing here a Prototype over 100 files could be read and
+	exported but never forked.
+
+	The per-file and whole-tree quotas still run, once per batch, because
+	every batch goes through `write_files` as usual.
+	"""
+	items = sorted(tree.items())
+	step = prototype_files.MAX_BATCH_FILES
+	for start in range(0, len(items), step):
+		prototype_files.write_files(
+			name, [{"path": path, "content": content} for path, content in items[start : start + step]]
+		)
 
 
 def _recipe_tree_slugs() -> set:
@@ -690,12 +757,24 @@ def refresh_preview(slug: str) -> dict:
 	seconds, and it fails loudly, because a queued job that dies leaves the
 	same stale picture with nothing said.
 
+	One run per account at a time (`checkd.claim_slot`). The browser runs on
+	the web worker, so without the claim one account fires this from many tabs
+	and holds every worker on the site for the checkd deadline (review 3.6).
+	The claim is taken after `resolve_owned`, so a slug the caller does not own
+	costs no cooldown. `checkd.run` gives it back; the `finally` here covers
+	the path where `capture` finds no tree and opens no browser at all.
+
 	The reply is the whole row, so the caller can draw the new picture without
 	a second read. Its URL is new even when no file changed: the stamp is the
 	capture's, not the tree's (`sketch/thumbnails.py` `store`).
 	"""
 	doc = prototype.resolve_owned(slug)
-	written = thumbnails.capture(doc.name)
+	checkd.claim_slot()
+	try:
+		written = thumbnails.capture(doc.name)
+	finally:
+		checkd.release_slot()
+
 	if not written:
 		# `capture` returns nothing for a tree that did not mount, and leaves
 		# the last good picture alone. Say which of the two happened, because
@@ -717,9 +796,15 @@ def delete_prototype(slug: str) -> dict:
 	return {"name": name}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_agent_token() -> dict:
 	"""The user's token, the MCP endpoint, and when an agent last used it.
+
+	POST only, so it takes a CSRF token. A GET answers any same-origin
+	document that carries the session cookie, and the Viewer serves
+	attacker-authored JavaScript on this origin. The CSP sandbox in
+	`sketch/viewer.py` is the fix; this closes the sharpest exit as well
+	(review 3.2). The Settings screen posts (`frontend/src/store.ts`).
 
 	`last_used` is read after get_or_create, so a token minted on this call
 	reports null. `sketch.auth` stamps the field on a good `/mcp` request.

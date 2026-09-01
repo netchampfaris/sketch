@@ -22,7 +22,7 @@ import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
-from sketch import prototype, prototype_files, signature
+from sketch import prototype, prototype_files, runtime_assets, signature
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -34,6 +34,36 @@ HEADERS = {
 	"Content-Security-Policy": "frame-ancestors 'self'",
 	"Content-Type": "text/html; charset=utf-8",
 }
+
+#: The sandbox every caller gets, prefixed to the CSP above. It drops the
+#: document into an opaque origin: no cookies, no same-origin read, no access
+#: to the SPA csrf_token. A Prototype is JavaScript one user wrote, and without
+#: this it runs on the app origin with the reader's session, which is enough to
+#: read that session's agent token.
+#:
+#: The three tokens are what the shipped code needs, measured in Chromium:
+#:
+#: - allow-scripts: boot.js compiles each file through `new Function`.
+#: - allow-forms: without it the form submission algorithm returns before the
+#:   submit event, so a `<form @submit.prevent>` handler never runs.
+#: - allow-popups: without it a `target="_blank"` link is blocked. The popup
+#:   inherits the sandbox, so it opens in an opaque origin too.
+#:
+#: allow-same-origin must never join them. It hands the app origin back and
+#: undoes the whole control.
+SANDBOX = "sandbox allow-scripts allow-forms allow-popups"
+
+#: The prefix build.sh stamps into every absolute URL in viewer.html, up to but
+#: not including the Pin. `sandboxed_document` moves them off it.
+ASSET_PREFIX = "/assets/sketch/runtimes/"
+
+#: How long the owner's live reload credential lasts.
+#:
+#: The page holds it for as long as the tab is open, and a working session runs
+#: for hours, so the 60 second `check` signature would leave the tab dead after
+#: a minute. It buys one thing: the revision number of the Prototype the same
+#: page already carries in full (`sketch.api.signed_revision`).
+LIVE_TTL_SECONDS = 12 * 60 * 60
 
 THEMES = ("light", "dark")
 
@@ -109,12 +139,56 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig"))
 
+	def response_headers(self) -> dict:
+		"""The response headers for this caller. can_render() ran first.
+
+		Not `headers`: BaseRenderer.__init__ sets `self.headers = None`, and an
+		instance attribute shadows a method of the same name.
+
+		Every caller gets the sandbox, the owner as well. Ownership says who
+		holds the tree, never who wrote the code in it:
+		`sketch.api.fork_prototype` copies another user's public tree, word for
+		word, into a Prototype the caller owns. An owner exemption therefore
+		hands a stranger's JavaScript the app origin and the reader's session,
+		which is the whole attack the sandbox exists to stop. One rule for
+		every caller is one rule to check.
+
+		The owner keeps live reload. The poller authenticates with the
+		signature `payload` mints, not with the cookie an opaque origin will
+		not send (`sketch.api.signed_revision`).
+		"""
+		headers = dict(HEADERS)
+		headers["Content-Security-Policy"] = f"{SANDBOX}; {HEADERS['Content-Security-Policy']}"
+
+		return headers
+
+	def sandboxed_document(self, document: str) -> str:
+		"""The Runtime document with its own URLs moved off /assets.
+
+		An opaque origin makes every http URL cross-origin, and a module script
+		and an @font-face request are both fetched in CORS mode, so boot.js and
+		Inter both need Access-Control-Allow-Origin. /assets is
+		SharedDataMiddleware in development and nginx in production, so no hook
+		of this app can put that header on it. `sketch/runtime_assets.py`
+		serves the same bytes with it.
+
+		Every caller reads the Runtime this way, because every caller is
+		sandboxed (`response_headers`).
+		"""
+		return document.replace(
+			f"{ASSET_PREFIX}{self.doc.pin}/", runtime_assets.url_prefix(self.doc.pin)
+		)
+
 	def render(self):
 		"""The pinned Runtime document, with the tree in the data slot."""
+		# The two error branches below carry no Prototype source and run no
+		# script, so the sandbox changes nothing a reader sees. They still take
+		# the same headers as the document: one rule for the whole renderer is
+		# one rule to check.
 		path = runtime_html_path(self.doc.pin)
 		if not path or not os.path.isfile(path):
 			# Trap 11. Never a blank iframe.
-			return self.build_response(missing_runtime_html(self.doc.pin), 500, dict(HEADERS))
+			return self.build_response(missing_runtime_html(self.doc.pin), 500, self.response_headers())
 
 		with open(path, encoding="utf-8") as handle:
 			document = handle.read()
@@ -123,12 +197,13 @@ class SketchViewerRenderer(BaseRenderer):
 		if count != 1:
 			# Contract 4. One occurrence, or the substitution lands somewhere
 			# else and the page breaks in a way that is hard to read.
-			return self.build_response(bad_slot_html(self.doc.pin, count), 500, dict(HEADERS))
+			return self.build_response(bad_slot_html(self.doc.pin, count), 500, self.response_headers())
 
-		return self.build_response(document.replace(SLOT, to_json(self.payload()), 1), 200, dict(HEADERS))
+		body = self.sandboxed_document(document.replace(SLOT, to_json(self.payload()), 1))
+		return self.build_response(body, 200, self.response_headers())
 
 	def is_live(self) -> bool:
-		"""True when this page may poll sketch.api.prototype_revision.
+		"""True when this page may poll sketch.api.signed_revision.
 
 		"May", not "does". The renderer cannot tell a top-level tab from the
 		gallery's card iframe, so the last word belongs to the page: only a
@@ -142,8 +217,11 @@ class SketchViewerRenderer(BaseRenderer):
 		  from form_dict, so the `sig` parameter marks it. Its report carries
 		  every console error the page raised, and a poll would add noise to
 		  every check.
-		- a Guest on a public Prototype. `prototype_revision` is owner-only, so
-		  each poll would answer with a permission error every two seconds.
+		- a Guest on a public Prototype. A reader who does not own the tree has
+		  nothing to wait for: no agent is writing to it.
+
+		Only a live page is minted a credential, so only a live page can poll
+		at all (`payload`).
 		"""
 		if not self.is_owner or frappe.session.user == "Guest":
 			return False
@@ -162,8 +240,20 @@ class SketchViewerRenderer(BaseRenderer):
 		`check` request get "" and never call revision(). The owner's own card
 		preview still pays for a baseline its iframe never polls with, which is
 		one stat walk per card and the price of one honest `live` flag here.
+
+		`exp` and `sig` are how the poller authenticates. The document sits in
+		an opaque origin, so its requests carry no session cookie, and the
+		signature takes the cookie's place for this one read
+		(`sketch.api.signed_revision`). Its scope is REVISION, so it opens the
+		number and never this document.
+
+		The page runs a stranger's code whenever the tree was forked, and that
+		code reads the payload. It learns the revision counter of a tree it
+		already holds in full, one line above. Nothing else: the signature
+		covers this hash id, so it says nothing about any other Prototype.
 		"""
 		live = self.is_live()
+		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -174,6 +264,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"is_owner": self.is_owner,
 			"live": live,
 			"rev": prototype_files.revision(self.doc.name) if live else "",
+			"exp": stamp.get("exp", ""),
+			"sig": stamp.get("sig", ""),
 			"theme": url_theme(),
 		}
 

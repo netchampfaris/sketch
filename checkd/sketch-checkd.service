@@ -11,6 +11,21 @@ Environment=SKETCH_CHECKD_PORT=8010
 Environment=SKETCH_CHECKD_CONCURRENCY=4
 Environment=SKETCH_CHECKD_TIMEOUT_MS=30000
 ExecStart=/home/faris/.nvm/versions/node/v24.18.0/bin/node /home/faris/benches/sketch-bench/apps/sketch/checkd/checkd.mjs
+
+# Third layer under the route filter and the resolver rule, both in the code.
+# The browser here runs one user's JavaScript, so it must not reach the host
+# network. Loopback is the whole allowlist: checkd listens on 127.0.0.1:8010,
+# Chromium loads the Viewer from 127.0.0.1:8007, and Playwright drives Chromium
+# over a pipe, not a socket. ::1 is the same loopback for a client that resolves
+# localhost to IPv6.
+#
+# systemd attaches this with cgroup BPF, which needs privilege the user manager
+# does not have. As a `systemctl --user` unit it is recorded and not enforced,
+# measured on this box with systemd 255. It takes effect when the unit moves to
+# the system manager.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/8
+IPAddressAllow=::1/128
 Restart=always
 RestartSec=5
 KillMode=mixed

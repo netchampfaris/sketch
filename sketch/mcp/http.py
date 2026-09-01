@@ -13,6 +13,10 @@ reaches this module: `sketch.auth` raises there, before `get_response()` at
 `frappe/app.py:115`. A request that arrives here as Guest carried no
 `Authorization` header at all.
 
+The renderer takes a Sketch Token and nothing else. `sketch.auth` sets
+`TOKEN_AUTH_FLAG` on a good token, and a request without that flag is answered
+`no_credentials` even when a session cookie logged it in.
+
 This module owns the `/mcp` error contract, `ERRORS` below, because three places
 serve it: the renderer answers `no_credentials` and `no_access`, `before_request`
 refuses a non-Bearer scheme, and `sketch.auth` raises on a token that resolves
@@ -32,7 +36,7 @@ import frappe
 from werkzeug.exceptions import HTTPException
 from werkzeug.wrappers import Response
 
-from sketch.auth import BEARER_PREFIX
+from sketch.auth import BEARER_PREFIX, TOKEN_AUTH_FLAG
 
 #: The one path this app serves. Every comparison lower-cases the request path,
 #: so `/MCP` reaches the endpoint instead of the website 404 (trap E8).
@@ -122,6 +126,13 @@ class McpPageRenderer:
 			)
 		if frappe.session.user == "Guest":
 			# No Authorization header. A wrong one never gets this far.
+			return error_response("no_credentials")
+		if not frappe.local.flags.get(TOKEN_AUTH_FLAG):
+			# A token is the only credential this endpoint takes. Without the
+			# flag a session cookie named this user, and a cookie must not
+			# reach the tools: the SPA never calls `/mcp`, so the capability
+			# buys nothing, and any same-origin page could drive every tool
+			# with the visitor's cookie.
 			return error_response("no_credentials")
 		if not frappe.has_permission("Sketch Prototype", "read"):
 			return error_response("no_access")

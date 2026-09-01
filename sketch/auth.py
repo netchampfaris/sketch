@@ -29,6 +29,12 @@ an HTML page there for a `Basic` or `token` scheme. So
 the response the constructor was given, unchanged
 (`werkzeug/exceptions.py:162-163`). So the exact JSON bytes reach the client,
 `handle_exception` never runs, and no traceback leaks at any `developer_mode`.
+
+**A token is the only credential `/mcp` takes.** A good token sets
+`TOKEN_AUTH_FLAG`, and `sketch.mcp.http.McpPageRenderer.render` refuses every
+request that arrives without it. The SPA never calls `/mcp`, so cookie auth
+buys nothing there, and it let any same-origin page, the Viewer included, drive
+the whole tool surface with the visitor's cookie.
 """
 
 import frappe
@@ -39,6 +45,11 @@ from werkzeug.exceptions import Unauthorized
 MCP_PATH = "/mcp"
 
 BEARER_PREFIX = "bearer "
+
+#: Set on `frappe.local.flags` when a Sketch Token authenticated this request.
+#: `sketch.mcp.http.McpPageRenderer.render` reads it and answers
+#: `no_credentials` without it, so a session cookie alone opens no tool.
+TOKEN_AUTH_FLAG = "sketch_token_auth"
 
 #: Stamp `last_used` only when the stored value is older than this. The hook
 #: runs on every agent request, and a row write per request is not worth a line
@@ -53,7 +64,10 @@ def validate_sketch_token() -> None:
 		return
 
 	if frappe.session.user not in ("", "Guest"):
-		# A session cookie already logged this request in. Leave it alone.
+		# A session cookie already logged this request in. Leave it alone: a
+		# token must not swap the identity of a request core already resolved.
+		# The request still carries no `TOKEN_AUTH_FLAG`, so the renderer
+		# refuses it with `no_credentials`.
 		return
 
 	header = (frappe.get_request_header("Authorization") or "").strip()
@@ -78,6 +92,10 @@ def validate_sketch_token() -> None:
 		_refuse("invalid_token")
 
 	frappe.set_user(user)
+	# The renderer's proof that a token, and not a cookie, named this user.
+	# `frappe.set_user` leaves `frappe.local.flags` alone, and nothing between
+	# `validate_auth()` and `get_response()` clears it.
+	frappe.local.flags[TOKEN_AUTH_FLAG] = True
 	_stamp_last_used(user)
 
 

@@ -136,3 +136,29 @@ class TestFork(IntegrationTestCase):
 		row = self.fork(user=self.author)
 
 		self.assertEqual(frappe.db.get_value("Sketch Prototype", row["name"], "owner"), self.author)
+
+	# ------------------------------------------------------------- a big tree
+
+	def test_a_tree_over_one_batch_still_forks(self):
+		"""A tree holds up to `MAX_TREE_FILES` (500), and one write carries at
+		most `MAX_BATCH_FILES` (100). `api._copy_tree` slices, so a Prototype
+		above the batch cap can still be copied instead of being readable and
+		exportable but never forkable."""
+		count = prototype_files.MAX_BATCH_FILES + 50
+		big = utils.make_prototype(self.author, "d2t-fork-big", is_public=True, title="D2t Fork Big")
+		self.addCleanup(utils.drop_prototype, big.name)
+
+		with set_user(self.author):
+			for start in range(0, count, prototype_files.MAX_BATCH_FILES):
+				prototype_files.write_files(
+					big.name,
+					[
+						{"path": f"src/pages/P{i}.vue", "content": f"<template>{i}</template>\n"}
+						for i in range(start, min(start + prototype_files.MAX_BATCH_FILES, count))
+					],
+				)
+
+		row = self.fork(slug=big.slug, user=self.reader)
+
+		self.assertEqual(prototype_files.read_tree(row["name"]), prototype_files.read_tree(big.name))
+		self.assertEqual(len(prototype_files.read_tree(row["name"])), count)

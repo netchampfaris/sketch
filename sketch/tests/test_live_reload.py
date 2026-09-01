@@ -1,15 +1,19 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The Viewer's live reload: the revision string, and who is allowed to poll.
+"""The Viewer's live reload: the revision string, who may poll, and with what.
 
-Two parts, both cheap:
+Three parts, all cheap:
 
 - `prototype_files.revision` must move for every write, add and delete a
   Sketch writer can make. It is a stat walk, so the mtime has to move too.
 - The renderer must send `live: true` to the owner's own tab and to nobody
-  else. `check` reports console errors, and a Guest polling an owner-only
-  method would raise a permission error every two seconds.
+  else. `check` reports console errors, and a Guest has no agent writing to
+  the tree it is reading.
+- The poll must authenticate with the minted signature, because the Viewer
+  document is sandboxed into an opaque origin and sends no cookie
+  (`sketch/viewer.py` SANDBOX). `sketch.api.signed_revision` is that door, and
+  it must open one revision number and nothing else.
 """
 
 import os
@@ -19,9 +23,9 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import prototype_files, signature
+from sketch import api, prototype_files, signature
 from sketch.tests import utils
-from sketch.viewer import SketchViewerRenderer
+from sketch.viewer import LIVE_TTL_SECONDS, SketchViewerRenderer
 
 FILES = {"src/App.vue": "<template><h1>hello</h1></template>\n"}
 
@@ -89,7 +93,7 @@ class TestLiveFlag(IntegrationTestCase):
 		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
 
 	def sign(self) -> None:
-		"""Put a valid check signature in form_dict, the way a request does.
+		"""Put a valid `check` signature in form_dict, the way a request does.
 
 		`frappe.set_user` clears form_dict, so this runs inside the session
 		block, never before it.
@@ -107,7 +111,7 @@ class TestLiveFlag(IntegrationTestCase):
 			payload = self.payload()
 
 		self.assertTrue(payload["live"])
-		self.assertEqual(payload["slug"], self.doc.slug, "the poller needs the slug")
+		self.assertEqual(payload["name"], self.doc.name, "the poller names the hash id")
 
 	def test_a_guest_on_a_public_prototype_does_not_poll(self):
 		with set_user("Guest"):
@@ -162,3 +166,195 @@ class TestLiveFlag(IntegrationTestCase):
 		self.assertEqual(guest["rev"], "")
 		self.assertEqual(checked["rev"], "")
 		self.assertEqual(signed_owner["rev"], "")
+
+
+class TestPollCredential(IntegrationTestCase):
+	"""What the live page is handed to poll with.
+
+	The document sits in an opaque origin, so it sends no session cookie. The
+	renderer mints a signature into the payload instead, and only a live page
+	is given one.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.user = utils.make_user("cred", "d2tcred")
+		cls.addClassCleanup(utils.drop_user, cls.user)
+		cls.username = utils.username_of(cls.user)
+		cls.doc = utils.make_prototype(cls.user, "d2t-cred", files=FILES, is_public=True)
+		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+		cls.other = utils.make_prototype(cls.user, "d2t-cred-two", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.other.name)
+
+	def payload(self) -> dict:
+		renderer = SketchViewerRenderer(path=f"u/{self.username}/{self.doc.slug}")
+		self.assertTrue(renderer.can_render())
+		return renderer.payload()
+
+	def test_the_owners_page_carries_a_revision_signature(self):
+		with set_user(self.user):
+			payload = self.payload()
+
+		self.assertTrue(payload["sig"], "a live page must be able to poll")
+		self.assertTrue(
+			signature.verify(self.doc.name, payload["exp"], payload["sig"], signature.REVISION)
+		)
+
+	def test_the_credential_outlives_a_working_session(self):
+		"""A `check` TTL would leave the tab dead a minute after it opened."""
+		with set_user(self.user):
+			payload = self.payload()
+
+		self.assertGreaterEqual(LIVE_TTL_SECONDS, 4 * 60 * 60)
+		self.assertGreater(int(payload["exp"]) - int(time.time()), 4 * 60 * 60)
+
+	def test_the_credential_does_not_open_the_viewer_document(self):
+		"""Scope REVISION, so the page's own code cannot read the tree with it.
+
+		The payload is read by whatever JavaScript the tree holds, and a fork
+		means that code is a stranger's. A VIEW signature there would be a
+		twelve hour link to the reader's own Prototype.
+		"""
+		with set_user(self.user):
+			payload = self.payload()
+
+		self.assertFalse(
+			signature.verify(self.doc.name, payload["exp"], payload["sig"]),
+			"the poll credential must not verify as a view signature",
+		)
+
+	def test_the_credential_names_one_prototype(self):
+		"""It cannot be replayed against another tree, not even the owner's."""
+		with set_user(self.user):
+			payload = self.payload()
+
+		self.assertFalse(
+			signature.verify(self.other.name, payload["exp"], payload["sig"], signature.REVISION)
+		)
+
+	def test_a_page_that_does_not_poll_is_given_nothing(self):
+		"""A Guest and a `check` request hold no credential at all."""
+		with set_user("Guest"):
+			guest = self.payload()
+
+		self.assertEqual((guest["exp"], guest["sig"]), ("", ""))
+
+
+class TestSignedRevisionEndpoint(IntegrationTestCase):
+	"""`sketch.api.signed_revision`: the poller's door, with no session.
+
+	It runs as a Guest on purpose. The signature is the whole authentication,
+	so each case drives the method with `set_user("Guest")`.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.user = utils.make_user("sigrev", "d2tsigrev")
+		cls.addClassCleanup(utils.drop_user, cls.user)
+		cls.doc = utils.make_prototype(cls.user, "d2t-sigrev", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+		cls.other = utils.make_prototype(cls.user, "d2t-sigrev-two", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.other.name)
+
+	def stamp(self, name: str, ttl_seconds: int = 600, scope: str = signature.REVISION) -> dict:
+		return signature.mint(name, ttl_seconds=ttl_seconds, scope=scope)
+
+	def test_a_good_signature_reads_the_revision_without_a_session(self):
+		mark = self.stamp(self.doc.name)
+		with set_user("Guest"):
+			answer = api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+		self.assertEqual(answer, {"rev": prototype_files.revision(self.doc.name)})
+
+	def test_it_answers_the_revision_and_nothing_else(self):
+		"""No title, no owner, no file. One number is the whole capability."""
+		mark = self.stamp(self.doc.name)
+		with set_user("Guest"):
+			answer = api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+		self.assertEqual(list(answer), ["rev"])
+
+	def test_the_answer_is_readable_from_an_opaque_origin(self):
+		"""Origin "null" matches no allowlist, so the header has to be "*"."""
+		mark = self.stamp(self.doc.name)
+		with set_user("Guest"):
+			api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+		self.assertEqual(frappe.local.response_headers["Access-Control-Allow-Origin"], "*")
+
+	def test_a_missing_signature_is_a_404(self):
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.signed_revision(self.doc.name)
+
+	def test_a_forged_signature_is_a_404(self):
+		mark = self.stamp(self.doc.name)
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.signed_revision(self.doc.name, str(mark["exp"]), "0" * 64)
+
+	def test_an_expired_signature_is_a_404(self):
+		mark = self.stamp(self.doc.name, ttl_seconds=-60)
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+	def test_another_prototypes_signature_is_a_404(self):
+		"""The signature covers the hash id, so it reads one tree only."""
+		mark = self.stamp(self.other.name)
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+	def test_a_view_signature_is_a_404(self):
+		"""A `check` link must not become a revision reader, or the reverse."""
+		mark = self.stamp(self.doc.name, scope=signature.VIEW)
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.signed_revision(self.doc.name, str(mark["exp"]), mark["sig"])
+
+
+class TestSignedRevisionOnTheWire(IntegrationTestCase):
+	"""The same method over HTTP, which is how the Viewer reaches it.
+
+	The unit cases above cannot see the status code or the header the browser
+	reads, and both are the point.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.user = utils.make_user("sigwire", "d2tsigwire")
+		cls.addClassCleanup(utils.drop_user, cls.user)
+		cls.doc = utils.make_prototype(cls.user, "d2t-sigwire", files=FILES)
+		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+
+	def setUp(self):
+		utils.require_webserver()
+
+	def get(self, name: str, mark: dict) -> object:
+		path = (
+			"/api/method/sketch.api.signed_revision"
+			f"?name={name}&exp={mark['exp']}&sig={mark['sig']}"
+		)
+		# `Origin: null` is what a sandboxed document sends.
+		return utils.request("GET", path, headers={"Origin": "null"})
+
+	def test_a_guest_with_the_signature_reads_the_revision(self):
+		mark = signature.mint(self.doc.name, ttl_seconds=600, scope=signature.REVISION)
+		response = self.get(self.doc.name, mark)
+
+		self.assertEqual(response.status_code, 200, response.text[:400])
+		self.assertEqual(response.json()["message"]["rev"], prototype_files.revision(self.doc.name))
+		self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "*")
+		self.assertIsNone(
+			response.headers.get("Access-Control-Allow-Credentials"),
+			"the signature is the whole authentication; a cookie must not widen it",
+		)
+
+	def test_a_forged_signature_answers_404(self):
+		mark = signature.mint(self.doc.name, ttl_seconds=600, scope=signature.REVISION)
+		mark = {"exp": mark["exp"], "sig": "0" * 64}
+		response = self.get(self.doc.name, mark)
+
+		self.assertEqual(response.status_code, 404, response.text[:400])
