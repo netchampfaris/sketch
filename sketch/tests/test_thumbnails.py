@@ -3,7 +3,7 @@
 
 """The card picture: what is stored, who may fetch it, and when it goes stale.
 
-Three jobs, three classes.
+Four jobs, four classes.
 
 `TestThumbnailStore` is the disk. It writes bytes through `thumbnails.store`
 rather than through a browser, so it runs with no checkd and no Runtime, and it
@@ -17,6 +17,9 @@ does not exist answer the same 404, and neither is a 403. It repeats them here
 because `/t/...` is a second renderer with a second copy of the ladder, and a
 rule tested once is a rule tested for one of them.
 
+`TestThumbnailRefreshTrigger` is the bill. A capture costs a Chromium run, so
+it names who may ask for one: the owner, and nobody else.
+
 `TestThumbnailCapture` is the browser. It is the only class here that needs
 checkd and a Runtime on disk, and it skips with a reason when either is absent.
 """
@@ -24,9 +27,10 @@ checkd and a Runtime on disk, and it skips with a reason when either is absent.
 import base64
 import json
 import os
+from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, set_user
 
 from sketch import api, prototype_files, thumbnails
 from sketch.tests import utils
@@ -275,23 +279,113 @@ class TestThumbnailAccess(IntegrationTestCase):
 
 		self.assertEqual(self.get(self.path("d2t-shot-none")).status_code, 404)
 
-	def test_a_year_of_cache_needs_a_stamp_in_the_url(self):
-		rev = prototype_files.revision(self.public.name)
-		stamped = self.get(f"{self.path('d2t-shot-public')}?rev={rev}")
+	def test_any_cache_at_all_needs_a_stamp_in_the_url(self):
+		"""Without a stamp the same URL answers with different bytes after the
+		next capture, so nothing may hold it."""
 		bare = self.get(self.path("d2t-shot-public"))
 
-		self.assertEqual(stamped.headers["cache-control"], "public, max-age=31536000, immutable")
 		self.assertEqual(bare.headers["cache-control"], "no-cache")
+
+	def test_a_public_picture_is_held_for_ten_minutes_and_no_longer(self):
+		"""The unpublish window. `api.set_public` writes the field and nothing
+		else: no new stamp, no purge. A year of `immutable` in a shared cache
+		would go on serving the picture of a Prototype the origin now 404s."""
+		rev = prototype_files.revision(self.public.name)
+		answer = self.get(f"{self.path('d2t-shot-public')}?rev={rev}")
+
+		self.assertEqual(answer.headers["cache-control"], "public, max-age=600")
+		self.assertNotIn("immutable", answer.headers["cache-control"])
 
 	def test_a_private_picture_is_never_cached_by_a_shared_cache(self):
 		"""A proxy that stored it would hand it to the next caller without the
-		ladder above running."""
+		ladder above running. One browser may hold it for a year: the URL
+		carries the capture stamp, and its owner can clear it."""
 		rev = prototype_files.revision(self.private.name)
 		answer = self.get(
 			f"{self.path('d2t-shot-private')}?rev={rev}", headers=utils.api_auth_header(self.user)
 		)
 
 		self.assertEqual(answer.headers["cache-control"], "private, max-age=31536000, immutable")
+
+
+class TestThumbnailRefreshTrigger(IntegrationTestCase):
+	"""Who may spend a Chromium run. Review 3.9.
+
+	`_card_image` used to ask for a capture whenever the picture was not
+	fresh, and `public_prototypes` carries `allow_guest`. A POST to it commits,
+	so the `enqueue_after_commit` jobs fire, and a stranger reading the feed
+	bought one browser run per stale card. A tree that never mounts writes no
+	sidecar, so it stays stale and is re-queued on every read for ever.
+
+	No case here starts a browser: `thumbnails.request_refresh` is the thing
+	under test, so it is replaced by a probe.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.user = utils.make_user("thumbbill", "d2tthumbbill")
+		cls.addClassCleanup(utils.drop_user, cls.user)
+		cls.reader = utils.make_user("thumbread", "d2tthumbread")
+		cls.addClassCleanup(utils.drop_user, cls.reader)
+
+		# Public, and never captured, which is the shape the exploit uses: a
+		# tree that does not compile stays "missing" for ever.
+		cls.doc = utils.make_prototype(cls.user, "d2t-bill", files=TREE, is_public=True)
+		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+
+	def feed(self, user: str) -> list[dict]:
+		"""The feed as `user` reads it, and every capture it asked for."""
+		with patch.object(thumbnails, "request_refresh") as probe:
+			with set_user(user):
+				rows = api.public_prototypes()
+
+		self.asked_for = [call.args[0] for call in probe.call_args_list]
+		return rows
+
+	def row_for(self, rows: list[dict]) -> dict | None:
+		return next((row for row in rows if row["slug"] == self.doc.slug), None)
+
+	def test_a_guest_read_of_the_feed_queues_no_capture(self):
+		"""The finding. No session, no browser."""
+		self.feed("Guest")
+
+		self.assertEqual(self.asked_for, [])
+
+	def test_a_signed_in_stranger_queues_no_capture_either(self):
+		"""A session is not ownership. The card is public to look at, not to
+		spend the site's browsers on."""
+		self.feed(self.reader)
+
+		self.assertEqual(self.asked_for, [])
+
+	def test_the_owner_reading_the_feed_still_queues_one(self):
+		"""The owner is who the refresh is for, so their own read of the feed
+		keeps working the way the gallery does."""
+		self.feed(self.user)
+
+		self.assertIn(self.doc.name, self.asked_for)
+
+	def test_the_owner_gallery_read_still_queues_one(self):
+		"""`list_prototypes` is the owner's own screen, so nothing changes
+		there. `_row` reads `owner` off the row for that."""
+		with patch.object(thumbnails, "request_refresh") as probe:
+			with set_user(self.user):
+				api.list_prototypes()
+
+		self.assertIn(self.doc.name, [call.args[0] for call in probe.call_args_list])
+
+	def test_a_guest_still_sees_the_card(self):
+		"""The feed must not break. A stranger reads the row and the picture
+		on disk; only the capture is the owner's."""
+		thumbnails.store(self.doc.name, [shot("light")], "not-the-current-revision")
+		self.addCleanup(thumbnails.forget, self.doc.name)
+
+		row = self.row_for(self.feed("Guest"))
+
+		self.assertEqual(thumbnails.state(self.doc.name), "stale")
+		self.assertEqual(self.asked_for, [])
+		self.assertEqual(list(row["thumbnail"]), ["light"])
 
 
 class TestThumbnailCapture(IntegrationTestCase):

@@ -111,6 +111,11 @@ class TestViewerEscaping(IntegrationTestCase):
 
 		Frappe appends `no-cache,must-revalidate,max-age=0` to the value the
 		renderer sets, so the test reads the directive, not the whole string.
+
+		The caller here is a signed Guest, so the same header now also carries
+		the sandbox. This test is about 6.4 only, and reads the frame rule as a
+		directive rather than as the whole value. Which caller gets the sandbox
+		is `sketch/tests/test_viewer_sandbox.py`.
 		"""
 		utils.require_webserver()
 		response = utils.request("GET", self.viewer_path())
@@ -118,7 +123,8 @@ class TestViewerEscaping(IntegrationTestCase):
 			part.strip() for part in (response.headers.get("Cache-Control") or "").split(",")
 		]
 		self.assertIn("no-store", directives)
-		self.assertEqual(response.headers.get("Content-Security-Policy"), "frame-ancestors 'self'")
+		policy = [part.strip() for part in (response.headers.get("Content-Security-Policy") or "").split(";")]
+		self.assertIn("frame-ancestors 'self'", policy)
 		self.assertIn("text/html", response.headers.get("Content-Type", ""))
 
 	def viewer_path(self) -> str:

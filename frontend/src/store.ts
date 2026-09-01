@@ -66,10 +66,15 @@ export const recipes = useCall<Recipe[]>({
   initialData: [],
 })
 
+// POST, and `useCall` defaults to GET. The server is POST only: a GET needs no
+// CSRF token, so any same-origin document could read this user's permanent MCP
+// token with the session cookie (`sketch/api.py` `get_agent_token`).
+//
 // `initialData` keeps the connection card at full height while the token
 // loads. Without it the card collapses and the page jumps (problem C7).
 export const agentToken = useCall<AgentToken>({
   url: method('get_agent_token'),
+  method: 'POST',
   immediate: false,
   initialData: { token: '', endpoint: '' },
 })

@@ -28,10 +28,19 @@ from frappe.website.page_renderers.base_renderer import BaseRenderer
 
 from sketch import prototype, thumbnails
 
-#: A year. The URL carries the capture stamp (`sketch/thumbnails.py` `stamp`),
-#: so the bytes at one URL never change and the browser never has to ask again.
-#: Every capture writes a new stamp, which is a new URL.
+#: A year, for the owner's own copy. The URL carries the capture stamp
+#: (`sketch/thumbnails.py` `stamp`), so the bytes at one URL never change and
+#: the browser never has to ask again. Every capture writes a new stamp, which
+#: is a new URL.
 IMMUTABLE = "max-age=31536000, immutable"
+
+#: Ten minutes, for a picture anybody may see. `api.set_public` writes the
+#: field and nothing else: no new stamp and no purge. A year of `immutable` in
+#: a shared cache therefore outlives an unpublish, and a stranger who scraped
+#: the URL off the feed goes on reading the picture after the origin answers
+#: 404 (review 3.8). Ten minutes bounds that window and still keeps the feed
+#: cheap. There is no purge client: no CDN config lives in this repo.
+PUBLIC_MAX_AGE = "max-age=600"
 
 
 class SketchThumbnailRenderer(BaseRenderer):
@@ -77,18 +86,25 @@ class SketchThumbnailRenderer(BaseRenderer):
 
 		`private` for a Prototype only its owner may see: a shared cache that
 		stored it would hand it to the next caller without the ladder above
-		running. `public` for one anybody may see, so the feed is cheap for
-		everyone.
+		running. That copy may be held for a year, because it sits in one
+		browser and its owner can clear it.
+
+		`public` for one anybody may see, so the feed is cheap for everyone,
+		but for ten minutes and never `immutable`. The picture is public
+		because `is_public` is on right now, and nothing tells a shared cache
+		when the owner turns it off.
 
 		Either way it is only cacheable with a stamp in the URL. Without one
 		the same URL would answer with different bytes after a capture, and a
-		year-long cache would pin the first ones.
+		long cache would pin the first ones.
 		"""
 		if not frappe.form_dict.get("rev"):
 			return "no-cache"
 
-		scope = "public" if self.doc.is_public else "private"
-		return f"{scope}, {IMMUTABLE}"
+		if self.doc.is_public:
+			return f"public, {PUBLIC_MAX_AGE}"
+
+		return f"private, {IMMUTABLE}"
 
 
 def url(username: str, slug: str, theme: str, stamp: str) -> str:

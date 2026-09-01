@@ -109,7 +109,13 @@ home_page = "sketch"
 # The Viewer serves /u/<username>/<slug>, and the card image serves
 # /t/<username>/<slug>/<theme>.png. Custom renderers run first inside
 # PathResolver.resolve(), ahead of every built-in page type.
+#
+# /sketch-runtime/<pin>/<file> serves the same bytes as
+# /assets/sketch/runtimes/<pin>/<file> with an Access-Control-Allow-Origin
+# header. A sandboxed Viewer is an opaque origin and cannot load a module
+# script or a font without one, and /assets never reaches this app.
 page_renderer = [
+	"sketch.runtime_assets.SketchRuntimeRenderer",
 	"sketch.viewer.SketchViewerRenderer",
 	"sketch.thumbnail.SketchThumbnailRenderer",
 	"sketch.mcp.http.McpPageRenderer",

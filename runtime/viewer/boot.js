@@ -155,8 +155,13 @@ const framed = window.top !== window.self
 // status copy both read it, so the promise can never outlive the poller. The
 // copy used to read `data.live` alone, so a card preview of the owner's own
 // empty Prototype promised a reload that startLiveReload never started.
+//
+// `data.sig` is the credential the poll needs. The document is sandboxed into
+// an opaque origin, so a cookie cannot authenticate the request and the
+// renderer mints a signature into the page instead. A document served before
+// that change carries none, and it must promise nothing.
 function reloadsItself(data) {
-  return Boolean(data.live) && Boolean(data.slug) && !framed
+  return Boolean(data.live) && Boolean(data.name) && Boolean(data.sig) && !framed
 }
 
 // The statuses that leave the page empty. `ok` and `errors` both mounted the
@@ -264,13 +269,25 @@ function paintStatus(status, data) {
 // above: twenty cards in iframes would make ten requests a second, and the
 // gallery already polls once for the whole grid
 // (frontend/src/pages/PrototypesScreen.vue, POLL_MS 4000).
+//
+// The poll cannot use the session. This document is sandboxed into an opaque
+// origin (sketch/viewer.py SANDBOX), so it sends no cookie and it holds no
+// csrf_token. It sends the signature the renderer minted into the payload
+// instead. That signature reads one revision number for one Prototype and
+// opens nothing else (sketch/api.py signed_revision).
 const POLL_MS = 2000 // one poll every two seconds: a stat walk, cheap to answer
 const POLL_MAX_MS = 30000 // the ceiling the backoff climbs to after failures
 
 function startLiveReload(data) {
   if (!reloadsItself(data)) return
 
-  const url = '/api/method/sketch.api.prototype_revision?slug=' + encodeURIComponent(data.slug)
+  const url =
+    '/api/method/sketch.api.signed_revision?name=' +
+    encodeURIComponent(data.name) +
+    '&exp=' +
+    encodeURIComponent(data.exp) +
+    '&sig=' +
+    encodeURIComponent(data.sig)
   // The renderer read the revision while it built this page, so the baseline
   // covers the two seconds before the first poll. A write inside that window
   // used to become the baseline, and the page never reloaded. An older served
@@ -293,7 +310,10 @@ function startLiveReload(data) {
 
   async function poll() {
     try {
-      const response = await fetch(url, { credentials: 'same-origin' })
+      // `omit`, not `same-origin`. An opaque origin has no same origin, and
+      // `include` would need Access-Control-Allow-Credentials, which the
+      // endpoint deliberately does not send.
+      const response = await fetch(url, { cache: 'no-store', credentials: 'omit' })
       if (!response.ok) throw new Error(String(response.status))
       const rev = (await response.json())?.message?.rev
       if (typeof rev !== 'string' || !rev) throw new Error('no revision')
