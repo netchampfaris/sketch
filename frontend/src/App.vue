@@ -3,7 +3,14 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { FrappeUIProvider, useColorScheme } from 'frappe-ui'
 import AppTopBar from './components/AppTopBar.vue'
-import { goToLogin, prototypes, session, sessionSettled } from './store'
+import { toSpaPath } from './router'
+import {
+  goToLogin,
+  prototypes,
+  session,
+  sessionSettled,
+  takeAfterLogin,
+} from './store'
 
 // Restores the saved preference and writes localStorage["theme"], which the
 // Viewer reads to theme the iframe (spec 12).
@@ -35,8 +42,32 @@ onMounted(async () => {
     if (!router.currentRoute.value.meta.public) goToLogin()
     return
   }
+  goBackToWhereTheyWere()
   prototypes.reload()
 })
+
+/**
+ * Move to the path the visitor asked for before they signed in.
+ *
+ * `sketch/www/sketch.py` and `goToLogin` write that path to the
+ * `sketch_after_login` cookie, because a `redirect-to` on the login URL comes
+ * back on the wrong host. This is the one place that reads it.
+ *
+ * Only for a signed-in user, and only after `router.isReady()`. `replace`,
+ * not `push`: the boot location was never a page the visitor chose, so the
+ * Back button must not return to it.
+ *
+ * With no cookie nothing happens, and the visitor stays where the server sent
+ * them. `toSpaPath` drops a `/sketch` prefix, because the cookie holds a
+ * request path and the router serves the same routes under "/".
+ */
+function goBackToWhereTheyWere(): void {
+  const back = takeAfterLogin()
+  if (!back) return
+
+  const route = toSpaPath(back)
+  if (route !== router.currentRoute.value.fullPath) router.replace(route)
+}
 </script>
 
 <template>

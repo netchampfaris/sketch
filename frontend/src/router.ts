@@ -1,12 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-// The SPA lives at "/" (spec 3). `get_home_page()` still answers "sketch", so
-// core's login redirect lands on /sketch. The rewrite runs before
-// createWebHistory reads the location, and the user never sees the old path.
+/**
+ * The SPA route for a request path.
+ *
+ * The SPA lives at "/" (spec 3), but `get_home_page()` still answers
+ * "sketch", so core's login redirect lands on /sketch, and
+ * `website_route_rules` serves /sketch/<path> as well. Both forms reach the
+ * same routes, so drop the prefix before the router reads the path.
+ *
+ * `App.vue` calls this too, on the path it takes out of the after-login
+ * cookie. That path is a request path and can carry the same prefix.
+ */
+export function toSpaPath(path: string): string {
+  if (path === '/sketch' || path.startsWith('/sketch/')) {
+    return path.slice('/sketch'.length) || '/'
+  }
+  return path
+}
+
+// The rewrite runs before createWebHistory reads the location, and the user
+// never sees the old path.
 const path = window.location.pathname
-if (path === '/sketch' || path.startsWith('/sketch/')) {
-  const rest = path.slice('/sketch'.length) || '/'
-  window.history.replaceState({}, '', rest + window.location.search)
+const spaPath = toSpaPath(path)
+if (spaPath !== path) {
+  window.history.replaceState({}, '', spaPath + window.location.search)
 }
 
 // The Viewer route /u/<username>/<slug> belongs to the Python renderer and is

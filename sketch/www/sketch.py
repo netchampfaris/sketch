@@ -4,8 +4,6 @@
 `website_route_rules` sends `/settings`, `/feed` and `/about` here as well.
 """
 
-from urllib.parse import quote
-
 import frappe
 
 no_cache = 1
@@ -33,6 +31,28 @@ PUBLIC_PATHS = ("/feed", "/about")
 #: far as a visitor is concerned. `/settings` and `/sketch/...` are not: they
 #: are deep links into the app and keep the redirect to /login.
 ROOT_PATHS = ("", "/index")
+
+#: Where a Guest on a private path is sent. No query string.
+LOGIN_PATH = "/login"
+
+#: The cookie that carries the path the visitor asked for, across /login.
+#:
+#: `/login?redirect-to=<path>` cannot do this job here. Core's
+#: `sanitize_redirect` (`frappe/www/login.py`) makes the value absolute with
+#: the Host header, not `conf.host_name`. The Cloudflare tunnel rewrites that
+#: Host to `sketch.localhost`, so the path becomes
+#: `http://sketch.localhost/<path>`. Core then puts that URL in the OAuth
+#: state (`frappe/utils/oauth.py`), and `redirect_post_login` prefers it over
+#: `frappe.utils.get_url()`. The visitor lands on a name a browser cannot
+#: reach. The value never leaves Sketch this way, so no core code rewrites it.
+#:
+#: `frontend/src/store.ts` writes the same cookie, and `App.vue` reads it once
+#: at boot.
+AFTER_LOGIN_COOKIE = "sketch_after_login"
+
+#: How long the cookie lives, in seconds. Long enough for one trip through
+#: GitHub, short enough that an abandoned sign-in moves no later visit.
+AFTER_LOGIN_MAX_AGE = 600
 
 
 def get_context():
@@ -90,18 +110,63 @@ def _redirect_guest() -> None:
 
 
 def _redirect_to_login(request) -> None:
-	"""Leave this page for /login, carrying the path the visitor asked for.
+	"""Leave this page for /login, and put the wanted path in a cookie.
+
+	The redirect carries no query. See AFTER_LOGIN_COOKIE for why a
+	`redirect-to` parameter sends the visitor to the wrong host.
 
 	`frappe.Redirect` is the website way to leave a `get_context`. Core reads
 	`flags.redirect_location` in its exception handler and answers 301.
 	"""
 	back = getattr(request, "full_path", "/") if request else "/"
-	# full_path keeps a bare "?" on a query-less URL. It is harmless, but the
-	# login page echoes this value, so send the clean form.
+	# full_path keeps a bare "?" on a query-less URL. Drop it, so the cookie
+	# holds the path the visitor typed.
 	back = back.rstrip("?") or "/"
 
-	frappe.local.flags.redirect_location = f"/login?redirect-to={quote(back, safe='')}"
+	_remember_path(back)
+
+	frappe.local.flags.redirect_location = LOGIN_PATH
 	raise frappe.Redirect
+
+
+def _remember_path(path: str) -> None:
+	"""Store the path to come back to, or store nothing.
+
+	An unsafe path is dropped without a word. The visitor still reaches
+	/login, and after sign-in core sends them to the home page.
+
+	`CookieManager.set_cookie` (`frappe/auth.py`) takes no path argument.
+	Werkzeug writes `Path=/`, which is what this cookie needs: it is set on
+	the SPA page and read on another one. `httponly` stays off, because the
+	SPA reads it in JavaScript. `secure` follows the request scheme.
+	"""
+	cookie_manager = getattr(frappe.local, "cookie_manager", None)
+	if cookie_manager is None or not is_safe_path(path):
+		return
+
+	cookie_manager.set_cookie(
+		AFTER_LOGIN_COOKIE,
+		path,
+		max_age=AFTER_LOGIN_MAX_AGE,
+		httponly=False,
+		samesite="Lax",
+	)
+
+
+def is_safe_path(path: str) -> bool:
+	"""True for a relative path that stays on this site.
+
+	One leading slash, and no second one. `//evil.example/x` is a
+	scheme-relative URL and a browser reads it as another host. Some browsers
+	read a backslash as a slash, so `/\\evil.example` is the same trap. A
+	control character can cut a header short, so it is refused as well.
+
+	Anything that fails here is dropped, never repaired.
+	"""
+	if not path or not path.startswith("/") or path.startswith(("//", "/\\")):
+		return False
+
+	return all(character >= " " and character != "\x7f" for character in path)
 
 
 def get_boot():
