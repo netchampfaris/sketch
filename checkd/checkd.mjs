@@ -30,8 +30,12 @@ async function getBrowser(rule) {
 }
 
 // ------------------------------------------------------------- the queue
-// Past the cap, a check waits. It does not fail and it does not slow the
-// checks already running.
+// Past the cap, a check waits. It does not slow the checks already running.
+//
+// The wait line itself is capped. One account can fire many checks at once, and
+// an unbounded array holds a promise per call for as long as the process lives,
+// even after every caller has timed out and gone.
+const MAX_WAITING = 32
 let running = 0
 const waiting = []
 
@@ -40,6 +44,9 @@ function acquire() {
 		running += 1
 		return Promise.resolve()
 	}
+	// The server catch turns this into bootFailed(), checkd's normal answer for
+	// its own failure.
+	if (waiting.length >= MAX_WAITING) return Promise.reject(new Error('the check service is busy'))
 	return new Promise((resolve) => waiting.push(resolve))
 }
 
@@ -66,27 +73,41 @@ function bootFailed(message) {
 	}
 }
 
-function deadline(promise, ms) {
+// The cap answers the caller. `cancelled` tells the run still in the queue that
+// nobody is reading any more.
+function deadline(promise, ms, cancelled) {
 	let timer = null
 	const cap = new Promise((_, reject) => {
-		timer = setTimeout(() => reject(new Error(`the check did not finish in ${ms} ms`)), ms)
+		timer = setTimeout(() => {
+			cancelled.value = true
+			reject(new Error(`the check did not finish in ${ms} ms`))
+		}, ms)
 	})
 	return Promise.race([promise, cap]).finally(() => clearTimeout(timer))
 }
 
 async function check(request) {
+	// Layer two, under the route filter in check-lib.mjs. Only the site under
+	// test resolves, so prototype JS cannot name an internal host. The rule
+	// matches the host string before resolution, so on Chromium 151 it covers a
+	// literal IP as well. The route filter stays the control: this one is a
+	// browser flag, and its reach can change with a Chromium version.
 	const { url, rule } = hostRewrite(request.url, request.host)
-	const browser = await getBrowser(rule)
+	const browser = await getBrowser(rule && `${rule},MAP * ~NOTFOUND`)
 
 	// The hard cap covers the queue wait as well, so a caller blocked on one
 	// HTTP call always gets an answer.
 	const options = { screenshot: !!request.screenshot, thumbnails: !!request.thumbnails }
-	return await deadline(queued(browser, url, options), TIMEOUT_MS)
+	const cancelled = { value: false }
+	return await deadline(queued(browser, url, options, cancelled), TIMEOUT_MS, cancelled)
 }
 
-async function queued(browser, url, options) {
+async function queued(browser, url, options, cancelled) {
 	await acquire()
 	try {
+		// The cap already answered this caller while the check sat in the queue.
+		// Give the browser slot back rather than spend it on a dead read.
+		if (cancelled.value) return bootFailed('cancelled')
 		return await runCheck(browser, { url, ...options, timeoutMs: TIMEOUT_MS })
 	} finally {
 		release()
