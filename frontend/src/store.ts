@@ -79,10 +79,78 @@ export const agentToken = useCall<AgentToken>({
   initialData: { token: '', endpoint: '' },
 })
 
+/**
+ * The cookie that carries the path a visitor asked for, across /login.
+ *
+ * The same name and the same rules as `AFTER_LOGIN_COOKIE` in
+ * `sketch/www/sketch.py`. The server writes it for a Guest it bounces, this
+ * file writes it for a Guest the SPA bounces, and `App.vue` reads it once at
+ * boot.
+ *
+ * `/login?redirect-to=<path>` cannot do this job. Core resolves that value
+ * against the Host header, and the tunnel rewrites the Host to
+ * `sketch.localhost`, so the visitor comes back to a name no browser reaches.
+ * The full reason is in `sketch/www/sketch.py`.
+ */
+export const AFTER_LOGIN_COOKIE = 'sketch_after_login'
+
+/** How long the cookie lives, in seconds. The server uses the same number. */
+const AFTER_LOGIN_MAX_AGE = 600
+
+/**
+ * True for a relative path that stays on this site.
+ *
+ * One leading slash, and no second one. `//evil.example/x` is a
+ * scheme-relative URL and a browser reads it as another host. Some browsers
+ * read a backslash as a slash, so `/\evil.example` is the same trap.
+ *
+ * Both sides check: the writer, so nothing unsafe is stored, and the reader,
+ * because anyone can edit a cookie.
+ */
+export function isSafePath(path: string): boolean {
+  return (
+    path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\')
+  )
+}
+
+/** Remember where to come back to after login. Stores nothing unsafe. */
+export function rememberAfterLogin(path: string): void {
+  if (!isSafePath(path)) return
+
+  const secure = window.location.protocol === 'https:' ? '; secure' : ''
+  document.cookie =
+    `${AFTER_LOGIN_COOKIE}=${encodeURIComponent(path)}` +
+    `; path=/; max-age=${AFTER_LOGIN_MAX_AGE}; samesite=lax${secure}`
+}
+
+/**
+ * Read the remembered path and clear the cookie. Returns '' when there is
+ * none, or when the value is not a safe relative path.
+ *
+ * The cookie is cleared either way, so one abandoned sign-in never moves a
+ * second visit.
+ */
+export function takeAfterLogin(): string {
+  const prefix = `${AFTER_LOGIN_COOKIE}=`
+  const entry = document.cookie.split('; ').find((one) => one.startsWith(prefix))
+  document.cookie = `${AFTER_LOGIN_COOKIE}=; path=/; max-age=0`
+  if (!entry) return ''
+
+  let path = ''
+  try {
+    path = decodeURIComponent(entry.slice(prefix.length))
+  } catch {
+    // A half-written or hand-edited cookie is not a path.
+    return ''
+  }
+
+  return isSafePath(path) ? path : ''
+}
+
 /** Send a signed-out visitor to the login page and back again. */
 export function goToLogin(): void {
-  const back = encodeURIComponent(window.location.pathname + window.location.search)
-  window.location.href = `/login?redirect-to=${back}`
+  rememberAfterLogin(window.location.pathname + window.location.search)
+  window.location.href = '/login'
 }
 
 /**

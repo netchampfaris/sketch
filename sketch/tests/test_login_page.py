@@ -160,9 +160,13 @@ class TestLoginPage(IntegrationTestCase):
 
 	def test_a_signed_in_visitor_is_sent_where_they_were_going(self):
 		"""`get_context` calls core's, so both the redirect and the
-		`redirect-to` handling are core's, unchanged. Losing them would leave a
-		signed-in user staring at a sign-in button, and would break the bounce
-		that `sketch/www/sketch.py` sends a Guest through."""
+		`redirect-to` handling are core's, unchanged. Losing the redirect would
+		leave a signed-in user staring at a sign-in button.
+
+		Sketch itself sends no `redirect-to` any more (`test_after_login.py`).
+		This case reads what core still does with one, and the assertion below
+		is the reason Sketch stopped: core resolves the value against the
+		request host, never `conf.host_name`."""
 		user = utils.make_user("login", "d2tlogin")
 		self.addCleanup(utils.drop_user, user)
 

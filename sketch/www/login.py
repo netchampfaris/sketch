@@ -6,8 +6,10 @@ is found before `frappe/www/login.html`, and `set_pymodule` then picks up this
 module beside it (`template_page.py:129-145`).
 
 The login decision stays in core. This module borrows core's context, so the
-OAuth URLs, the `redirect-to` handling and the redirect for a visitor who is
-already signed in are all core's, unchanged.
+OAuth URLs and the redirect for a visitor who is already signed in are core's,
+unchanged. Sketch sends no `redirect-to` to this page: core resolves that value
+against the request host, which the tunnel rewrites. `sketch/www/sketch.py`
+carries the wanted path in a cookie instead.
 """
 
 from frappe.www.login import get_context as get_core_context

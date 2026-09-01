@@ -11,7 +11,7 @@ Two of the SPA's routes are public now, /feed and /about, and a Guest is
 served the bundle on those. That is the trade: the feed was a server-rendered
 template and is a frappe-ui screen, so the page a signed-out visitor lands on
 costs a bundle. Every other path keeps the guard, and the destination is
-/login.
+/login, with the wanted path in a cookie (`test_after_login.py`).
 
 The site root still sends a Guest to /feed, because a visitor met a login form
 for a product they had never read a sentence about (problem 8.1).
@@ -23,6 +23,7 @@ belongs to whoever holds the link, signed in or not (spec 6.3).
 from frappe.tests import IntegrationTestCase
 
 from sketch.tests import utils
+from sketch.www import sketch as sketch_page
 
 #: Proof the bundle was served. Both come from sketch/www/sketch.html.
 BUNDLE_MARKS = ('id="app"', "/assets/sketch/frontend/")
@@ -53,12 +54,24 @@ class TestSpaAccess(IntegrationTestCase):
 		self.assertEqual(response.status_code, 302)
 		self.assertEqual(response.headers["Location"], "/feed")
 
-	def test_a_guest_keeps_the_page_they_asked_for(self):
-		"""The bounce carries the path back, so login returns them to it."""
+	def test_a_guest_on_a_private_path_goes_to_a_bare_login(self):
+		"""No query on the URL. `sketch/tests/test_after_login.py` says why:
+		core resolves a `redirect-to` against the Host header, and the tunnel
+		rewrites that Host, so the visitor comes back on a name no browser can
+		reach."""
 		response = utils.request("GET", "/settings")
 
 		self.assertEqual(response.status_code, 301)
-		self.assertEqual(response.headers["Location"], "/login?redirect-to=%2Fsettings")
+		self.assertEqual(response.headers["Location"], "/login")
+
+	def test_a_guest_keeps_the_page_they_asked_for(self):
+		"""The bounce carries the path back in a cookie, so the SPA returns
+		them to it after they sign in. This case reads the header off the
+		wire, because the cookie only reaches a browser when core flushes it
+		on the redirect response (`frappe/app.py` `process_response`)."""
+		response = utils.request("GET", "/settings")
+
+		self.assertEqual(response.cookies.get(sketch_page.AFTER_LOGIN_COOKIE), "/settings")
 
 	def test_a_guest_never_downloads_the_bundle_on_a_private_path(self):
 		"""The point of the guard. No answer to a Guest on a path that needs a
