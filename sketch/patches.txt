@@ -1,6 +1,8 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://docs.frappe.io/framework/user/en/database-migrations
+sketch.patches.v1_0.drop_foreign_sketch_tokens
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+sketch.patches.v1_0.backfill_sketch_token_hash
