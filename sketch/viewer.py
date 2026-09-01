@@ -200,6 +200,17 @@ class SketchViewerRenderer(BaseRenderer):
 			return self.build_response(bad_slot_html(self.doc.pin, count), 500, self.response_headers())
 
 		body = self.sandboxed_document(document.replace(SLOT, to_json(self.payload()), 1))
+		# Only the served document counts as an open. The two branches above
+		# are a broken install, not a reader.
+		#
+		# The `sig` test comes first, and it has to. A check arrives as a Guest
+		# carrying the signature, so `is_owner` is false for it, and without
+		# this test every check would be counted as a stranger reading a public
+		# link. Sketch drives that browser itself.
+		from sketch import events
+
+		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
+		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
 		return self.build_response(body, 200, self.response_headers())
 
 	def is_live(self) -> bool:

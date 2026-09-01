@@ -257,10 +257,27 @@ def stop(response: Response) -> None:
 
 
 def error_response(error: str) -> Response:
-	"""The contract body for one `ERRORS` key."""
-	from sketch import api
+	"""The contract body for one `ERRORS` key.
+
+	Every refusal `/mcp` serves comes through here: the renderer answers
+	`no_credentials` and `no_access`, `before_request` answers
+	`wrong_auth_scheme`, and `sketch.auth._refuse` raises with the body this
+	builds. So it is the one seat that sees all four, and where the
+	`auth_failed` event is recorded.
+
+	The audit called a wrong token the most likely failure a real user meets,
+	and the four keys are four different fixes. Counting them apart is the
+	whole point: `invalid_token` is a stale paste, `wrong_auth_scheme` is a
+	misconfigured client, `no_credentials` is a client sending no header at all.
+	"""
+	from sketch import api, events
 
 	status, message, challenge = ERRORS[error]
+	# `user` is left to default. It resolves to the session user, which is
+	# Guest and therefore stored empty for the three token failures, and the
+	# real account for `no_access`: that one is a good token on an account that
+	# is missing the role.
+	events.record(events.AUTH_FAILED, ok=False, detail=error)
 	payload = {
 		"error": error,
 		"message": message,

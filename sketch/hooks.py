@@ -253,6 +253,12 @@ after_install = "sketch.install.after_install"
 # Scheduled Tasks
 # ---------------
 
+# One job: drop Sketch Event rows past their retention. The table holds one row
+# per MCP tool call, so it is the one table on this site that grows with use.
+scheduler_events = {
+	"daily": ["sketch.events.trim"],
+}
+
 # scheduler_events = {
 # 	"all": [
 # 		"sketch.tasks.all"
@@ -325,7 +331,15 @@ before_request = ["sketch.mcp.http.before_request"]
 # of application (frappe/app.py:132-134), holds the response object core is
 # about to return, and rewrites that page as the JSON-RPC parse error. It
 # returns at once on every path but /mcp.
-after_request = ["sketch.mcp.http.after_request"]
+# Two entries, and the order does not matter: neither reads what the other did.
+#
+# The second one writes the buffered product-analytics rows. It has to sit here
+# and not at the point each event is recorded, because this hook is in the
+# finally of application (frappe/app.py:132-134), below the rollback on the
+# exception path (frappe/app.py:121-123) and below sync_database on the good one
+# (frappe/app.py:127). A tool call that raised and rolled back to its savepoint
+# still leaves its row. See sketch/events.py.
+after_request = ["sketch.mcp.http.after_request", "sketch.events.flush_after_request"]
 
 # Job Events
 # ----------

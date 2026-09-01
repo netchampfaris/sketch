@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-02 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "event",
+  "user",
+  "prototype",
+  "ok",
+  "detail",
+  "ms"
+ ],
+ "fields": [
+  {
+   "description": "One of the names in sketch/events.py. Data and not Select, so a new event needs no doctype change.",
+   "fieldname": "event",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Event",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Who acted. Empty when the request never authenticated, which is what an auth_failed row is.",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The Prototype hash id. Data and not Link: a deleted Prototype must not take its history with it, and must not block the delete.",
+   "fieldname": "prototype",
+   "fieldtype": "Data",
+   "label": "Prototype",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "ok",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Ok",
+   "read_only": 1
+  },
+  {
+   "description": "The one discriminator for this event: the tool name, the error key, or the check status.",
+   "fieldname": "detail",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Detail",
+   "read_only": 1
+  },
+  {
+   "description": "How long the work took, in milliseconds. Zero when the event measures nothing.",
+   "fieldname": "ms",
+   "fieldtype": "Int",
+   "label": "Ms",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sketch",
+ "name": "Sketch Event",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

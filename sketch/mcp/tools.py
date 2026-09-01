@@ -19,13 +19,14 @@ explicitly, never guessed from the text.
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 import frappe
 from frappe.utils import strip_html
 
-from sketch import checkd, prototype, prototype_files, thumbnails, versions
+from sketch import checkd, events, prototype, prototype_files, thumbnails, versions
 
 logger = frappe.logger("sketch.mcp")
 
@@ -70,21 +71,35 @@ def call_tool(name: str, arguments: dict) -> dict:
 
 	A crashed handler must not ride the end-of-request commit half-applied, so
 	each call runs inside a savepoint and rolls back to it on any exception.
+
+	This is the one seat that sees every tool, so it is where the `tool_call`
+	event is recorded. It counts the handler alone, not the transport.
 	"""
 	tool = TOOLS[name]
+	started = time.monotonic()
 	frappe.db.savepoint("mcp_tool")
 	try:
 		out = tool.handler(dict(arguments or {}))
 	except Exception as e:
 		frappe.db.rollback(save_point="mcp_tool")
 		logger.warning(f"mcp tool {name} raised: {e}", exc_info=True)
+		# The rollback above does not reach this: `events.record` only buffers,
+		# and the write happens after the request ends (`sketch/events.py`).
+		# A failed tool call is the row most worth keeping.
+		events.record(events.TOOL_CALL, ok=False, detail=name, ms=_elapsed_ms(started))
 		return {"content": [{"type": "text", "text": failure_text(name, e)}], "isError": True}
 
+	events.record(events.TOOL_CALL, ok=True, detail=name, ms=_elapsed_ms(started))
 	reply = {"content": [{"type": "text", "text": out.text}] + out.images, "isError": False}
 	if out.structured is not None:
 		reply["structuredContent"] = out.structured
 
 	return reply
+
+
+def _elapsed_ms(started: float) -> int:
+	"""Milliseconds since a `time.monotonic()` reading. Never a wall clock."""
+	return int((time.monotonic() - started) * 1000)
 
 
 def failure_text(name: str, e: Exception) -> str:
@@ -356,6 +371,11 @@ def do_check(args: dict) -> ToolResult:
 	]
 	uncommitted = versions.pending_count(doc.name)
 	report["uncommitted"] = uncommitted
+	status = str(report.get("status") or "unknown")
+	# The quality signal for the whole product: how often an agent writes Vue
+	# that does not build. A check that never reached the browser raises out of
+	# `checkd.run` above and is a failed `tool_call` instead, with no row here.
+	events.record(events.CHECK, prototype=doc.name, ok=status == "ok", detail=status)
 	return ToolResult(text=check_text(report, uncommitted), structured=report, images=images)
 
 
