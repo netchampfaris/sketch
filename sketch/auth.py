@@ -137,6 +137,17 @@ def _stamp_last_used(user: str) -> None:
 		if row.last_used and time_diff_in_seconds(now_datetime(), row.last_used) < LAST_USED_INTERVAL_SECONDS:
 			return
 
+		if not row.last_used:
+			# The first request this token ever authenticated: the moment the
+			# user crossed from "has a token" to "the agent works". The field
+			# below overwrites it a minute later, so the funnel cannot read it
+			# from the row. `regenerate` clears `last_used`, so a user who
+			# regenerates and reconnects records a second one, which is the
+			# honest reading of a second setup.
+			from sketch import events
+
+			events.record(events.AGENT_CONNECTED, user=user)
+
 		frappe.db.set_value("Sketch Token", row.name, "last_used", now_datetime(), update_modified=False)
 		frappe.db.commit()
 	except Exception:
