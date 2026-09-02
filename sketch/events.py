@@ -82,8 +82,15 @@ VIEWER_OPEN = "viewer_open"
 #: Where `record` puts a row until the request ends.
 BUFFER = "sketch_events"
 
-#: The most rows one request may buffer. A request that records more than this
-#: is a loop, and a log must not be the thing that runs the site out of memory.
+#: Set beside the buffer once it has filled, so the warning below is written
+#: once and not once per dropped row.
+BUFFER_FULL = "sketch_events_full"
+
+#: The most rows one buffer may hold before `record` starts dropping and says
+#: so. Every recorder in Sketch sits on a request path and every request
+#: flushes, so a real request never comes near it. What reaches it is a loop, or
+#: a long-lived process that records without a request to end it: the test
+#: suite is one, because `frappe.local` outlives every case in it.
 MAX_PER_REQUEST = 200
 
 #: How long a row lives. `trim` deletes past it, daily. The funnel is read in
@@ -119,6 +126,16 @@ def record(
 
 		buffer = _buffer()
 		if len(buffer) >= MAX_PER_REQUEST:
+			# Say so, once. A silent cap is how a full buffer looks exactly
+			# like an event that was never recorded, and the first time this
+			# fired it cost half an hour of reading the wrong code. Anything
+			# that reaches the cap is either a loop or a long-lived process
+			# that records without ever flushing, and both are worth a line.
+			if not getattr(frappe.local, BUFFER_FULL, False):
+				setattr(frappe.local, BUFFER_FULL, True)
+				frappe.logger("sketch.events").warning(
+					f"the event buffer is full at {MAX_PER_REQUEST}; dropping {event}"
+				)
 			return
 
 		buffer.append(
@@ -152,6 +169,7 @@ def flush() -> None:
 		return
 
 	pending, rows[:] = list(rows), []
+	setattr(frappe.local, BUFFER_FULL, False)
 	try:
 		for row in pending:
 			frappe.get_doc(row).insert(ignore_permissions=True)
