@@ -48,6 +48,7 @@ class TestEvents(IntegrationTestCase):
 		self.addCleanup(self.drop_rows)
 		# A leftover buffer from another case would be flushed into this one.
 		events._buffer()[:] = []
+		setattr(frappe.local, events.BUFFER_FULL, False)
 
 	def drop_rows(self) -> None:
 		frappe.db.delete("Sketch Event", {"user": self.user})
@@ -110,6 +111,23 @@ class TestEvents(IntegrationTestCase):
 		for _ in range(events.MAX_PER_REQUEST + 25):
 			events.record(events.TOOL_CALL, user=self.user, detail="d2t-case")
 		self.assertEqual(len(events._buffer()), events.MAX_PER_REQUEST)
+
+	def test_a_full_buffer_says_so(self):
+		"""A silent cap makes a dropped event look like one that never
+		happened. It cost half an hour of reading the wrong code once."""
+		self.assertFalse(getattr(frappe.local, events.BUFFER_FULL, False))
+		for _ in range(events.MAX_PER_REQUEST + 1):
+			events.record(events.TOOL_CALL, user=self.user, detail="d2t-case")
+		self.assertTrue(getattr(frappe.local, events.BUFFER_FULL, False))
+
+	def test_a_flush_reopens_a_full_buffer(self):
+		for _ in range(events.MAX_PER_REQUEST + 1):
+			events.record(events.TOOL_CALL, user=self.user, detail="d2t-case")
+		events.flush()
+		self.assertFalse(getattr(frappe.local, events.BUFFER_FULL, False))
+
+		events.record(events.TOOL_CALL, user=self.user, detail="d2t-case")
+		self.assertEqual(len(events._buffer()), 1)
 
 	# --------------------------------------------------------- the tool seat
 
