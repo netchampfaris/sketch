@@ -23,9 +23,11 @@ import {
   Avatar,
   Button,
   Dropdown,
+  TabButtons,
   useColorScheme,
   type ColorScheme,
   type DropdownOptions,
+  type TabButton,
 } from 'frappe-ui'
 import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
 
@@ -59,6 +61,38 @@ const account = computed(() =>
 /** Where the mark leads. A Guest has no gallery, so it leads to the feed. */
 const home = computed(() => (account.value ? '/' : '/feed'))
 
+/**
+ * The two galleries, as a segmented switcher in the bar (signed in only).
+ *
+ * They were one route each and no way between them: the gallery was the root
+ * and the feed was a row inside the account menu, so a user had to open a menu
+ * to read what anybody else had built, and nothing on the gallery said the
+ * feed was there.
+ *
+ * `route`, not `onClick`. Each option renders a real `<RouterLink>`
+ * (`TabButtons.vue`, `tabElement`), so the pair works with the Back button,
+ * with a middle click and with a hover preview, and neither costs a page load.
+ */
+const galleries: TabButton[] = [
+  { value: '/', label: 'My prototypes', route: '/' },
+  { value: '/feed', label: 'Public prototypes', route: '/feed' },
+]
+
+/**
+ * The route is the model, and the model is read-only.
+ *
+ * The links do the navigating, so the setter has nothing to do: writing here
+ * would move the pill before the route it points at had resolved. On
+ * /settings and /about the value matches no option, and TabButtons then draws
+ * no pill, which is the truth: neither page is a gallery. It has to be a
+ * string and not `undefined`, or the component falls back to holding its own
+ * selection and the pill stops following the route.
+ */
+const gallery = computed<string>({
+  get: () => (galleries.some((one) => one.value === route.path) ? route.path : ''),
+  set: () => {},
+})
+
 const schemes: { label: string; value: ColorScheme; icon: string }[] = [
   { label: 'Light', value: 'light', icon: 'lucide-sun' },
   { label: 'Dark', value: 'dark', icon: 'lucide-moon' },
@@ -81,14 +115,17 @@ const menu = computed<DropdownOptions>(() => [
     group: username.value ? '@' + username.value : ' ',
     options: [
       // Settings left this menu and became a labelled button in the bar, so
-      // the route to the token is visible without opening anything. The feed
-      // and About stay here: both are read now and then, not returned to.
+      // the route to the token is visible without opening anything. About
+      // stays here: it is read now and then, not returned to.
       //
-      // `route`, not `onClick`. Both are routes of the SPA now
-      // (`frontend/src/router.ts`), so Menu.vue pushes them and neither costs
-      // a page load. They used to be server-rendered pages, and this row used
-      // to set `window.location`.
-      { label: 'Public feed', icon: 'lucide-layout-grid', route: '/feed' },
+      // The Public feed row left too. The bar's gallery switcher is that
+      // route now, and a second door to /feed inside a menu would have been
+      // the only nav row left in there.
+      //
+      // `route`, not `onClick`. About is a route of the SPA now
+      // (`frontend/src/router.ts`), so Menu.vue pushes it and it costs no
+      // page load. It used to be a server-rendered page, and this row used to
+      // set `window.location`.
       { label: 'About', icon: 'lucide-info', route: '/about' },
       {
         label: 'Theme',
@@ -121,18 +158,48 @@ const menu = computed<DropdownOptions>(() => [
     <div
       class="mx-auto flex w-full max-w-[940px] items-center justify-between gap-2 px-3 sm:px-5"
     >
-      <router-link
-        class="-mx-1 flex items-center gap-2 rounded-4 px-1 py-1 transition hover:bg-surface-gray-2 focus-visible:ring-0 focus-visible:focus-ring"
-        :to="home"
-      >
-        <img
-          alt=""
-          aria-hidden="true"
-          class="size-6 shrink-0 dark:invert"
-          :src="logo"
+      <div class="flex min-w-0 items-center gap-2">
+        <router-link
+          class="-mx-1 flex items-center gap-2 rounded-4 px-1 py-1 transition hover:bg-surface-gray-2 focus-visible:ring-0 focus-visible:focus-ring"
+          :to="home"
+        >
+          <img
+            alt=""
+            aria-hidden="true"
+            class="size-6 shrink-0 dark:invert"
+            :src="logo"
+          />
+          <!--
+            The wordmark hides under 640px. Signed in, the bar carries the two
+            gallery labels as well, and on a phone the mark, both labels,
+            Settings and the Avatar do not fit one 48px line. The logo stays
+            and still leads home, so nothing is lost but the repetition of a
+            name the tab title already gives.
+          -->
+          <span class="hidden text-base-medium text-ink-gray-8 sm:inline"
+            >Sketch</span
+          >
+        </router-link>
+
+        <!--
+          The gallery switcher, signed in only. A Guest has no gallery of their
+          own, so there is nothing to switch between and the bar keeps the
+          About / Sign in pair instead.
+
+          `subtle` is the segmented control the rest of frappe-ui uses for a
+          two-way pick, and `sm` is 28px, so it sits inside the 48px bar
+          without setting its height. The pill follows the route, so it never
+          moves on hover and the bar never changes height.
+        -->
+        <TabButtons
+          v-if="account"
+          v-model="gallery"
+          class="min-w-0"
+          :options="galleries"
+          size="sm"
+          variant="subtle"
         />
-        <span class="text-base-medium text-ink-gray-8">Sketch</span>
-      </router-link>
+      </div>
 
       <div class="flex items-center gap-2">
         <!--
@@ -168,7 +235,26 @@ const menu = computed<DropdownOptions>(() => [
         -->
         <Button
           v-if="account"
+          class="hidden sm:inline-flex"
           icon-left="lucide-settings"
+          label="Settings"
+          route="/settings"
+          theme="gray"
+          variant="ghost"
+        />
+
+        <!--
+          The same control, icon only, under 640px. The two gallery labels
+          take the width the "Settings" label used to have, and one 32px
+          target beside the Avatar is the mobile shape for a bar action
+          anyway. `label` stays: on an icon-only Button it becomes the
+          `aria-label` (`Button.vue:334`), so the control is still named to a
+          screen reader.
+        -->
+        <Button
+          v-if="account"
+          class="sm:hidden"
+          icon="lucide-settings"
           label="Settings"
           route="/settings"
           theme="gray"
