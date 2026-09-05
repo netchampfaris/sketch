@@ -3,9 +3,10 @@
  * The one bar above every screen (spec 11).
  *
  * Sketch has two screens and one action, so a 14rem sidebar was furniture.
- * The mark goes left; Settings and the account menu go right. Settings is a
- * labelled button rather than a menu row, because it is the one page a user
- * has to find again: it holds the agent token.
+ * The mark goes left, the gallery switcher goes in the centre, and Settings
+ * and the account menu go right. Settings is a labelled button rather than a
+ * menu row, because it is the one page a user has to find again: it holds the
+ * agent token.
  *
  * The bar is a fixed h-12. Nothing in it depends on the session: the Avatar
  * keeps its size with no label and no image, and the name and the username
@@ -156,9 +157,25 @@ const menu = computed<DropdownOptions>(() => [
     <!-- Same centred column and same gutters as the router view below, so the
          mark lines up with the page title. -->
     <div
-      class="mx-auto flex w-full max-w-[940px] items-center justify-between gap-2 px-3 sm:px-5"
+      class="mx-auto flex w-full max-w-[940px] items-center gap-2 px-3 sm:px-5"
     >
-      <div class="flex min-w-0 items-center gap-2">
+      <!--
+        Three parts, and from 640px the outer two are `flex-1 basis-0`. They
+        claim the same width whatever they hold, so the switcher between them
+        sits on the centre of the bar and not on the centre of the space left
+        over. `justify-between` cannot do that: it parks the switcher against
+        the mark, and the bar shifts it again every time the right side changes
+        width.
+
+        Under 640px the mark leaves the bar, signed in. The switcher, Settings
+        and the Avatar already fill a 375px line, and the mark is the one of
+        the four that repeats itself: "My prototypes" goes to the same route.
+        A Guest has no switcher, so a Guest keeps the mark at every width.
+      -->
+      <div
+        class="min-w-0 items-center"
+        :class="account ? 'hidden sm:flex sm:flex-1 sm:basis-0' : 'flex'"
+      >
         <router-link
           class="-mx-1 flex items-center gap-2 rounded-4 px-1 py-1 transition hover:bg-surface-gray-2 focus-visible:ring-0 focus-visible:focus-ring"
           :to="home"
@@ -170,38 +187,37 @@ const menu = computed<DropdownOptions>(() => [
             :src="logo"
           />
           <!--
-            The wordmark hides under 640px. Signed in, the bar carries the two
-            gallery labels as well, and on a phone the mark, both labels,
-            Settings and the Avatar do not fit one 48px line. The logo stays
-            and still leads home, so nothing is lost but the repetition of a
-            name the tab title already gives.
+            The wordmark hides under 640px, for a Guest too. It repeats a name
+            the tab title already gives, and it costs the width the About /
+            Sign in pair needs on a phone.
           -->
           <span class="hidden text-base-medium text-ink-gray-8 sm:inline"
             >Sketch</span
           >
         </router-link>
-
-        <!--
-          The gallery switcher, signed in only. A Guest has no gallery of their
-          own, so there is nothing to switch between and the bar keeps the
-          About / Sign in pair instead.
-
-          `subtle` is the segmented control the rest of frappe-ui uses for a
-          two-way pick, and `sm` is 28px, so it sits inside the 48px bar
-          without setting its height. The pill follows the route, so it never
-          moves on hover and the bar never changes height.
-        -->
-        <TabButtons
-          v-if="account"
-          v-model="gallery"
-          class="min-w-0"
-          :options="galleries"
-          size="sm"
-          variant="subtle"
-        />
       </div>
 
-      <div class="flex items-center gap-2">
+      <!--
+        The gallery switcher, signed in only. A Guest has no gallery of their
+        own, so there is nothing to switch between and the bar keeps the
+        About / Sign in pair instead.
+
+        `ghost` paints no track. The pair reads as two labels on the bar, and
+        only the open one carries a surface. `subtle` boxed them in a grey
+        rail, which put a second border across a bar that already has one.
+        `sm` is 28px, so the switcher sits inside the 48px bar without setting
+        its height. The pill follows the route, so it never moves on hover and
+        the bar never changes height.
+      -->
+      <TabButtons
+        v-if="account"
+        v-model="gallery"
+        :options="galleries"
+        size="sm"
+        variant="ghost"
+      />
+
+      <div class="flex flex-1 basis-0 items-center justify-end gap-2">
         <!--
           Signed out, on /feed or /about. Two controls, both labelled: the
           page that explains Sketch, and the way in. Neither is solid, which
