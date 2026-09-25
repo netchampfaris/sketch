@@ -32,9 +32,9 @@ Already built and running. Do not re-create it.
 | Passwords | `sites/sketch.localhost/site_config.json` (git-ignored) |
 | Public URL | `https://sketch.netchamp.dev`, site `host_name` set |
 
-Frontend pins, exact: frappe-ui `1.0.0-beta.55`, vue 3.5.41, vue-router 4.6.4,
+Frontend pins, exact: frappe-ui `1.0.0-rc.2`, vue 3.5.41, vue-router 4.6.4,
 vite 8.2.2, `@vitejs/plugin-vue` 6.0.8, tailwindcss 3.4.19, typescript 5.9.3,
-yarn 1.22. `frontend/src/style.css` imports `frappe-ui/style.css` only; beta.55
+yarn 1.22. `frontend/src/style.css` imports `frappe-ui/style.css` only; rc.2
 already ships the `@tailwind` layers.
 
 ### Services
