@@ -11,7 +11,7 @@ and mounts `src/App.vue` inside `FrappeUIProvider`.
 ## Build it
 
 ```sh
-sh build.sh                # -> ../sketch/public/runtimes/1.0.0-beta.55/
+sh build.sh                # -> ../sketch/public/runtimes/1.0.0-rc.2/
 node measure.mjs           # payload and timings for the sample Prototype
 node test-errors.mjs       # every error class, plus cycles, .css and empty
 node test-upload.mjs       # the upload_file stub

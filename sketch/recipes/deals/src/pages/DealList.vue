@@ -53,7 +53,7 @@ const sortedRows = computed(() => {
   })
 })
 
-// No `selectable` on the List: in frappe-ui 1.0.0-beta.55 a selectable row
+// No `selectable` on the List: in frappe-ui 1.0.0-rc.2 a selectable row
 // swallows its own click to toggle the checkbox, so the row could not open the
 // deal. The row is a link to the detail route instead.
 </script>
