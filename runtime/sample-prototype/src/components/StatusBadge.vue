@@ -6,7 +6,7 @@ import type { Status } from '../data'
 const props = defineProps<{ status: Status }>()
 
 const theme = computed(() =>
-  ({ open: 'orange', 'in-progress': 'blue', done: 'green' })[props.status],
+  ({ open: 'amber', 'in-progress': 'blue', done: 'green' })[props.status],
 )
 const label = computed(() =>
   ({ open: 'Open', 'in-progress': 'In progress', done: 'Done' })[props.status],
