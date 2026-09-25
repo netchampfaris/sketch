@@ -92,7 +92,7 @@ fails to compile.
 |---|---|
 | `vue` | the framework |
 | `vue-router` | `RouterLink`, `RouterView`, `useRoute`, `useRouter` |
-| `frappe-ui` | 136 exports: every core component |
+| `frappe-ui` | 129 exports: every core component |
 | `frappe-ui/list` | the List family |
 | `frappe-ui/editor` | rich text, TipTap based |
 | `frappe-ui/charts` | the chart family, ECharts based |
@@ -107,7 +107,7 @@ Prototype imports them, so import them only on the page that draws them.
 
 **Actions.** `Button` is the default trigger: `<Button label icon iconLeft
 iconRight variant theme size loading disabled />`. `size` runs `sm | md | lg |
-xl | 2xl`. Pass `route` for in-app navigation or `link` for an external URL and
+xl | 2xl`. Pass `route` for in-app navigation or `href` for an external URL and
 it renders the right element. A primary action is `variant="solid"
 theme="gray"`. A destructive one is `theme="red"`.
 `Dropdown` is a menu anchored to its first child: `<Dropdown :options="[{ label,
@@ -161,7 +161,8 @@ Legacy, never in new code: `ItemListRow`. Use the List family instead.
 ### `frappe-ui/list`
 
 `List`, `ListRow`, `ListCell`, `ListHeader`, `ListHeaderCell`,
-`ListHeaderCellSort`, `ListGroup`, `ListRows`, `useVirtualRows`.
+`ListHeaderCellSort`, `ListGroup`, `ListRows`. For a long list, use
+`<ListRows virtual>`.
 
 Use it for every list. Feed mode has no columns. Table mode takes `:columns`
 plus `ListHeader`. `ListGroup` makes a labelled bucket. Selection is
@@ -181,7 +182,7 @@ Props are flat and name the columns of your rows:
 <BarChart title="Issues per month" :data="rows" x="month" y="count" />
 ```
 
-`y` takes an array for several series. `series` groups long data. Give the
+`y` takes an array for several series. `splitBy` groups long data. Give the
 chart a parent with a height, such as `class="h-80"`, or it draws at zero
 height.
 
@@ -397,7 +398,7 @@ import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, ScrollArea } from 'f
           <SidebarHeader title="Tracker" subtitle="Acme" />
           <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
             <div class="space-y-0.5">
-              <SidebarItem label="Issues" icon="lucide-circle-dot" to="/" />
+              <SidebarItem label="Issues" icon="lucide-circle-dot" route="/" />
             </div>
           </ScrollArea>
         </Sidebar>
@@ -490,7 +491,7 @@ function create() {
         </ListHeaderCellSort>
       </ListHeader>
       <ListRows :items="rows" v-slot="{ item }">
-        <ListRow :to="`/issues/${item.name}`">
+        <ListRow :route="`/issues/${item.name}`">
           <ListCell>
             <span class="truncate text-base text-ink-gray-8">{{ item.title }}</span>
           </ListCell>
