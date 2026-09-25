@@ -61,7 +61,7 @@ export const statusDot: Record<string, string> = {
 // Badge theme per pipeline stage, for the list view.
 export const statusBadgeTheme: Record<string, string> = {
   gray: 'gray',
-  amber: 'orange',
+  amber: 'amber',
   blue: 'blue',
   green: 'green',
 }
