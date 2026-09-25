@@ -60,8 +60,11 @@ Put the fixture data in plain `ref`s in the file that uses it, or in a shared
    `border-outline-*`. Never `bg-gray-100`, `text-gray-900`, `border-gray-300`.
    Raw colours do not follow the theme, and Sketch renders dark as well as light.
 3. **Colour is `variant` plus `theme`.** `variant` is `solid | outline | subtle |
-   ghost`. `theme` is `gray | blue | green | red | orange`. There is no `intent`,
-   `kind`, `severity` or `appearance` prop.
+   ghost`. `theme` depends on the component. `Button` takes `gray | blue | green
+   | red`. `Badge` takes those plus `amber` and `violet`. `Alert` takes `gray |
+   blue | green | amber | red`. `Dialog` takes `blue | green | amber | red`.
+   There is no `orange`. There is no `intent`, `kind`, `severity` or
+   `appearance` prop.
 4. **Two-way state through `v-model`.** Inputs take `v-model`. Overlays take
    `v-model:open`. Comboboxes take `v-model` plus `v-model:query`. Never
    `:value` with `@change`. Never a bare `v-model` on `<Dialog>`.
@@ -75,7 +78,7 @@ Put the fixture data in plain `ref`s in the file that uses it, or in a shared
    Every lucide icon name works. For a component's `icon` prop, pass the string
    `"lucide-rocket"`. Never import an icon as a Vue component from lucide.
 8. **Use the imperative helpers for one-shot UI.** `dialog.confirm`,
-   `dialog.alert`, `dialog.prompt`, `toast.success`, `toast.error`, `toast.info`.
+   `dialog.danger`, `dialog.prompt`, `toast.success`, `toast.error`, `toast.info`.
    Never hand-mount a `<Dialog>` to ask "are you sure?".
 9. **Style through `data-slot` and `data-state`, not class injection.** There is
    no `triggerClass` or `contentClass` prop, by design.
@@ -106,8 +109,8 @@ Prototype imports them, so import them only on the page that draws them.
 ### `frappe-ui`
 
 **Actions.** `Button` is the default trigger: `<Button label icon iconLeft
-iconRight variant theme size loading disabled />`. `size` runs `sm | md | lg |
-xl | 2xl`. Pass `route` for in-app navigation or `href` for an external URL and
+iconRight variant theme size loading disabled />`. `size` runs `xs | sm | md |
+lg`. Pass `route` for in-app navigation or `href` for an external URL and
 it renders the right element. A primary action is `variant="solid"
 theme="gray"`. A destructive one is `theme="red"`.
 `Dropdown` is a menu anchored to its first child: `<Dropdown :options="[{ label,
@@ -116,9 +119,9 @@ icon, onClick }]"><Button icon="lucide-ellipsis" /></Dropdown>`.
 **Overlays.** `Dialog` with `v-model:open`, plus `title`, `message`, `icon`,
 `theme`, `size`, `actions`, `dismissible`. Each action's `onClick` receives
 `{ close }`. `bare` drops the chrome, for a command palette. `Popover` for
-arbitrary anchored content, slots `#target` and `#body`. `Tooltip` for a hover
-hint only, never for anything clickable. `HoverCard` for a rich hover preview.
-`ContextMenu` for right-click.
+arbitrary anchored content, slots `#trigger` and `#default`. `Tooltip` for a
+hover hint only, never for anything clickable. `HoverCard` for a rich hover
+preview. `ContextMenu` for right-click.
 
 **Inputs.** `FormControl` is the wrapper you want by default: pass
 `type="text" | "textarea" | "select" | "checkbox"`. Underneath sit `TextInput`,
@@ -129,13 +132,13 @@ hint only, never for anything clickable. `HoverCard` for a rich hover preview.
 `FileUploader` works: Sketch stubs the upload endpoint, so it reports progress
 and returns a file.
 
-**Display.** `Badge` for a status pill, same `theme` and `variant` axes as
-`Button`. `Alert` for an inline notice: `title`, `description`, `theme`,
+**Display.** `Badge` for a status pill, same `variant` axis as `Button`.
+`Alert` for an inline notice: `title`, `description`, `theme`,
 `primary-action`, `secondary-action`, `dismissible`. A `description` or a
 second action switches it to the stacked layout. `Avatar` builds initials from
 `label` when there is no `image`. `Progress`, `Spinner`, `LoadingIndicator`,
 `LoadingText`, `Skeleton`, `Divider`, `Breadcrumbs`, `KeyboardShortcut`,
-`Tabs` with `v-model:tab` for page sections, `TabButtons` for an inline
+`Tabs` with `v-model` for page sections, `TabButtons` for an inline
 segmented control, `Tree` for hierarchy, `Icon`, `ScrollArea` for any scroll
 region you own.
 
