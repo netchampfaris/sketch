@@ -27,7 +27,7 @@ import { navItems } from './data'
           />
 
           <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
-            <nav class="space-y-0.5">
+            <div class="space-y-0.5">
               <!-- One route per nav entry. The item lights up from the route. -->
               <SidebarItem
                 v-for="item in navItems"
@@ -39,7 +39,7 @@ import { navItems } from './data'
                 </template>
                 <span class="flex-1 truncate text-sm">{{ item.label }}</span>
               </SidebarItem>
-            </nav>
+            </div>
           </ScrollArea>
 
           <div class="mt-auto px-4 pb-4">
