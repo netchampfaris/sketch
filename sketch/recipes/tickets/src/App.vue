@@ -32,11 +32,11 @@ import { nav, views } from './data'
           />
 
           <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
-            <nav class="space-y-0.5">
+            <div class="space-y-0.5">
               <SidebarItem
                 v-for="item in nav"
                 :key="item.label"
-                :to="item.to"
+                :route="item.to"
               >
                 <template #prefix>
                   <span :class="item.icon" class="size-4" aria-hidden="true" />
@@ -50,23 +50,23 @@ import { nav, views } from './data'
                   />
                 </template>
               </SidebarItem>
-            </nav>
+            </div>
 
             <div class="mt-4 flex h-7 items-center">
               <SidebarLabel>Views</SidebarLabel>
             </div>
-            <nav class="mt-0.5 space-y-0.5">
+            <div class="mt-0.5 space-y-0.5">
               <SidebarItem
                 v-for="view in views"
                 :key="view.label"
-                :to="view.to"
+                :route="view.to"
               >
                 <template #prefix>
                   <span class="lucide-list-filter size-4" aria-hidden="true" />
                 </template>
                 <span class="flex-1 truncate text-sm">{{ view.label }}</span>
               </SidebarItem>
-            </nav>
+            </div>
           </ScrollArea>
 
           <div class="mt-auto px-2 pb-2">

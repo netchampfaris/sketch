@@ -31,7 +31,7 @@ import { labels, mailboxes, unreadCount } from './data'
           />
 
           <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
-            <nav class="space-y-0.5">
+            <div class="space-y-0.5">
               <SidebarItem>
                 <template #prefix>
                   <span class="lucide-search size-4" aria-hidden="true" />
@@ -46,7 +46,7 @@ import { labels, mailboxes, unreadCount } from './data'
               <SidebarItem
                 v-for="box in mailboxes"
                 :key="box.key"
-                :to="box.path"
+                :route="box.path"
               >
                 <template #prefix>
                   <span :class="box.icon" class="size-4" aria-hidden="true" />
@@ -60,16 +60,16 @@ import { labels, mailboxes, unreadCount } from './data'
                   />
                 </template>
               </SidebarItem>
-            </nav>
+            </div>
 
             <div class="mt-4 flex h-7 items-center">
               <SidebarLabel>Labels</SidebarLabel>
             </div>
-            <nav class="mt-0.5 space-y-0.5">
+            <div class="mt-0.5 space-y-0.5">
               <SidebarItem
                 v-for="tag in labels"
                 :key="tag.key"
-                :to="tag.path"
+                :route="tag.path"
               >
                 <template #prefix>
                   <span
@@ -79,7 +79,7 @@ import { labels, mailboxes, unreadCount } from './data'
                 </template>
                 <span class="flex-1 truncate text-sm">{{ tag.label }}</span>
               </SidebarItem>
-            </nav>
+            </div>
           </ScrollArea>
 
           <div class="mt-auto px-2 pb-2">

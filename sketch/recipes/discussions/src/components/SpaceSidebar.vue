@@ -37,18 +37,18 @@ const menuItems = [
     <!-- The app owns the scroll region: ScrollArea keeps the thin, auto-hiding
          overlay scrollbar. -->
     <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
-      <nav class="space-y-0.5">
-        <SidebarItem to="/" label="Home">
+      <div class="space-y-0.5">
+        <SidebarItem route="/" label="Home">
           <template #prefix>
             <span class="lucide-home size-4" aria-hidden="true" />
           </template>
         </SidebarItem>
-        <SidebarItem to="/search" label="Search">
+        <SidebarItem route="/search" label="Search">
           <template #prefix>
             <span class="lucide-search size-4" aria-hidden="true" />
           </template>
         </SidebarItem>
-      </nav>
+      </div>
 
       <div class="mt-4 flex h-7 items-center justify-between">
         <SidebarLabel>Spaces</SidebarLabel>
@@ -62,11 +62,11 @@ const menuItems = [
         </div>
       </div>
 
-      <nav class="mt-0.5 space-y-0.5">
+      <div class="mt-0.5 space-y-0.5">
         <SidebarItem
           v-for="space in spaces"
           :key="space.name"
-          :to="`/spaces/${space.slug}`"
+          :route="`/spaces/${space.slug}`"
           :label="space.name"
         >
           <template #prefix>
@@ -81,7 +81,7 @@ const menuItems = [
             </span>
           </template>
         </SidebarItem>
-      </nav>
+      </div>
     </ScrollArea>
   </Sidebar>
 </template>

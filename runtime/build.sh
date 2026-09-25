@@ -3,7 +3,7 @@
 # The output is gitignored build output. This folder is the source.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-VERSION=1.0.0-beta.55
+VERSION=1.0.0-rc.2
 OUT=$HERE/../sketch/public/runtimes/$VERSION
 NM=$HERE/../frontend/node_modules
 BASE=/assets/sketch/runtimes/$VERSION

@@ -4,7 +4,7 @@ import { Button, FileUploader, PageHeader } from 'frappe-ui'
 import { issues } from '../data'
 
 // TypeScript in a template expression: sucrase must strip the cast (ticket 05).
-const version = '1.0.0-beta.55' as string
+const version = '1.0.0-rc.2' as string
 
 // FileUploader is the one component that calls a server on its own. The Viewer
 // stubs /api/method/upload_file, so it resolves without a backend.

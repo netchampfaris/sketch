@@ -86,7 +86,7 @@ const selection = ref([])
 // A row selected on one view must not stay selected on the next.
 watch(() => route.path, () => (selection.value = []))
 
-// frappe-ui 1.0.0-beta.55 reads `value` off every TabButtons option, so the
+// frappe-ui 1.0.0-rc.2 reads `value` off every TabButtons option, so the
 // label alone is no longer enough.
 const filterOptions = [
   { label: 'Open', value: 'Open' },

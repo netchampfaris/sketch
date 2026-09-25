@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds the browser Tailwind engine. Recipe from ticket 06, retargeted at
-# sketch's own node_modules and frappe-ui 1.0.0-beta.55.
+# sketch's own node_modules and frappe-ui 1.0.0-rc.2.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 NM=$HERE/../../frontend/node_modules

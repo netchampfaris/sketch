@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
 
 // The upstream `view` ref becomes the route. Each tab is a RouterLink, and the
-// current path selects it. frappe-ui 1.0.0-beta.55 needs an explicit `value`
+// current path selects it. frappe-ui 1.0.0-rc.2 needs an explicit `value`
 // on every option, so the value is the path itself.
 const route = useRoute()
 const view = computed(() => (route.path === '/list' ? '/list' : '/'))

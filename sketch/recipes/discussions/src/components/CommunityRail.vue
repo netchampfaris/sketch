@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { Avatar, Dropdown, Rail, RailItem } from 'frappe-ui'
+import { Avatar, Dropdown, SidebarRail, SidebarRailItem } from 'frappe-ui'
 import { activeCommunity, communities, showSettings } from '../data'
 
 const userMenu = [
@@ -15,9 +15,9 @@ const userMenu = [
 </script>
 
 <template>
-  <Rail class="border-r">
-    <!-- Home is a bespoke link, not a RailItem: the workspace mark fills the
-         whole cell and carries no tooltip of its own. -->
+  <SidebarRail class="border-r">
+    <!-- Home is a bespoke link, not a SidebarRailItem: the workspace mark
+         fills the whole cell and carries no tooltip of its own. -->
     <RouterLink
       to="/"
       class="flex size-7 items-center justify-center rounded-[7px] transition hover:opacity-90 focus-visible:ring-0 focus-visible:focus-ring"
@@ -27,7 +27,7 @@ const userMenu = [
     </RouterLink>
 
     <div class="flex w-full flex-1 flex-col items-center gap-3 pt-3">
-      <RailItem
+      <SidebarRailItem
         v-for="c in communities"
         :key="c.id"
         :label="c.name"
@@ -43,14 +43,14 @@ const userMenu = [
           shape="square"
           class="size-7"
         />
-      </RailItem>
+      </SidebarRailItem>
     </div>
 
     <!-- Bottom cluster: the extra gap keeps the utility items and the account
          avatar from crowding each other at the foot of the rail. -->
     <div class="flex flex-col items-center gap-2.5">
-      <RailItem label="Search" variant="ghost" icon="lucide-search" to="/search" />
-      <RailItem
+      <SidebarRailItem label="Search" variant="ghost" icon="lucide-search" route="/search" />
+      <SidebarRailItem
         label="Settings"
         variant="ghost"
         icon="lucide-settings"
@@ -77,5 +77,5 @@ const userMenu = [
         </template>
       </Dropdown>
     </div>
-  </Rail>
+  </SidebarRail>
 </template>

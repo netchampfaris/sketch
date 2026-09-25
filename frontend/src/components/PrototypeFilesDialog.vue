@@ -171,7 +171,8 @@ async function select(path: string): Promise<void> {
   selected.value = path
   if (sources.value[path] || failures.value[path]) return
 
-  const answer = await source.submit({ ...address.value, path })
+  // `submit` rejects on a failed read, so the failure lands in the catch.
+  const answer = await source.submit({ ...address.value, path }).catch(() => null)
   if (answer?.path) {
     sources.value[answer.path] = answer
     return

@@ -17,8 +17,8 @@ import {
           <SidebarHeader title="Sketch" subtitle="Prototype" />
           <div class="min-h-0 flex-1 overflow-y-auto px-2 pt-0.5 pb-10">
             <SidebarSection>
-              <SidebarItem to="/" icon="lucide-circle-dot" label="Issues" />
-              <SidebarItem to="/about" icon="lucide-info" label="About" />
+              <SidebarItem route="/" icon="lucide-circle-dot" label="Issues" />
+              <SidebarItem route="/about" icon="lucide-info" label="About" />
             </SidebarSection>
             <SidebarLabel divider>Filters</SidebarLabel>
             <SidebarSection>

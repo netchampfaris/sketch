@@ -89,6 +89,8 @@ async function exportZip(): Promise<void> {
  * one sign-in action on this page, so a signed-out reader is asked once, in
  * one place.
  */
+// A write's `submit` rejects on failure. Its `onError` already shows a toast,
+// so each menu row drops the rejection with `.catch(() => {})`.
 const menuOptions = computed(() => [
   ...(signedIn.value
     ? [
@@ -97,10 +99,12 @@ const menuOptions = computed(() => [
           icon: 'lucide-git-fork',
           disabled: busy.value,
           onClick: () =>
-            fork.submit({
-              username: props.prototype.username,
-              slug: props.prototype.slug,
-            }),
+            fork
+              .submit({
+                username: props.prototype.username,
+                slug: props.prototype.slug,
+              })
+              .catch(() => {}),
         },
       ]
     : []),

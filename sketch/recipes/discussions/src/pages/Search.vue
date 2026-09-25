@@ -45,7 +45,7 @@ const results = computed(() => {
         v-for="d in results"
         :key="d.id"
         class="h-15"
-        :to="`/thread?d=${d.id}`"
+        :route="`/thread?d=${d.id}`"
       >
         <ListCell>
           <Avatar :image="d.image" :label="d.author" size="2xl" />

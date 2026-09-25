@@ -32,11 +32,11 @@ import { navGroups } from './data'
               <div class="flex h-7 items-center">
                 <SidebarLabel>{{ group.label }}</SidebarLabel>
               </div>
-              <nav class="mt-0.5 space-y-0.5">
+              <div class="mt-0.5 space-y-0.5">
                 <SidebarItem
                   v-for="item in group.items"
                   :key="item.key"
-                  :to="item.to"
+                  :route="item.to"
                 >
                   <template #prefix>
                     <span :class="item.icon" class="size-4" aria-hidden="true" />
@@ -51,7 +51,7 @@ import { navGroups } from './data'
                     />
                   </template>
                 </SidebarItem>
-              </nav>
+              </div>
             </div>
           </ScrollArea>
         </Sidebar>

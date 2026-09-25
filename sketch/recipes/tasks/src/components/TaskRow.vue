@@ -42,7 +42,7 @@ function statusDropdownOptions(task: any) {
 </script>
 
 <template>
-  <ListRow class="h-10" :to="`/task/${task.id}`">
+  <ListRow class="h-10" :route="`/task/${task.id}`">
     <ListCell>
       <!-- Changing status must not open the task: stop the click before it
            reaches the row. -->

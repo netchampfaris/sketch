@@ -23,7 +23,7 @@ const tab = defineModel<string>('tab', { default: 'Primary' })
     class="flex h-full min-h-0 w-[23rem] shrink-0 flex-col border-r border-outline-gray-1"
   >
     <!-- Category tabs. Pinned above the list: they filter, they do not scroll.
-         frappe-ui 1.0.0-beta.55 needs an explicit `value` on every option. -->
+         frappe-ui 1.0.0-rc.2 needs an explicit `value` on every option. -->
     <div
       v-if="tabs"
       class="flex shrink-0 items-center border-b border-outline-gray-1 px-4 py-2"
