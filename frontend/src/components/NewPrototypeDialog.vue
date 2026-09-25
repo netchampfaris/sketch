@@ -84,7 +84,8 @@ watch(recipe, (slug) => {
 
 async function submit(): Promise<void> {
   if (!canCreate.value) return
-  await create.submit({ title: title.value.trim(), recipe: recipe.value })
+  // `submit` rejects on failure, and the call's `onError` already shows it.
+  await create.submit({ title: title.value.trim(), recipe: recipe.value }).catch(() => {})
 }
 </script>
 

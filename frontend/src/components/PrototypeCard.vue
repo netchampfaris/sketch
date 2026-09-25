@@ -179,6 +179,8 @@ function askDelete(): void {
   })
 }
 
+// A write's `submit` rejects on failure. Its `onError` already shows a toast,
+// so each menu row drops the rejection with `.catch(() => {})`.
 const menuOptions = computed(() => [
   // No Open row: the action has its own button beside this menu.
   //
@@ -191,13 +193,15 @@ const menuOptions = computed(() => [
         label: 'Make private',
         icon: 'lucide-lock',
         disabled: busy.value,
-        onClick: () => setPublic.submit({ slug: props.prototype.slug, is_public: false }),
+        onClick: () =>
+          setPublic.submit({ slug: props.prototype.slug, is_public: false }).catch(() => {}),
       }
     : {
         label: 'Share',
         icon: 'lucide-globe',
         disabled: busy.value,
-        onClick: () => setPublic.submit({ slug: props.prototype.slug, is_public: true }),
+        onClick: () =>
+          setPublic.submit({ slug: props.prototype.slug, is_public: true }).catch(() => {}),
       },
   {
     label: 'Copy public link',
@@ -214,7 +218,7 @@ const menuOptions = computed(() => [
     label: 'Refresh preview',
     icon: 'lucide-refresh-cw',
     disabled: busy.value,
-    onClick: () => refresh.submit({ slug: props.prototype.slug }),
+    onClick: () => refresh.submit({ slug: props.prototype.slug }).catch(() => {}),
   },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
   { label: 'Files', icon: 'lucide-file-code', onClick: () => (filesOpen.value = true) },
