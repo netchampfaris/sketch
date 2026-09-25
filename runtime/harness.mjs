@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-export const VERSION = '1.0.0-beta.55'
+export const VERSION = '1.0.0-rc.2'
 export const BASE = `http://localhost:8007/assets/sketch/runtimes/${VERSION}`
 export const VIEWER = `${BASE}/viewer.html`
 
