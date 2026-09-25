@@ -142,7 +142,8 @@ region you own.
 **Layout.** `DesktopShell` with slots `#rail`, `#sidebar` and default.
 `MobileShell` with default and `#nav`. The Sidebar family: `Sidebar`,
 `SidebarHeader`, `SidebarSection`, `SidebarLabel`, `SidebarItem`,
-`SidebarCard`, `SidebarCollapseToggle`, plus `Rail` and `RailItem`.
+`SidebarCard`, `SidebarCollapseToggle`, plus `SidebarRail` and
+`SidebarRailItem`.
 `PageHeader` and `PageHeaderBase` (padding free, for two-pane layouts).
 `MobileNav`, `MobileNavItem`, `BottomSheet`. The Settings family:
 `SettingsDialog`, `SettingsSidebar`, `SettingsNavGroup`, `SettingsNavItem`,

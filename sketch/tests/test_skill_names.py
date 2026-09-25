@@ -42,6 +42,7 @@ ABSENT_ON_PURPOSE = {
 	"CodeEditor",
 	"FloatingWindow",
 	"MultiEmailInput",
+	"ThemeSwitcher",
 }
 
 # PascalCase in prose that names a browser API, not a component.
