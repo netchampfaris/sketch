@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
-// @ts-expect-error frappe-ui/vite ships untyped JS.
 import frappeui from 'frappe-ui/vite'
 
 // Runs inside a Frappe site, so the frappeui plugin keeps its Frappe defaults:
