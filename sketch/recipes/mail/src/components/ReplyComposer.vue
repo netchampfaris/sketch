@@ -46,7 +46,7 @@ function send() {
         placeholder="Write your reply…"
       >
         <div class="border-b border-outline-gray-1 px-2 py-1.5">
-          <EditorFixedMenu :items="commentToolbar" button-size="sm" />
+          <EditorFixedMenu :items="commentToolbar" size="sm" />
         </div>
         <EditorContent class="max-h-56 overflow-y-auto px-3 py-2" />
       </Editor>

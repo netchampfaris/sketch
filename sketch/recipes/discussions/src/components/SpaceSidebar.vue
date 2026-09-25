@@ -38,12 +38,12 @@ const menuItems = [
          overlay scrollbar. -->
     <ScrollArea class="min-h-0 flex-1" viewport-class="px-2 pt-0.5 pb-10">
       <nav class="space-y-0.5">
-        <SidebarItem to="/" label="Home">
+        <SidebarItem route="/" label="Home">
           <template #prefix>
             <span class="lucide-home size-4" aria-hidden="true" />
           </template>
         </SidebarItem>
-        <SidebarItem to="/search" label="Search">
+        <SidebarItem route="/search" label="Search">
           <template #prefix>
             <span class="lucide-search size-4" aria-hidden="true" />
           </template>
@@ -66,7 +66,7 @@ const menuItems = [
         <SidebarItem
           v-for="space in spaces"
           :key="space.name"
-          :to="`/spaces/${space.slug}`"
+          :route="`/spaces/${space.slug}`"
           :label="space.name"
         >
           <template #prefix>

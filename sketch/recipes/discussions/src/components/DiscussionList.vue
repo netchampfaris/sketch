@@ -30,7 +30,7 @@ const visibleDiscussions = computed(() =>
       v-for="discussion in visibleDiscussions"
       :key="discussion.id"
       class="h-15"
-      :to="`/thread?d=${discussion.id}`"
+      :route="`/thread?d=${discussion.id}`"
     >
       <ListCell>
         <Avatar :image="discussion.image" :label="discussion.author" size="2xl" />

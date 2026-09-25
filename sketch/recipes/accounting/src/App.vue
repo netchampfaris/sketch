@@ -36,7 +36,7 @@ import { navGroups } from './data'
                 <SidebarItem
                   v-for="item in group.items"
                   :key="item.key"
-                  :to="item.to"
+                  :route="item.to"
                 >
                   <template #prefix>
                     <span :class="item.icon" class="size-4" aria-hidden="true" />

@@ -39,7 +39,7 @@ const activeNav = ref('Deals')
               <SidebarItem
                 v-for="item in nav"
                 :key="item.label"
-                :to="item.label === 'Deals' ? '/' : undefined"
+                :route="item.label === 'Deals' ? '/' : undefined"
                 :active="activeNav === item.label"
                 @click="activeNav = item.label"
               >

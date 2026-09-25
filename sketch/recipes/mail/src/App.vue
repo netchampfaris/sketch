@@ -46,7 +46,7 @@ import { labels, mailboxes, unreadCount } from './data'
               <SidebarItem
                 v-for="box in mailboxes"
                 :key="box.key"
-                :to="box.path"
+                :route="box.path"
               >
                 <template #prefix>
                   <span :class="box.icon" class="size-4" aria-hidden="true" />
@@ -69,7 +69,7 @@ import { labels, mailboxes, unreadCount } from './data'
               <SidebarItem
                 v-for="tag in labels"
                 :key="tag.key"
-                :to="tag.path"
+                :route="tag.path"
               >
                 <template #prefix>
                   <span

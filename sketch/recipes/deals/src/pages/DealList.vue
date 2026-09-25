@@ -86,7 +86,7 @@ const sortedRows = computed(() => {
         <ListHeaderCell class="justify-end">Close date</ListHeaderCell>
       </ListHeader>
       <ListRows :items="sortedRows" v-slot="{ item: deal, value }">
-        <ListRow :value="value" :to="`/deals/${encodeURIComponent(deal.org)}`">
+        <ListRow :value="value" :route="`/deals/${encodeURIComponent(deal.org)}`">
           <ListCell>
             <Avatar
               :label="deal.org"

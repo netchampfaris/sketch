@@ -32,7 +32,7 @@ import { navItems } from './data'
               <SidebarItem
                 v-for="item in navItems"
                 :key="item.key"
-                :to="item.path"
+                :route="item.path"
               >
                 <template #prefix>
                   <span :class="item.icon" class="size-4" aria-hidden="true" />
