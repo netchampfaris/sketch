@@ -9,7 +9,7 @@ is served on its own, and every reply is one JSON document.
 **Dual-era.** One endpoint serves the legacy revision `2025-06-18` and the
 modern revision `2026-07-28`. `2025-11-25` is not served: its nine changes are
 OAuth discovery, icons, elicitation, sampling and tasks, and none of them touch
-Sketch's twelve tools.
+Sketch's prototype tools.
 
 The era switch is one test: the presence of
 `params._meta["io.modelcontextprotocol/protocolVersion"]`. Sketch keeps no
@@ -51,7 +51,7 @@ HEADER_NAME = "Mcp-Name"
 HEADER_MISMATCH = -32020
 UNSUPPORTED_PROTOCOL_VERSION = -32022
 
-# The tool set is the same twelve for every account, so it caches publicly.
+# The tool set is the same for every account, so it caches publicly.
 # One hour, the value in the revision's own example.
 CACHE_TTL_MS = 3600000
 CACHE_SCOPE = "public"

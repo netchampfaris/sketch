@@ -16,6 +16,7 @@ import io
 import os
 import posixpath
 import shutil
+import tempfile
 import zipfile
 
 import frappe
@@ -424,39 +425,61 @@ def write_files(name: str, files: list[dict]) -> list[str]:
 
 
 def edit_file(name: str, path: str, old_string: str, new_string: str) -> None:
-	"""Replace one exact occurrence of `old_string`.
+	"""Replace one exact occurrence. Uses the same validation as batch edits."""
+	edit_files(name, [{"path": path, "old_string": old_string, "new_string": new_string}])
 
-	Raises when `old_string` is absent, and when it occurs more than once.
 
-	An edit grows a file, so it passes the same quotas as a write
-	(`preflight`). The file on disk is left alone when it does not.
+def edit_files(name: str, edits: list[dict]) -> list[str]:
+	"""Apply edits in order, validating the whole batch before changing files.
+
+	Repeated paths build on earlier edits in this batch. Stage replacements and
+	backups outside the tree so a failed replacement can restore earlier files.
 	"""
-	absolute = safe_join(name, path)
-	if not os.path.isfile(absolute):
-		frappe.throw(frappe._("No such file: {0}").format(path), frappe.ValidationError)
+	if not edits or len(edits) > MAX_BATCH_FILES:
+		frappe.throw(f"edits must contain between 1 and {MAX_BATCH_FILES} replacements")
+	planned = {}
+	for index, edit in enumerate(edits):
+		path = edit["path"]
+		absolute = safe_join(name, path)
+		if absolute not in planned:
+			if not os.path.isfile(absolute):
+				frappe.throw(f"No such file: {path}")
+			with open(absolute, encoding="utf-8") as handle:
+				source = handle.read()
+			planned[absolute] = {"path": path, "absolute": absolute, "content": source}
+		entry = planned[absolute]
+		source = entry["content"]
+		old = edit["old_string"]
+		if not old:
+			frappe.throw(f"edits[{index}].old_string must not be empty")
+		count = source.count(old)
+		if count == 0:
+			frappe.throw(f"edits[{index}]: old_string is not in {path}. Read the file again and retry.")
+		if count > 1:
+			frappe.throw(f"edits[{index}]: old_string occurs {count} times in {path}. Give more surrounding lines.")
+		entry["content"] = source.replace(old, edit["new_string"], 1)
+		entry["bytes"] = len(entry["content"].encode("utf-8"))
+	preflight(name, list(planned.values()))
 
-	with open(absolute, encoding="utf-8") as handle:
-		source = handle.read()
-
-	count = source.count(old_string)
-	if count == 0:
-		frappe.throw(
-			frappe._("old_string is not in {0}. Read the file again and retry.").format(path),
-			frappe.ValidationError,
-		)
-	if count > 1:
-		frappe.throw(
-			frappe._("old_string occurs {0} times in {1}. Give more surrounding lines.").format(
-				count, path
-			),
-			frappe.ValidationError,
-		)
-
-	updated = source.replace(old_string, new_string, 1)
-	preflight(name, [{"path": path, "absolute": absolute, "bytes": len(updated.encode("utf-8"))}])
-
-	with open(absolute, "w", encoding="utf-8") as handle:
-		handle.write(updated)
+	with tempfile.TemporaryDirectory(dir=os.path.dirname(prototype_dir(name))) as staging:
+		staged = []
+		for index, entry in enumerate(planned.values()):
+			updated = os.path.join(staging, f"{index}.new")
+			backup = os.path.join(staging, f"{index}.old")
+			shutil.copy2(entry["absolute"], backup)
+			with open(updated, "w", encoding="utf-8") as handle:
+				handle.write(entry["content"])
+			staged.append((entry["absolute"], updated, backup))
+		applied = []
+		try:
+			for absolute, updated, backup in staged:
+				os.replace(updated, absolute)
+				applied.append((absolute, backup))
+		except OSError:
+			for absolute, backup in reversed(applied):
+				os.replace(backup, absolute)
+			raise
+	return [entry["path"] for entry in planned.values()]
 
 
 def delete_file(name: str, path: str) -> None:

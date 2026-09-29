@@ -289,6 +289,13 @@ def do_edit_file(args: dict) -> ToolResult:
 	return ToolResult(text=f"Edited {path}.")
 
 
+def do_edit_files(args: dict) -> ToolResult:
+	doc = owned(args)
+	paths = prototype_files.edit_files(doc.name, args["edits"])
+	versions.note_write(doc.name, paths, set(paths))
+	return ToolResult(text=f"Edited {len(paths)} file(s): {', '.join(paths)}")
+
+
 def do_delete_file(args: dict) -> ToolResult:
 	doc = owned(args)
 	path = args.get("path")
@@ -603,6 +610,30 @@ def build_tools() -> dict[str, Tool]:
 					"required": ["prototype", "path", "old_string", "new_string"],
 				},
 				handler=do_edit_file,
+			),
+			Tool(
+				name="edit_files",
+				description="Apply exact replacements across files in order. Repeated paths use the preceding edit's result. Every match and quota is checked before files change. An absent or ambiguous match leaves all files unchanged.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"edits": {
+							"type": "array", "minItems": 1, "maxItems": prototype_files.MAX_BATCH_FILES,
+							"items": {
+								"type": "object",
+								"properties": {
+									"path": {"type": "string", "minLength": 1},
+									"old_string": {"type": "string", "minLength": 1},
+									"new_string": {"type": "string"},
+								},
+								"required": ["path", "old_string", "new_string"],
+							},
+						},
+					},
+					"required": ["prototype", "edits"],
+				},
+				handler=do_edit_files,
 			),
 			Tool(
 				name="delete_file",

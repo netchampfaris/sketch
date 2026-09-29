@@ -56,3 +56,50 @@ class TestMcpWorkflows(IntegrationTestCase):
 		self.assertFalse(reply["isError"], reply)
 		from sketch import api
 		self.assertEqual(api.list_versions(self.doc.slug)[0]["prompt"], prompt)
+
+	def test_batch_edits_validate_every_match_before_writing(self):
+		edits = [
+			{"path": "src/one.js", "old_string": "one", "new_string": "first"},
+			{"path": "src/two.js", "old_string": "absent", "new_string": "second"},
+		]
+		reply = self.call("edit_files", edits=edits)
+		self.assertTrue(reply["isError"], reply)
+		self.assertIn("edits[1]", reply["content"][0]["text"])
+		self.assertEqual(self.read("src/one.js")["src/one.js"], "export default 'one'\n")
+		edits[1]["old_string"] = "two"
+		edits.append({"path": "src/one.js", "old_string": "first", "new_string": "final"})
+		reply = self.call("edit_files", edits=edits)
+		self.assertFalse(reply["isError"], reply)
+		self.assertEqual(self.read("src/one.js", "src/two.js"), {
+			"src/one.js": "export default 'final'\n",
+			"src/two.js": "export default 'second'\n",
+		})
+		commit = self.call("commit", prompt="Change both files")
+		self.assertFalse(commit["isError"], commit)
+		self.assertEqual(commit["structuredContent"]["files_modified"], 2)
+
+	def test_batch_edit_restores_files_after_a_write_failure(self):
+		import os
+		from unittest.mock import patch
+
+		replace = os.replace
+		calls = 0
+
+		def fail_second(source, destination):
+			nonlocal calls
+			calls += 1
+			if calls == 2:
+				raise OSError("test write failure")
+			return replace(source, destination)
+
+		with patch("sketch.prototype_files.os.replace", side_effect=fail_second):
+			reply = self.call("edit_files", edits=[
+				{"path": "src/one.js", "old_string": "one", "new_string": "first"},
+				{"path": "src/two.js", "old_string": "two", "new_string": "second"},
+			])
+		self.assertTrue(reply["isError"], reply)
+		self.assertEqual(self.read("src/one.js", "src/two.js"), {
+			"src/one.js": "export default 'one'\n",
+			"src/two.js": "export default 'two'\n",
+		})
+		self.assertFalse(self.call("commit", prompt="Nothing changed")["structuredContent"]["recorded"])
