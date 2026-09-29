@@ -14,9 +14,9 @@ A Frappe app. Live at [sketch.netchamp.dev](https://sketch.netchamp.dev).
 2. Your agent connects to `https://<site>/mcp` with that token.
 3. The agent writes Vue files into a Prototype: `src/pages`, `src/components`,
    `src/App.vue`, `src/router.ts`.
-4. `check` compiles and mounts the tree in a real browser, walks the routes and
-   returns compile errors, console errors and a screenshot per route.
-5. `commit` records a version, with the prompt that produced it.
+4. The agent verifies rendering and interactions in your authenticated browser.
+   Without browser access, it uses hosted `check` for rendering errors and optional screenshots.
+5. `commit` records a version, with the prompt that produced it. Gallery previews refresh in the background.
 
 There is no backend inside a Prototype. Data lives in plain `ref`s in the
 files, so a prototype is a self-contained tree that renders anywhere.
@@ -68,7 +68,7 @@ Sixteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
 | `set_name` | Rename. The slug never moves |
 | `set_public` | Turn the public link on or off |
 
-For mobile detail pages, call `check` with `routes: ["/items/42"]`,
+When using the hosted fallback for mobile detail pages, call `check` with `routes: ["/items/42"]`,
 `viewport: {"width": 390, "height": 844}`, `full_page: true`, and `screenshot: true`.
 The report lists visited routes. Each screenshot carries its route and capture size.
 Gallery thumbnails retain their desktop size.
@@ -86,7 +86,8 @@ A missing or ambiguous match rejects the batch before files change.
 Use `list_runtimes` to find installed versions. Call `set_runtime` with the prototype slug and an exact `version`.
 The result includes `previous_pin` so you can switch back.
 Open owner viewers reload, and thumbnails become stale. Source files and URLs remain unchanged.
-Run `check` with `screenshot: true` after switching to verify compatibility and refresh previews.
+Verify compatibility in your browser after switching, or use `check` if browser access is unavailable.
+Previews refresh in the background.
 
 Tool arguments are validated against their published schemas.
 Commit summaries allow 140 characters. The user's prompt remains unchanged.

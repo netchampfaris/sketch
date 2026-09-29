@@ -76,7 +76,7 @@ Call `list_runtimes` to find installed frappe-ui versions.
 Pass an exact `version` and the prototype slug to `set_runtime`.
 The result includes `previous_pin`; pass that value to `set_runtime` to switch back.
 Source files remain unchanged. Component APIs can differ between runtime versions.
-Run `check` with `screenshot: true` after switching. Correct any reported errors before finishing.
+Verify compatibility after switching, using the workflow below. Correct reported errors before finishing.
 
 ### Edit and verify
 
@@ -84,7 +84,15 @@ Use `edit_files` for related changes. Its `edits` array contains `path`, `old_st
 Edits run in order, including repeated edits to one file.
 Each old string must match exactly once. A failed match leaves every file unchanged.
 
-Call `check` with `screenshot: true` after changes. For a mobile detail page, use:
+When you can access the user's authenticated browser:
+
+1. Open the prototype URL returned by `create_prototype` or `list_prototypes`.
+2. Reload after changes. Wait for `window.__sketch` and inspect its errors and the browser console.
+3. Visit the affected routes, including concrete detail paths. Inspect relevant desktop and mobile layouts.
+4. Test the changed interactions, such as button clicks and form submission. Fix errors before finishing.
+
+If browser access is unavailable, use the hosted `check` fallback.
+Request screenshots when you need to inspect appearance. For a mobile detail page, use:
 
 ```json
 {
@@ -99,8 +107,11 @@ Call `check` with `screenshot: true` after changes. For a mobile detail page, us
 Explicit routes replace automatic route discovery. Supply concrete paths, including query parameters when needed.
 Without `routes`, checks visit static routes and report skipped dynamic patterns.
 Read `visited` and `skipped` before claiming route coverage.
-Screenshots identify their route and viewport. Gallery thumbnails keep their desktop size.
+Screenshots identify their route and viewport.
 A passing check verifies rendering, not button clicks or form submission.
+
+Report which interactions you tested and what remains unverified.
+Gallery thumbnails refresh in the background after commits and runtime changes. They do not require `check`.
 
 Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary within 140 characters.
 

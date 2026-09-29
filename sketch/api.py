@@ -161,8 +161,7 @@ def _card_image(name: str, username: str, slug: str, rev: str, owner: str) -> di
 	"""The card pictures, one URL per theme, and a refresh when they are old.
 
 	Returns None when this Prototype has never been captured. The card then
-	draws its placeholder, which is the ordinary state of a Prototype whose
-	agent has not run `check` with `screenshot: true` yet.
+	draws its placeholder until a background capture completes.
 
 	Only the themes actually on disk are named. A dark capture that failed
 	leaves `dark` absent rather than pointing at a 404, so the reader falls
@@ -744,12 +743,9 @@ def set_public(slug: str, is_public: bool) -> dict:
 def refresh_preview(slug: str) -> dict:
 	"""Re-take this Prototype's card pictures now, and answer with the new row.
 
-	The card is normally taken during the `check` the agent runs at the end of
-	a request, and re-taken in the background when it goes stale
-	(`_card_image`). This is the manual door for the two cases neither of those
-	covers: a Prototype whose agent has not checked it since the pictures
-	existed, and one whose background refresh could not run because checkd or
-	the worker was down.
+	Commits, runtime changes, and owner gallery reads request background captures.
+	This manual action retries a missing or stale preview immediately, including
+	when a worker or checkd was unavailable.
 
 	It runs the browser inline rather than queueing, which is the point: the
 	user asked for this one and is watching the card. It costs about two

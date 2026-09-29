@@ -13,7 +13,7 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
-from sketch import checkd
+from sketch import checkd, thumbnails
 from sketch.mcp import tools
 from sketch.tests import utils
 
@@ -83,6 +83,10 @@ class TestCheckOptions(IntegrationTestCase):
 		self.assertEqual(reply["structuredContent"]["status"], "ok", reply["content"][0])
 		return reply
 
+	def capture_preview(self):
+		with patch.object(checkd, "URL", self.url):
+			self.assertTrue(thumbnails.capture(self.doc.name))
+
 	def test_mobile_full_page_capture_visits_a_concrete_detail_route(self):
 		reply = self.check(
 			screenshot=True,
@@ -100,8 +104,9 @@ class TestCheckOptions(IntegrationTestCase):
 		self.assertEqual(width, 390)
 		self.assertGreaterEqual(height, 1800)
 		self.assertIn("/items/42?tab=details (390x844, full page)", reply["content"][1]["text"])
-		# A mobile check must not turn gallery cards into mobile screenshots.
-		from sketch import thumbnails
+		self.assertEqual(thumbnails.state(self.doc.name), "missing")
+		# Independent preview capture keeps the gallery at desktop size.
+		self.capture_preview()
 
 		for theme in ("light", "dark"):
 			with open(thumbnails.png_path(self.doc.name, theme), "rb") as handle:
@@ -179,14 +184,16 @@ onMounted(async () => {
 		target = next((pin for pin in available["versions"] if pin != self.doc.pin), None)
 		if target is None:
 			self.skipTest("runtime switching needs two installed builds")
-		self.check(screenshot=True)
+		self.capture_preview()
 		self.assertEqual(thumbnails.state(self.doc.name), "fresh")
 		before = api.prototype_revision(self.doc.slug)["rev"]
 		old_pin = self.doc.pin
 		sources = tools.call_tool(
 			"read_files", {"prototype": self.doc.slug, "paths": ["src/App.vue", "src/router.ts"]}
 		)["structuredContent"]
-		reply = tools.call_tool("set_runtime", {"prototype": self.doc.slug, "version": target})
+		with patch.object(thumbnails, "request_refresh") as refresh:
+			reply = tools.call_tool("set_runtime", {"prototype": self.doc.slug, "version": target})
+			refresh.assert_called_once_with(self.doc.name)
 		self.assertFalse(reply["isError"], reply)
 		self.assertEqual(reply["structuredContent"]["previous_pin"], old_pin)
 		self.assertEqual(reply["structuredContent"]["pin"], target)
@@ -199,7 +206,7 @@ onMounted(async () => {
 			)["structuredContent"],
 		)
 		frappe.db.commit()
-		self.check(screenshot=True)
+		self.capture_preview()
 		self.assertEqual(thumbnails.state(self.doc.name), "fresh")
 		# The gallery computes its revision without a second source-tree walk.
 		row = next(row for row in api.list_prototypes() if row["slug"] == self.doc.slug)

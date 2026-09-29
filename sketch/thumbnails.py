@@ -203,7 +203,8 @@ def capture(name: str) -> list[str]:
 def request_refresh(name: str) -> None:
 	"""Ask for a capture in the background, at most one per Prototype at a time.
 
-	The gallery polls, so this is called on every poll of every stale card. The
+	Commits and runtime changes request a capture. Gallery polls also request
+	a capture for each stale card. The
 	`job_id` plus `deduplicate` is what keeps that from queueing a browser run
 	every few seconds: a second request while the first is queued or running is
 	dropped.

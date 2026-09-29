@@ -240,9 +240,10 @@ def do_set_runtime(args: dict) -> ToolResult:
 	if previous != pin:
 		doc.pin = pin
 		doc.save()
+		thumbnails.request_refresh(doc.name)
 	payload = {**record(doc), "previous_pin": previous}
 	return ToolResult(
-		text=f"Runtime: {previous} -> {pin}. Source files are unchanged. Run check with screenshot: true to verify compatibility and refresh previews.",
+		text=f"Runtime: {previous} -> {pin}. Source files are unchanged. Verify compatibility in the user's browser, or use check if browser access is unavailable. Previews refresh in the background.",
 		structured=payload,
 	)
 
@@ -352,6 +353,7 @@ def do_commit(args: dict) -> ToolResult:
 			structured={"recorded": False},
 		)
 
+	thumbnails.request_refresh(doc.name)
 	payload = {
 		"recorded": True,
 		"sequence": version.sequence,
@@ -399,17 +401,6 @@ def do_set_name(args: dict) -> ToolResult:
 def do_check(args: dict) -> ToolResult:
 	"""Open the Prototype in sketch-checkd and report what the browser saw.
 
-	`screenshot` also takes the card images, in both themes. They are the same
-	browser run and the agent never sees them: the gallery and the feed do
-	(`sketch/thumbnails.py`). The skill tells the agent to call check with
-	`screenshot: true` once at the end of every request, so that is the moment
-	the card is already worth re-taking, and it costs one extra page load
-	rather than a second check.
-
-	The stamp is read before the run and not after. A file written while the
-	browser was open must leave the pictures stale, so the next card view asks
-	for another capture.
-
 	The browser runs inline on a web worker, so one account with many agents
 	must not hold them all. `claim_slot` is what stops that, and it sits
 	against the run it guards: `run` gives the claim back on every way out, so
@@ -417,15 +408,12 @@ def do_check(args: dict) -> ToolResult:
 	"""
 	doc = owned(args)
 	screenshot = args.get("screenshot", False)
-	rev = prototype_files.revision(doc.name) if screenshot else ""
 	checkd.claim_slot()
 	options = {key: args[key] for key in ("routes", "viewport", "full_page") if key in args}
-	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot, **options)
+	report = checkd.run(doc, screenshot=screenshot, thumbnails=False, **options)
 
 	shots = report.pop("screenshots", None) or []
-	cards = report.pop("thumbnails", None) or []
-	if rev and cards:
-		thumbnails.store(doc.name, cards, rev)
+	report.pop("thumbnails", None)
 
 	content = []
 	for shot in shots:
@@ -571,7 +559,7 @@ def build_tools() -> dict[str, Tool]:
 			),
 			Tool(
 				name="set_runtime",
-				description="Change a Prototype's frappe-ui runtime to an installed version. Source files and its URL stay unchanged. Run check with screenshot: true afterward; component APIs can differ between versions. Use previous_pin from the result to switch back.",
+				description="Change a Prototype's frappe-ui runtime to an installed version. Source files and its URL stay unchanged. Verify compatibility in the user's browser, or use check when browser access is unavailable. Component APIs can differ between versions. Use previous_pin from the result to switch back.",
 				parameters={
 					"type": "object",
 					"properties": {
@@ -757,7 +745,7 @@ def build_tools() -> dict[str, Tool]:
 			),
 			Tool(
 				name="check",
-				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Call it with screenshot: true once at the end of every user request: that is a workflow step, not an option. Fix every error it reports before you report done, then call commit.",
+				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Use this fallback when the user's browser is unavailable. Prefer that browser for rendering and interaction checks. Hosted checks do not test interactions. Fix reported errors before finishing.",
 				parameters={
 					"type": "object",
 					"properties": {
@@ -791,7 +779,7 @@ def build_tools() -> dict[str, Tool]:
 						},
 						"screenshot": {
 							"type": "boolean",
-							"description": "Return one labeled PNG per visited route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",
+							"description": "Return one labeled PNG per visited route. Gallery previews refresh independently in the background.",
 							"default": False,
 						},
 					},
@@ -802,7 +790,7 @@ def build_tools() -> dict[str, Tool]:
 			),
 			Tool(
 				name="commit",
-				description="Record a version of the Prototype. Call it once at the end of every user request, after check, with `prompt` set to the user's message word for word. It files every change you made since the last version under that prompt, so the person can read back what they asked for and what it changed.",
+				description="Record a version of the Prototype. Call it once at the end of every user request, after verification, with `prompt` set to the user's message word for word. It files every change you made since the last version under that prompt, so the person can read back what they asked for and what it changed.",
 				parameters={
 					"type": "object",
 					"properties": {

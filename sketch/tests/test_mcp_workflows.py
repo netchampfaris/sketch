@@ -1,5 +1,7 @@
 """Agent workflows through MCP tool calls, with real prototype files."""
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -37,6 +39,39 @@ class TestMcpWorkflows(IntegrationTestCase):
 		reply = self.call("read_files", paths=list(paths))
 		self.assertFalse(reply["isError"], reply)
 		return {f["path"]: f["content"] for f in reply["structuredContent"]["files"]}
+
+	def test_commit_queues_preview_without_a_hosted_check(self):
+		from sketch import checkd
+
+		self.assertFalse(
+			self.call("edit_file", path="src/one.js", old_string="one", new_string="updated")["isError"]
+		)
+		with patch.object(checkd, "run") as render, patch("frappe.enqueue") as enqueue:
+			reply = self.call("commit", prompt="Create the prototype")
+			self.assertFalse(reply["isError"], reply)
+			self.assertTrue(reply["structuredContent"]["recorded"])
+			enqueue.assert_called_once_with(
+				"sketch.thumbnails.capture",
+				queue="long",
+				name=self.doc.name,
+				job_id=f"sketch-thumbnail-{self.doc.name}",
+				deduplicate=True,
+				enqueue_after_commit=True,
+			)
+			enqueue.reset_mock()
+			reply = self.call("commit", prompt="Nothing changed")
+			self.assertFalse(reply["structuredContent"]["recorded"])
+			enqueue.assert_not_called()
+			render.assert_not_called()
+
+	def test_commit_survives_an_unavailable_preview_queue(self):
+		self.assertFalse(
+			self.call("edit_file", path="src/one.js", old_string="one", new_string="updated")["isError"]
+		)
+		with patch("frappe.enqueue", side_effect=ConnectionError("Queue unavailable")):
+			reply = self.call("commit", prompt="Keep the changes")
+		self.assertFalse(reply["isError"], reply)
+		self.assertTrue(reply["structuredContent"]["recorded"])
 
 	def test_invalid_arguments_name_the_field_and_leave_files_unchanged(self):
 		cases = [
