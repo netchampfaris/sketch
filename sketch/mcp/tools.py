@@ -20,14 +20,14 @@ explicitly, never guessed from the text.
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import frappe
 from frappe.utils import strip_html
 from jsonschema import Draft202012Validator
 
-from sketch import checkd, events, prototype, prototype_files, thumbnails, versions
+from sketch import assets, checkd, events, prototype, prototype_files, thumbnails, versions
 
 logger = frappe.logger("sketch.mcp")
 
@@ -48,11 +48,11 @@ class Tool:
 
 @dataclass
 class ToolResult:
-	"""What a handler returns: text, and optionally structure and images."""
+	"""A summary, structured output, and optional labeled MCP content blocks."""
 
 	text: str
 	structured: dict | None = None
-	images: list[dict] = field(default_factory=list)
+	content: list[dict] = field(default_factory=list)
 
 
 READ_ONLY = {"list_prototypes", "list_files", "read_files", "check", "get_skill"}
@@ -92,7 +92,7 @@ def call_tool(name: str, arguments: dict) -> dict:
 		return {"content": [{"type": "text", "text": failure_text(name, e)}], "isError": True}
 
 	events.record(events.TOOL_CALL, ok=True, detail=name, ms=_elapsed_ms(started))
-	reply = {"content": [{"type": "text", "text": out.text}] + out.images, "isError": False}
+	reply = {"content": [{"type": "text", "text": out.text}, *out.content], "isError": False}
 	if out.structured is not None:
 		reply["structuredContent"] = out.structured
 
@@ -168,11 +168,7 @@ def user_prompt(args: dict) -> str:
 	prompt = args.get("prompt")
 	prompt = prompt if isinstance(prompt, str) else ""
 	if not prompt.strip():
-		frappe.throw(
-			frappe._(
-				"prompt is required. Send the user's message for this request, word for word."
-			)
-		)
+		frappe.throw(frappe._("prompt is required. Send the user's message for this request, word for word."))
 
 	return prompt
 
@@ -289,6 +285,21 @@ def do_edit_file(args: dict) -> ToolResult:
 	return ToolResult(text=f"Edited {path}.")
 
 
+def do_upload_asset(args: dict) -> ToolResult:
+	"""Keep images inside the existing source tree and permission boundary."""
+	doc = owned(args)
+	path = args["path"]
+	if not path.startswith("src/assets/") or not path.endswith(".js"):
+		frappe.throw("path must be a JavaScript module under src/assets/, such as src/assets/logo.js")
+	content = assets.image_module(args["data_base64"], args["mime_type"])
+	existed = {path} if os.path.isfile(prototype_files.safe_join(doc.name, path)) else set()
+	prototype_files.write_files(doc.name, [{"path": path, "content": content}])
+	versions.note_write(doc.name, [path], existed)
+	return ToolResult(
+		text=f"Uploaded {path}. Import its default export and bind it to an image's src. The image works in checks without external requests."
+	)
+
+
 def do_edit_files(args: dict) -> ToolResult:
 	doc = owned(args)
 	paths = prototype_files.edit_files(doc.name, args["edits"])
@@ -396,16 +407,18 @@ def do_check(args: dict) -> ToolResult:
 	if rev and cards:
 		thumbnails.store(doc.name, cards, rev)
 
-	images = []
+	content = []
 	for shot in shots:
 		if not shot.get("png_base64"):
 			continue
 		viewport = shot.get("viewport", report.get("viewport", {"width": 1280, "height": 800}))
-		label = f"Screenshot: {shot.get('route', '/')} ({viewport['width']}×{viewport['height']}, {'full page' if shot.get('fullPage') else 'viewport'})"
-		images.extend([
-			{"type": "text", "text": label},
-			{"type": "image", "data": shot["png_base64"], "mimeType": "image/png"},
-		])
+		label = f"Screenshot: {shot.get('route', '/')} ({viewport['width']}x{viewport['height']}, {'full page' if shot.get('fullPage') else 'viewport'})"
+		content.extend(
+			[
+				{"type": "text", "text": label},
+				{"type": "image", "data": shot["png_base64"], "mimeType": "image/png"},
+			]
+		)
 	uncommitted = versions.pending_count(doc.name)
 	report["uncommitted"] = uncommitted
 	status = str(report.get("status") or "unknown")
@@ -413,7 +426,7 @@ def do_check(args: dict) -> ToolResult:
 	# that does not build. A check that never reached the browser raises out of
 	# `checkd.run` above and is a failed `tool_call` instead, with no row here.
 	events.record(events.CHECK, prototype=doc.name, ok=status == "ok", detail=status)
-	return ToolResult(text=check_text(report, uncommitted), structured=report, images=images)
+	return ToolResult(text=check_text(report, uncommitted), structured=report, content=content)
 
 
 def check_text(report: dict, uncommitted: int = 0) -> str:
@@ -433,7 +446,7 @@ def check_text(report: dict, uncommitted: int = 0) -> str:
 		lines.append("visited: " + (", ".join(report["visited"]) or "none"))
 	if report.get("viewport"):
 		v = report["viewport"]
-		lines.append(f"viewport: {v['width']}×{v['height']}")
+		lines.append(f"viewport: {v['width']}x{v['height']}")
 	if report.get("routes"):
 		lines.append("routes: " + ", ".join(report["routes"]))
 	for entry in report.get("skipped") or []:
@@ -564,7 +577,12 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
-						"paths": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"type": "string", "minLength": 1}},
+						"paths": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 500,
+							"items": {"type": "string", "minLength": 1},
+						},
 					},
 					"required": ["prototype", "paths"],
 				},
@@ -633,7 +651,9 @@ def build_tools() -> dict[str, Tool]:
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
 						"edits": {
-							"type": "array", "minItems": 1, "maxItems": prototype_files.MAX_BATCH_FILES,
+							"type": "array",
+							"minItems": 1,
+							"maxItems": prototype_files.MAX_BATCH_FILES,
 							"items": {
 								"type": "object",
 								"properties": {
@@ -648,6 +668,30 @@ def build_tools() -> dict[str, Tool]:
 					"required": ["prototype", "edits"],
 				},
 				handler=do_edit_files,
+			),
+			Tool(
+				name="upload_asset",
+				description="Upload an image as a JavaScript module exporting a data URL. Import that module and bind the export to an image's src. Images work in checks without external network access. At most 512000 decoded bytes. Replaces an existing module at the same path; normal file and tree quotas apply.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"path": {
+							"type": "string",
+							"pattern": r"^src/assets/.+\.js$",
+							"description": "Module path, such as src/assets/logo.js.",
+						},
+						"mime_type": {"type": "string", "enum": list(assets.MIME_FORMATS)},
+						"data_base64": {
+							"type": "string",
+							"minLength": 4,
+							"maxLength": ((assets.MAX_ASSET_BYTES + 2) // 3) * 4,
+							"description": "Base64 image bytes, without a data URL prefix.",
+						},
+					},
+					"required": ["prototype", "path", "mime_type", "data_base64"],
+				},
+				handler=do_upload_asset,
 			),
 			Tool(
 				name="delete_file",
@@ -667,8 +711,16 @@ def build_tools() -> dict[str, Tool]:
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
 						"routes": {
-							"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": True,
-							"items": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": r"^/(?!/)[^\\\s]*$"},
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 20,
+							"uniqueItems": True,
+							"items": {
+								"type": "string",
+								"minLength": 1,
+								"maxLength": 2048,
+								"pattern": r"^/(?!/)[^\\\s]*$",
+							},
 							"description": "Concrete router paths to check instead of automatic discovery, such as /proposals/123 or /schedule?day=2.",
 						},
 						"viewport": {
@@ -678,9 +730,13 @@ def build_tools() -> dict[str, Tool]:
 								"height": {"type": "integer", "minimum": 240, "maximum": 2160},
 							},
 							"required": ["width", "height"],
-							"description": "Capture viewport in pixels. Defaults to 1280×800. Use 390×844 for a mobile layout.",
+							"description": "Capture viewport in pixels. Defaults to 1280x800. Use 390x844 for a mobile layout.",
 						},
-						"full_page": {"type": "boolean", "default": False, "description": "Capture the full scrollable page. Gallery thumbnails keep their default viewport."},
+						"full_page": {
+							"type": "boolean",
+							"default": False,
+							"description": "Capture the full scrollable page. Gallery thumbnails keep their default viewport.",
+						},
 						"screenshot": {
 							"type": "boolean",
 							"description": "Return one labeled PNG per visited route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",

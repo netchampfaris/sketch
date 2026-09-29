@@ -26,11 +26,6 @@ class TestCheckOptions(IntegrationTestCase):
 		utils.require_webserver()
 		cls.owner = utils.make_user("capture", "d2tcapture")
 		cls.addClassCleanup(utils.drop_user, cls.owner)
-		cls.doc = utils.make_prototype(cls.owner, "d2t-capture", files={
-			"src/App.vue": "<template><RouterView /></template>",
-			"src/router.ts": "import Page from './Page.vue'; export default [{path: '/', component: Page}, {path: '/items/:id', component: Page}]",
-			"src/Page.vue": '<template><main style="min-height: 1800px">A tall page</main></template>',
-		})
 		with socket.socket() as sock:
 			sock.bind(("127.0.0.1", 0))
 			port = sock.getsockname()[1]
@@ -39,8 +34,11 @@ class TestCheckOptions(IntegrationTestCase):
 		cls.addClassCleanup(log.close)
 		server = subprocess.Popen(
 			["node", os.path.join(frappe.get_app_path("sketch"), "..", "checkd", "checkd.mjs")],
-			env={**os.environ, "SKETCH_CHECKD_PORT": str(port)}, stdout=log, stderr=log,
+			env={**os.environ, "SKETCH_CHECKD_PORT": str(port)},
+			stdout=log,
+			stderr=log,
 		)
+
 		def stop():
 			server.terminate()
 			try:
@@ -48,6 +46,7 @@ class TestCheckOptions(IntegrationTestCase):
 			except subprocess.TimeoutExpired:
 				server.kill()
 				server.wait()
+
 		cls.addClassCleanup(stop)
 		for _ in range(100):
 			try:
@@ -63,6 +62,17 @@ class TestCheckOptions(IntegrationTestCase):
 
 	def setUp(self):
 		super().setUp()
+		frappe.set_user("Administrator")
+		self.doc = utils.make_prototype(
+			self.owner,
+			"d2t-capture",
+			files={
+				"src/App.vue": "<template><RouterView /></template>",
+				"src/router.ts": "import Page from './Page.vue'; export default [{path: '/', component: Page}, {path: '/items/:id', component: Page}]",
+				"src/Page.vue": '<template><main style="min-height: 1800px">A tall page</main></template>',
+			},
+		)
+		self.addCleanup(utils.drop_prototype, self.doc.name)
 		frappe.set_user(self.owner)
 		self.addCleanup(frappe.set_user, "Administrator")
 
@@ -74,8 +84,12 @@ class TestCheckOptions(IntegrationTestCase):
 		return reply
 
 	def test_mobile_full_page_capture_visits_a_concrete_detail_route(self):
-		reply = self.check(screenshot=True, routes=["/items/42?tab=details"],
-			viewport={"width": 390, "height": 844}, full_page=True)
+		reply = self.check(
+			screenshot=True,
+			routes=["/items/42?tab=details"],
+			viewport={"width": 390, "height": 844},
+			full_page=True,
+		)
 		report = reply["structuredContent"]
 		self.assertEqual(report["visited"], ["/items/42?tab=details"])
 		self.assertEqual(report["skipped"], [])
@@ -85,9 +99,10 @@ class TestCheckOptions(IntegrationTestCase):
 		width, height = struct.unpack(">II", base64.b64decode(images[0]["data"])[16:24])
 		self.assertEqual(width, 390)
 		self.assertGreaterEqual(height, 1800)
-		self.assertIn("/items/42?tab=details (390×844, full page)", reply["content"][1]["text"])
+		self.assertIn("/items/42?tab=details (390x844, full page)", reply["content"][1]["text"])
 		# A mobile check must not turn gallery cards into mobile screenshots.
 		from sketch import thumbnails
+
 		for theme in ("light", "dark"):
 			with open(thumbnails.png_path(self.doc.name, theme), "rb") as handle:
 				self.assertEqual(struct.unpack(">II", handle.read(24)[16:24]), (1280, 800))
@@ -100,9 +115,59 @@ class TestCheckOptions(IntegrationTestCase):
 		self.assertFalse(report["fullPage"])
 
 	def test_invalid_capture_options_are_refused_by_the_service(self):
-		for options in ({"routes": ["https://example.com"]}, {"routes": ["/items/:id"]},
-			{"viewport": {"width": 10000, "height": 844}}, {"fullPage": "false"}):
+		for options in (
+			{"routes": ["https://example.com"]},
+			{"routes": ["/items/:id"]},
+			{"viewport": {"width": 10000, "height": 844}},
+			{"fullPage": "false"},
+		):
 			with self.subTest(options=options):
 				response = requests.post(self.url, json={"url": "http://127.0.0.1/", **options}, timeout=5)
 				self.assertEqual(response.status_code, 400, response.text)
 
+	def test_uploaded_image_decodes_in_the_check_browser_without_egress(self):
+		import io
+
+		from PIL import Image
+
+		buffer = io.BytesIO()
+		Image.new("RGB", (2, 2), "red").save(buffer, format="PNG")
+		reply = tools.call_tool(
+			"upload_asset",
+			{
+				"prototype": self.doc.slug,
+				"path": "src/assets/logo.js",
+				"mime_type": "image/png",
+				"data_base64": base64.b64encode(buffer.getvalue()).decode(),
+			},
+		)
+		self.assertFalse(reply["isError"], reply)
+		reply = tools.call_tool(
+			"write_files",
+			{
+				"prototype": self.doc.slug,
+				"files": [
+					{
+						"path": "src/Asset.vue",
+						"content": """<script setup>
+import { onMounted } from 'vue'
+import logo from './assets/logo.js'
+onMounted(async () => {
+  const image = new Image()
+  image.src = logo
+  await image.decode()
+  if (image.naturalWidth !== 2) throw new Error('Wrong uploaded image size')
+})
+</script><template><img :src="logo" alt="Uploaded logo" /></template>""",
+					},
+					{
+						"path": "src/router.ts",
+						"content": "import Asset from './Asset.vue'; export default [{path: '/', component: Asset}]",
+					},
+				],
+			},
+		)
+		self.assertFalse(reply["isError"], reply)
+		frappe.db.commit()
+		report = self.check(screenshot=True)["structuredContent"]
+		self.assertEqual(report["warnings"], [])

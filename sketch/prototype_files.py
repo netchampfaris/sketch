@@ -456,7 +456,9 @@ def edit_files(name: str, edits: list[dict]) -> list[str]:
 		if count == 0:
 			frappe.throw(f"edits[{index}]: old_string is not in {path}. Read the file again and retry.")
 		if count > 1:
-			frappe.throw(f"edits[{index}]: old_string occurs {count} times in {path}. Give more surrounding lines.")
+			frappe.throw(
+				f"edits[{index}]: old_string occurs {count} times in {path}. Give more surrounding lines."
+			)
 		entry["content"] = source.replace(old, edit["new_string"], 1)
 		entry["bytes"] = len(entry["content"].encode("utf-8"))
 	preflight(name, list(planned.values()))

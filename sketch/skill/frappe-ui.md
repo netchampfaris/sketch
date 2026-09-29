@@ -52,6 +52,50 @@ Every path you pass to a tool is the full relative path, such as
 Put the fixture data in plain `ref`s in the file that uses it, or in a shared
 `src/data.ts`. There is no backend to fetch it from.
 
+### Upload images
+
+Use `upload_asset` for logos and photos that must appear in checks and gallery thumbnails.
+Pass `path: "src/assets/logo.js"`, the image's `mime_type`, and its raw bytes encoded as `data_base64`.
+Accepted formats: PNG, JPEG, GIF, WebP, and SVG. Each image can contain at most 512,000 decoded bytes.
+The tool writes a module exporting a data URL. Normal file and tree quotas still apply.
+
+From `src/App.vue`, import and use it:
+
+```vue
+<script setup>
+import logo from './assets/logo.js'
+</script>
+<template><img :src="logo" alt="Company logo" /></template>
+```
+
+The check browser blocks external images. Uploaded images need no network request.
+
+### Edit and verify
+
+Use `edit_files` for related changes. Its `edits` array contains `path`, `old_string`, and `new_string`.
+Edits run in order, including repeated edits to one file.
+Each old string must match exactly once. A failed match leaves every file unchanged.
+
+Call `check` with `screenshot: true` after changes. For a mobile detail page, use:
+
+```json
+{
+  "prototype": "your-slug",
+  "routes": ["/issues/42"],
+  "viewport": {"width": 390, "height": 844},
+  "full_page": true,
+  "screenshot": true
+}
+```
+
+Explicit routes replace automatic route discovery. Supply concrete paths, including query parameters when needed.
+Without `routes`, checks visit static routes and report skipped dynamic patterns.
+Read `visited` and `skipped` before claiming route coverage.
+Screenshots identify their route and viewport. Gallery thumbnails keep their desktop size.
+A passing check verifies rendering, not button clicks or form submission.
+
+Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary within 140 characters.
+
 ## 3. Rules
 
 1. **Pick the component, do not build one.** Reach for raw HTML only for

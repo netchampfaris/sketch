@@ -97,8 +97,13 @@ async function check(request) {
 
 	// The hard cap covers the queue wait as well, so a caller blocked on one
 	// HTTP call always gets an answer.
-	const options = { screenshot: request.screenshot, thumbnails: request.thumbnails,
-		routes: request.routes, viewport: request.viewport, fullPage: request.fullPage }
+	const options = {
+		screenshot: request.screenshot,
+		thumbnails: request.thumbnails,
+		routes: request.routes,
+		viewport: request.viewport,
+		fullPage: request.fullPage,
+	}
 	const cancelled = { value: false }
 	return await deadline(queued(browser, url, options, cancelled), TIMEOUT_MS, cancelled)
 }
@@ -130,7 +135,10 @@ function readBody(req) {
 
 function send(res, code, payload) {
 	const json = JSON.stringify(payload)
-	res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) })
+	res.writeHead(code, {
+		'content-type': 'application/json',
+		'content-length': Buffer.byteLength(json),
+	})
 	res.end(json)
 }
 
@@ -184,5 +192,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 server.listen(PORT, HOST, () =>
-	console.log(`sketch-checkd on ${HOST}:${PORT}, concurrency ${CONCURRENCY}, timeout ${TIMEOUT_MS} ms`),
+	console.log(
+		`sketch-checkd on ${HOST}:${PORT}, concurrency ${CONCURRENCY}, timeout ${TIMEOUT_MS} ms`,
+	),
 )

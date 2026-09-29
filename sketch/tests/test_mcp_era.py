@@ -82,7 +82,7 @@ class TestMcpEraSwitch(IntegrationTestCase):
 		status, payload = self.call(legacy_message("tools/list"))
 		self.assertEqual(status, 200)
 		tools = payload["result"]["tools"]
-		self.assertEqual(len(tools), 13)
+		self.assertEqual(len(tools), 14)
 		self.assertNotIn("ttlMs", payload["result"])
 
 	def test_modern_request_works(self):
@@ -95,7 +95,7 @@ class TestMcpEraSwitch(IntegrationTestCase):
 		self.assertEqual(result["_meta"][rpc.META_SERVER_INFO]["name"], "sketch")
 		self.assertEqual(result["ttlMs"], rpc.CACHE_TTL_MS)
 		self.assertEqual(result["cacheScope"], rpc.CACHE_SCOPE)
-		self.assertEqual(len(result["tools"]), 13)
+		self.assertEqual(len(result["tools"]), 14)
 
 	def test_modern_server_discover_works(self):
 		status, payload = self.call(

@@ -30,7 +30,8 @@ const REASON_DEADLINE = 'the check ran out of time before this route'
  */
 export function hostRewrite(rawUrl, host) {
 	const url = new URL(rawUrl)
-	if (!host || host === url.hostname) return { url: url.toString(), rule: null, address: url.hostname }
+	if (!host || host === url.hostname)
+		return { url: url.toString(), rule: null, address: url.hostname }
 
 	const address = url.hostname
 	url.hostname = host
@@ -153,7 +154,7 @@ export function egressWarnings(refused) {
 			`the check browser refused ${entry.count} request(s) (${entry.kinds.join(', ')}). ` +
 			`It runs on the server, so it reaches ${refused.allowed} only. ` +
 			'A refused picture or font is empty in the screenshot, and a refused ' +
-			'socket never opens. Inline the asset, or use a data URL, to see it here.',
+			'socket never opens. Use upload_asset to embed an image, then import its data URL module.',
 	}))
 
 	const named = refused.origins.reduce((sum, entry) => sum + entry.count, 0)
@@ -188,17 +189,33 @@ export function validateCheckOptions(options) {
 			throw new Error(`${key} must be a boolean`)
 	}
 	if (options.routes !== undefined && options.routes !== null) {
-		if (!Array.isArray(options.routes) || !options.routes.length || options.routes.length > MAX_ROUTES)
+		if (
+			!Array.isArray(options.routes) ||
+			!options.routes.length ||
+			options.routes.length > MAX_ROUTES
+		)
 			throw new Error(`routes must contain 1 to ${MAX_ROUTES} concrete paths`)
 		for (const path of options.routes) {
-			if (typeof path !== 'string' || !/^\/(?!\/)[^\\\s]*$/.test(path) || path.length > 2048 || !isStatic(path.split(/[?#]/)[0]))
+			if (
+				typeof path !== 'string' ||
+				!/^\/(?!\/)[^\\\s]*$/.test(path) ||
+				path.length > 2048 ||
+				!isStatic(path.split(/[?#]/)[0])
+			)
 				throw new Error('routes must be concrete paths starting with /, such as /tickets/123')
 		}
 	}
 	if (options.viewport !== undefined) {
 		const v = options.viewport
-		if (!v || !Number.isInteger(v.width) || v.width < 320 || v.width > 2560 ||
-			!Number.isInteger(v.height) || v.height < 240 || v.height > 2160)
+		if (
+			!v ||
+			!Number.isInteger(v.width) ||
+			v.width < 320 ||
+			v.width > 2560 ||
+			!Number.isInteger(v.height) ||
+			v.height < 240 ||
+			v.height > 2160
+		)
 			throw new Error('viewport requires width 320–2560 and height 240–2160')
 	}
 }
@@ -210,13 +227,21 @@ export function validateCheckOptions(options) {
  * Returns the Contract 5 body, always with `skipped` present.
  *
  * `screenshot` returns a light PNG for each visited route. Explicit routes,
- * viewport, and fullPage control the captures. `thumbnails` is a different job with a different
+ * viewport, and fullPage control the captures. `thumbnails` has a different
  * reader. It takes the home route only, once per theme, for the gallery card
  * and the feed card. Both are opt-in and neither implies the other.
  */
 export async function runCheck(
 	browser,
-	{ url, screenshot = false, thumbnails = false, routes: selectedRoutes = null, viewport = VIEWPORT, fullPage = false, timeoutMs = CHECK_TIMEOUT_MS } = {},
+	{
+		url,
+		screenshot = false,
+		thumbnails = false,
+		routes: selectedRoutes = null,
+		viewport = VIEWPORT,
+		fullPage = false,
+		timeoutMs = CHECK_TIMEOUT_MS,
+	} = {},
 ) {
 	validateCheckOptions({ screenshot, thumbnails, routes: selectedRoutes, viewport, fullPage })
 	const start = Date.now()
@@ -248,7 +273,9 @@ export async function runCheck(
 			return body(first, {
 				routes,
 				skipped: [],
-				visited: [], viewport, fullPage,
+				visited: [],
+				viewport,
+				fullPage,
 				screenshots: [],
 				thumbnails: [],
 				refused,
@@ -297,7 +324,9 @@ export async function runCheck(
 		return body(final, {
 			routes,
 			skipped,
-			visited, viewport, fullPage,
+			visited,
+			viewport,
+			fullPage,
 			screenshots,
 			thumbnails: shots,
 			refused,
@@ -366,7 +395,20 @@ async function takeThumbnails(browser, page, url, routes, left, refused) {
  * walk can throw, and that status would still read "ok". Recompute it (trap
  * 13).
  */
-function body(report, { routes, skipped, visited = [], viewport = VIEWPORT, fullPage = false, screenshots, thumbnails = [], refused = null, wall }) {
+function body(
+	report,
+	{
+		routes,
+		skipped,
+		visited = [],
+		viewport = VIEWPORT,
+		fullPage = false,
+		screenshots,
+		thumbnails = [],
+		refused = null,
+		wall,
+	},
+) {
 	const errors = (report.errors ?? []).map(error)
 	const consoleErrors = report.consoleErrors ?? []
 	let status = report.status

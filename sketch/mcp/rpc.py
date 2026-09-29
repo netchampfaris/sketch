@@ -65,15 +65,15 @@ PARSE_ERROR = "Parse error: body must be a JSON object"
 
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
-Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except get_skill, list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
 
-A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files and edit_file for small changes to an existing one.
+A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files, edit_file for one replacement, and edit_files for related replacements across files. Use upload_asset for images that must render without external requests.
 
 There is no server and no backend. Data lives in plain refs inside the prototype files. Never import useList, useDoc, useCall, useDoctype, useNewDoc, createResource, createListResource, createDocumentResource, frappeRequest or call. They will throw.
 
 TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components and frappe-ui tokens all work; get_skill documents them.
 
-check returns compile errors, console errors, and one image per route when screenshot is true. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them."""
+check returns errors, visited and skipped routes, and labeled screenshots. Set routes to concrete paths, viewport to width and height, and full_page to true for mobile or long-page checks. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them."""
 
 
 class RpcError(Exception):
@@ -311,9 +311,9 @@ def handle_tools_list(params: dict, modern: bool) -> dict:
 
 def handle_tools_call(params: dict, modern: bool) -> dict:
 	name = params.get("name")
-	if name not in surface.TOOLS:
+	if not isinstance(name, str) or name not in surface.TOOLS:
 		raise RpcError(-32602, f"Unknown tool: {name}")
-	arguments = params.get("arguments") or {}
+	arguments = params.get("arguments", {})
 	if not isinstance(arguments, dict):
 		raise RpcError(-32602, "arguments must be an object")
 

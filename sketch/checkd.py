@@ -103,7 +103,15 @@ def release_slot() -> None:
 		pass
 
 
-def run(doc, screenshot: bool = False, thumbnails: bool = False, *, routes: list[str] | None = None, viewport: dict | None = None, full_page: bool = False) -> dict:
+def run(
+	doc,
+	screenshot: bool = False,
+	thumbnails: bool = False,
+	*,
+	routes: list[str] | None = None,
+	viewport: dict | None = None,
+	full_page: bool = False,
+) -> dict:
 	"""POST to sketch-checkd and return the report. Contract 5.
 
 	`screenshot` returns light PNGs for visited routes. Optional routes and
@@ -136,7 +144,9 @@ def run(doc, screenshot: bool = False, thumbnails: bool = False, *, routes: list
 			response = requests.post(URL, json=body, timeout=TIMEOUT)
 		except requests.exceptions.ConnectionError:
 			frappe.throw(
-				frappe._("the check service is not running at {0}. Ask the site owner to start it.").format(URL)
+				frappe._("the check service is not running at {0}. Ask the site owner to start it.").format(
+					URL
+				)
 			)
 		except requests.exceptions.Timeout:
 			frappe.throw(frappe._("the check service did not answer in {0}s").format(TIMEOUT))

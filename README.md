@@ -46,8 +46,8 @@ sends no `Authorization` header.
 
 ## The tool surface
 
-Twelve tools. Every one but `list_prototypes` and `create_prototype` takes the
-`prototype` slug.
+Fourteen tools. Except for `get_skill`, `list_prototypes`, and
+`create_prototype`, each tool takes the `prototype` slug.
 
 | Tool | What it does |
 | --- | --- |
@@ -58,11 +58,31 @@ Twelve tools. Every one but `list_prototypes` and `create_prototype` takes the
 | `read_files` | Whole files, by relative path |
 | `write_files` | Create a file, or replace one end to end |
 | `edit_file` | Replace one exact string that occurs exactly once |
+| `edit_files` | Apply ordered replacements across files after validating the complete batch |
+| `upload_asset` | Embed an image as an importable data-URL module |
 | `delete_file` | Remove one file |
-| `check` | Compile, mount, walk the routes, report errors and screenshots |
+| `check` | Check automatic or explicit routes, with optional viewport and full-page screenshots |
 | `commit` | Record a version, with the user's prompt |
 | `set_name` | Rename. The slug never moves |
 | `set_public` | Turn the public link on or off |
+
+For mobile detail pages, call `check` with `routes: ["/items/42"]`,
+`viewport: {"width": 390, "height": 844}`, `full_page: true`, and `screenshot: true`.
+The report lists visited routes. Each screenshot carries its route and capture size.
+Gallery thumbnails retain their desktop size.
+
+`upload_asset` takes a module path such as `src/assets/logo.js`, `mime_type`, and `data_base64`.
+It accepts PNG, JPEG, GIF, WebP, and SVG images up to 512,000 decoded bytes.
+Import the module's default export and bind it to an image's `src`.
+The image stays inside the prototype and renders without external requests.
+Normal file and tree quotas apply to the generated module.
+
+`edit_files` takes an `edits` array containing `path`, `old_string`, and `new_string`.
+Edits run in order. Repeated paths use the preceding edit's result.
+A missing or ambiguous match rejects the batch before files change.
+
+Tool arguments are validated against their published schemas.
+Commit summaries allow 140 characters. The user's prompt remains unchanged.
 
 `/mcp` speaks streamable HTTP, POST only, and answers both the 2025-06-18 and
 2026-07-28 protocol revisions. Every failure is JSON that names the fix.
