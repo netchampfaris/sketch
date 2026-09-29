@@ -385,21 +385,27 @@ def do_check(args: dict) -> ToolResult:
 	nothing between here and there can leave a slot held (`sketch/checkd.py`).
 	"""
 	doc = owned(args)
-	screenshot = bool(args.get("screenshot"))
+	screenshot = args.get("screenshot", False)
 	rev = prototype_files.revision(doc.name) if screenshot else ""
 	checkd.claim_slot()
-	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot)
+	options = {key: args[key] for key in ("routes", "viewport", "full_page") if key in args}
+	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot, **options)
 
 	shots = report.pop("screenshots", None) or []
 	cards = report.pop("thumbnails", None) or []
 	if rev and cards:
 		thumbnails.store(doc.name, cards, rev)
 
-	images = [
-		{"type": "image", "data": shot.get("png_base64"), "mimeType": "image/png"}
-		for shot in shots
-		if shot.get("png_base64")
-	]
+	images = []
+	for shot in shots:
+		if not shot.get("png_base64"):
+			continue
+		viewport = shot.get("viewport", report.get("viewport", {"width": 1280, "height": 800}))
+		label = f"Screenshot: {shot.get('route', '/')} ({viewport['width']}×{viewport['height']}, {'full page' if shot.get('fullPage') else 'viewport'})"
+		images.extend([
+			{"type": "text", "text": label},
+			{"type": "image", "data": shot["png_base64"], "mimeType": "image/png"},
+		])
 	uncommitted = versions.pending_count(doc.name)
 	report["uncommitted"] = uncommitted
 	status = str(report.get("status") or "unknown")
@@ -423,6 +429,11 @@ def check_text(report: dict, uncommitted: int = 0) -> str:
 		lines.append(f"warning {entry.get('kind')}: {entry.get('file')} {entry.get('message')}")
 	for entry in report.get("consoleErrors") or []:
 		lines.append(f"console: {entry}")
+	if "visited" in report:
+		lines.append("visited: " + (", ".join(report["visited"]) or "none"))
+	if report.get("viewport"):
+		v = report["viewport"]
+		lines.append(f"viewport: {v['width']}×{v['height']}")
 	if report.get("routes"):
 		lines.append("routes: " + ", ".join(report["routes"]))
 	for entry in report.get("skipped") or []:
@@ -457,6 +468,9 @@ CHECK_SCHEMA = {
 		"warnings": {"type": "array", "items": {"type": "object"}},
 		"consoleErrors": {"type": "array"},
 		"routes": {"type": "array", "items": {"type": "string"}},
+		"visited": {"type": "array", "items": {"type": "string"}},
+		"viewport": {"type": "object"},
+		"fullPage": {"type": "boolean"},
 		"skipped": {"type": "array", "items": {"type": "object"}},
 		"timings": {"type": "object"},
 		"uncommitted": {
@@ -652,9 +666,24 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
+						"routes": {
+							"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": True,
+							"items": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": r"^/(?!/)[^\\\s]*$"},
+							"description": "Concrete router paths to check instead of automatic discovery, such as /proposals/123 or /schedule?day=2.",
+						},
+						"viewport": {
+							"type": "object",
+							"properties": {
+								"width": {"type": "integer", "minimum": 320, "maximum": 2560},
+								"height": {"type": "integer", "minimum": 240, "maximum": 2160},
+							},
+							"required": ["width", "height"],
+							"description": "Capture viewport in pixels. Defaults to 1280×800. Use 390×844 for a mobile layout.",
+						},
+						"full_page": {"type": "boolean", "default": False, "description": "Capture the full scrollable page. Gallery thumbnails keep their default viewport."},
 						"screenshot": {
 							"type": "boolean",
-							"description": "Return one PNG per static route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",
+							"description": "Return one labeled PNG per visited route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",
 							"default": False,
 						},
 					},

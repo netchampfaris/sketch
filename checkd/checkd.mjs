@@ -6,7 +6,7 @@
 // queues, because eight at once degrades every one of them.
 import { createServer } from 'node:http'
 import { chromium } from 'playwright'
-import { CHECK_TIMEOUT_MS, hostRewrite, runCheck } from './check-lib.mjs'
+import { CHECK_TIMEOUT_MS, hostRewrite, runCheck, validateCheckOptions } from './check-lib.mjs'
 
 const PORT = Number(process.env.SKETCH_CHECKD_PORT || 8010)
 const HOST = process.env.SKETCH_CHECKD_HOST || '127.0.0.1'
@@ -97,7 +97,8 @@ async function check(request) {
 
 	// The hard cap covers the queue wait as well, so a caller blocked on one
 	// HTTP call always gets an answer.
-	const options = { screenshot: !!request.screenshot, thumbnails: !!request.thumbnails }
+	const options = { screenshot: request.screenshot, thumbnails: request.thumbnails,
+		routes: request.routes, viewport: request.viewport, fullPage: request.fullPage }
 	const cancelled = { value: false }
 	return await deadline(queued(browser, url, options, cancelled), TIMEOUT_MS, cancelled)
 }
@@ -152,6 +153,7 @@ function parse(raw) {
 	if (request.host !== undefined && typeof request.host !== 'string')
 		throw new Error('host must be a string')
 
+	validateCheckOptions(request)
 	return request
 }
 

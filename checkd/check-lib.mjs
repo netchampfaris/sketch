@@ -181,27 +181,50 @@ export function themed(rawUrl, theme) {
 	return url.toString()
 }
 
+/** Validate caller-controlled capture options before allocating a browser context. */
+export function validateCheckOptions(options) {
+	for (const key of ['screenshot', 'thumbnails', 'fullPage']) {
+		if (options[key] !== undefined && typeof options[key] !== 'boolean')
+			throw new Error(`${key} must be a boolean`)
+	}
+	if (options.routes !== undefined && options.routes !== null) {
+		if (!Array.isArray(options.routes) || !options.routes.length || options.routes.length > MAX_ROUTES)
+			throw new Error(`routes must contain 1 to ${MAX_ROUTES} concrete paths`)
+		for (const path of options.routes) {
+			if (typeof path !== 'string' || !/^\/(?!\/)[^\\\s]*$/.test(path) || path.length > 2048 || !isStatic(path.split(/[?#]/)[0]))
+				throw new Error('routes must be concrete paths starting with /, such as /tickets/123')
+		}
+	}
+	if (options.viewport !== undefined) {
+		const v = options.viewport
+		if (!v || !Number.isInteger(v.width) || v.width < 320 || v.width > 2560 ||
+			!Number.isInteger(v.height) || v.height < 240 || v.height > 2160)
+			throw new Error('viewport requires width 320–2560 and height 240–2160')
+	}
+}
+
 /**
  * Run one check against one browser.
  *
  * `browser` must already carry the host-resolver rule for this URL.
  * Returns the Contract 5 body, always with `skipped` present.
  *
- * `screenshot` is the agent's option: one light PNG per static route, the
- * shape spec 7.4 fixes. `thumbnails` is a different job with a different
+ * `screenshot` returns a light PNG for each visited route. Explicit routes,
+ * viewport, and fullPage control the captures. `thumbnails` is a different job with a different
  * reader. It takes the home route only, once per theme, for the gallery card
  * and the feed card. Both are opt-in and neither implies the other.
  */
 export async function runCheck(
 	browser,
-	{ url, screenshot = false, thumbnails = false, timeoutMs = CHECK_TIMEOUT_MS } = {},
+	{ url, screenshot = false, thumbnails = false, routes: selectedRoutes = null, viewport = VIEWPORT, fullPage = false, timeoutMs = CHECK_TIMEOUT_MS } = {},
 ) {
+	validateCheckOptions({ screenshot, thumbnails, routes: selectedRoutes, viewport, fullPage })
 	const start = Date.now()
 	const deadline = start + timeoutMs
 	const left = () => Math.max(500, deadline - Date.now())
 
 	const context = await browser.newContext({
-		viewport: VIEWPORT,
+		viewport,
 		// check forces light, so its screenshots stay deterministic (spec 12).
 		colorScheme: 'light',
 	})
@@ -210,7 +233,9 @@ export async function runCheck(
 
 	try {
 		const page = await context.newPage()
-		await page.goto(url, { waitUntil: 'commit', timeout: left() })
+		const initial = new URL(url)
+		if (selectedRoutes) initial.hash = selectedRoutes[0]
+		await page.goto(initial.toString(), { waitUntil: 'commit', timeout: left() })
 		await page.waitForFunction(() => window.__sketch, null, { timeout: left() })
 		const reported = Date.now()
 
@@ -223,6 +248,7 @@ export async function runCheck(
 			return body(first, {
 				routes,
 				skipped: [],
+				visited: [], viewport, fullPage,
 				screenshots: [],
 				thumbnails: [],
 				refused,
@@ -230,12 +256,13 @@ export async function runCheck(
 			})
 		}
 
+		const visited = []
 		const skipped = []
 		const screenshots = []
 		let walked = 0
 
-		for (const path of routes) {
-			if (!isStatic(path)) {
+		for (const path of selectedRoutes ?? routes) {
+			if (!selectedRoutes && !isStatic(path)) {
 				skipped.push({ route: path, reason: path.includes(':') ? REASON_PARAM : REASON_WILDCARD })
 				continue
 			}
@@ -250,10 +277,12 @@ export async function runCheck(
 
 			// Drive the router directly. Never through the DOM (spec 7.4).
 			await page.evaluate((p) => window.__sketchGoto(p), path)
+			const actual = await page.evaluate(() => location.hash.slice(1) || '/')
+			visited.push(actual)
 			walked += 1
 			if (screenshot) {
-				const png = await page.screenshot({ type: 'png', timeout: left() })
-				screenshots.push({ route: path, png_base64: png.toString('base64') })
+				const png = await page.screenshot({ type: 'png', fullPage, timeout: left() })
+				screenshots.push({ route: actual, viewport, fullPage, png_base64: png.toString('base64') })
 			}
 		}
 		const walkedAt = Date.now()
@@ -261,12 +290,14 @@ export async function runCheck(
 		// The card images. After the walk, so a thumbnail can never change what
 		// the walk reported, and never on the failed-status path above: a tree
 		// that did not mount has no picture to take.
+		if (thumbnails) await page.setViewportSize(VIEWPORT)
 		const shots = thumbnails ? await takeThumbnails(browser, page, url, routes, left, refused) : []
 
 		const final = await page.evaluate(() => window.__sketch)
 		return body(final, {
 			routes,
 			skipped,
+			visited, viewport, fullPage,
 			screenshots,
 			thumbnails: shots,
 			refused,
@@ -335,7 +366,7 @@ async function takeThumbnails(browser, page, url, routes, left, refused) {
  * walk can throw, and that status would still read "ok". Recompute it (trap
  * 13).
  */
-function body(report, { routes, skipped, screenshots, thumbnails = [], refused = null, wall }) {
+function body(report, { routes, skipped, visited = [], viewport = VIEWPORT, fullPage = false, screenshots, thumbnails = [], refused = null, wall }) {
 	const errors = (report.errors ?? []).map(error)
 	const consoleErrors = report.consoleErrors ?? []
 	let status = report.status
@@ -348,6 +379,9 @@ function body(report, { routes, skipped, screenshots, thumbnails = [], refused =
 		warnings: [...(report.warnings ?? []).map(warning), ...egressWarnings(refused)],
 		consoleErrors,
 		routes,
+		visited,
+		viewport,
+		fullPage,
 		skipped,
 		timings: { ...(report.timings ?? {}), ...timings(wall) },
 		screenshots,

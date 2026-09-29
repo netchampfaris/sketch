@@ -103,10 +103,11 @@ def release_slot() -> None:
 		pass
 
 
-def run(doc, screenshot: bool = False, thumbnails: bool = False) -> dict:
+def run(doc, screenshot: bool = False, thumbnails: bool = False, *, routes: list[str] | None = None, viewport: dict | None = None, full_page: bool = False) -> dict:
 	"""POST to sketch-checkd and return the report. Contract 5.
 
-	`screenshot` is the agent's option: one light PNG per static route.
+	`screenshot` returns light PNGs for visited routes. Optional routes and
+	viewport select the captures; full_page includes content below the fold.
 	`thumbnails` is the card images: the home route, once per theme. They are
 	independent, and a caller that wants neither pays for neither.
 
@@ -122,6 +123,13 @@ def run(doc, screenshot: bool = False, thumbnails: bool = False) -> dict:
 		"screenshot": screenshot,
 		"thumbnails": thumbnails,
 	}
+
+	if routes is not None:
+		body["routes"] = routes
+	if viewport is not None:
+		body["viewport"] = viewport
+	if full_page:
+		body["fullPage"] = True
 
 	try:
 		try:
