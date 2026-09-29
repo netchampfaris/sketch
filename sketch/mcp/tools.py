@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The MCP tool surface: twelve tools, and no more.
+"""The MCP tool surface for prototype files, checks, and versions.
 
 There is **no `delete_prototype`**. Deleting is a human act in the Sketch UI.
 MCP refuses delete by exposing no tool, not by permission.
@@ -11,22 +11,21 @@ user through `prototype.resolve_owned`. Every agent-supplied file path goes
 through `prototype_files.safe_join`, which is the one path guard. This module
 writes no second guard.
 
-Seven tools return structured output: `create_prototype`, `list_prototypes`,
-`list_files`, `read_files`, `check`, `commit` and `set_public`. They declare an
-`outputSchema` and answer with `structuredContent`. `isError` is set
-explicitly, never guessed from the text.
+Tools with structured output declare an `outputSchema` and answer with
+`structuredContent`. `isError` is explicit, never guessed from the text.
 """
 
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import frappe
 from frappe.utils import strip_html
+from jsonschema import Draft202012Validator
 
-from sketch import checkd, events, prototype, prototype_files, thumbnails, versions
+from sketch import assets, checkd, events, prototype, prototype_files, thumbnails, versions
 
 logger = frappe.logger("sketch.mcp")
 
@@ -47,14 +46,14 @@ class Tool:
 
 @dataclass
 class ToolResult:
-	"""What a handler returns: text, and optionally structure and images."""
+	"""A summary, structured output, and optional labeled MCP content blocks."""
 
 	text: str
 	structured: dict | None = None
-	images: list[dict] = field(default_factory=list)
+	content: list[dict] = field(default_factory=list)
 
 
-READ_ONLY = {"list_prototypes", "list_files", "read_files", "check", "get_skill"}
+READ_ONLY = {"list_prototypes", "list_files", "read_files", "check", "get_skill", "list_runtimes"}
 
 DESTRUCTIVE = {"delete_file", "set_public"}
 
@@ -79,7 +78,8 @@ def call_tool(name: str, arguments: dict) -> dict:
 	started = time.monotonic()
 	frappe.db.savepoint("mcp_tool")
 	try:
-		out = tool.handler(dict(arguments or {}))
+		validate_arguments(tool.parameters, arguments)
+		out = tool.handler(dict(arguments))
 	except Exception as e:
 		frappe.db.rollback(save_point="mcp_tool")
 		logger.warning(f"mcp tool {name} raised: {e}", exc_info=True)
@@ -90,11 +90,33 @@ def call_tool(name: str, arguments: dict) -> dict:
 		return {"content": [{"type": "text", "text": failure_text(name, e)}], "isError": True}
 
 	events.record(events.TOOL_CALL, ok=True, detail=name, ms=_elapsed_ms(started))
-	reply = {"content": [{"type": "text", "text": out.text}] + out.images, "isError": False}
+	reply = {"content": [{"type": "text", "text": out.text}, *out.content], "isError": False}
 	if out.structured is not None:
 		reply["structuredContent"] = out.structured
 
 	return reply
+
+
+def validate_arguments(schema: dict, arguments: dict) -> None:
+	"""Reject invalid inputs without echoing source content or asset data."""
+	for error in Draft202012Validator(schema).iter_errors(arguments):
+		path = "arguments"
+		for part in error.absolute_path:
+			path += f"[{part}]" if isinstance(part, int) else f".{part}"
+		if error.validator == "required":
+			missing = [key for key in error.validator_value if key not in error.instance]
+			message = f"{path}: required field(s): {', '.join(missing)}"
+		elif error.validator == "additionalProperties":
+			message = f"{path}: use only these fields: {', '.join(error.schema.get('properties', {}))}"
+		elif error.validator == "type":
+			message = f"{path} must be {error.validator_value}"
+		elif error.validator in ("minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum"):
+			message = f"{path}: {error.validator} is {error.validator_value}"
+		elif error.validator == "enum":
+			message = f"{path}: choose one of {', '.join(map(str, error.validator_value))}"
+		else:
+			message = f"{path}: invalid value ({error.validator})"
+		frappe.throw(message, frappe.ValidationError)
 
 
 def _elapsed_ms(started: float) -> int:
@@ -144,11 +166,7 @@ def user_prompt(args: dict) -> str:
 	prompt = args.get("prompt")
 	prompt = prompt if isinstance(prompt, str) else ""
 	if not prompt.strip():
-		frappe.throw(
-			frappe._(
-				"prompt is required. Send the user's message for this request, word for word."
-			)
-		)
+		frappe.throw(frappe._("prompt is required. Send the user's message for this request, word for word."))
 
 	return prompt
 
@@ -205,6 +223,29 @@ def do_list_prototypes(args: dict) -> ToolResult:
 	items = [record(frappe._dict(row)) for row in rows]
 	payload = {"prototypes": items}
 	return ToolResult(text=as_json(payload), structured=payload)
+
+
+def do_list_runtimes(args: dict) -> ToolResult:
+	pins = prototype.available_pins()
+	payload = {"versions": pins, "latest": pins[0] if pins else None}
+	return ToolResult(text=as_json(payload), structured=payload)
+
+
+def do_set_runtime(args: dict) -> ToolResult:
+	doc = owned(args)
+	pin = args["version"]
+	if pin not in prototype.available_pins():
+		frappe.throw("version must name an installed runtime. Call list_runtimes for available versions.")
+	previous = doc.pin
+	if previous != pin:
+		doc.pin = pin
+		doc.save()
+		thumbnails.request_refresh(doc.name)
+	payload = {**record(doc), "previous_pin": previous}
+	return ToolResult(
+		text=f"Runtime: {previous} -> {pin}. Source files are unchanged. Verify compatibility in the user's browser, or use check if browser access is unavailable. Previews refresh in the background.",
+		structured=payload,
+	)
 
 
 def do_create_prototype(args: dict) -> ToolResult:
@@ -265,6 +306,28 @@ def do_edit_file(args: dict) -> ToolResult:
 	return ToolResult(text=f"Edited {path}.")
 
 
+def do_upload_asset(args: dict) -> ToolResult:
+	"""Keep images inside the existing source tree and permission boundary."""
+	doc = owned(args)
+	path = args["path"]
+	if not path.startswith("src/assets/") or not path.endswith(".js"):
+		frappe.throw("path must be a JavaScript module under src/assets/, such as src/assets/logo.js")
+	content = assets.image_module(args["data_base64"], args["mime_type"])
+	existed = {path} if os.path.isfile(prototype_files.safe_join(doc.name, path)) else set()
+	prototype_files.write_files(doc.name, [{"path": path, "content": content}])
+	versions.note_write(doc.name, [path], existed)
+	return ToolResult(
+		text=f"Uploaded {path}. Import its default export and bind it to an image's src. The image works in checks without external requests."
+	)
+
+
+def do_edit_files(args: dict) -> ToolResult:
+	doc = owned(args)
+	paths = prototype_files.edit_files(doc.name, args["edits"])
+	versions.note_write(doc.name, paths, set(paths))
+	return ToolResult(text=f"Edited {len(paths)} file(s): {', '.join(paths)}")
+
+
 def do_delete_file(args: dict) -> ToolResult:
 	doc = owned(args)
 	path = args.get("path")
@@ -290,6 +353,7 @@ def do_commit(args: dict) -> ToolResult:
 			structured={"recorded": False},
 		)
 
+	thumbnails.request_refresh(doc.name)
 	payload = {
 		"recorded": True,
 		"sequence": version.sequence,
@@ -337,38 +401,32 @@ def do_set_name(args: dict) -> ToolResult:
 def do_check(args: dict) -> ToolResult:
 	"""Open the Prototype in sketch-checkd and report what the browser saw.
 
-	`screenshot` also takes the card images, in both themes. They are the same
-	browser run and the agent never sees them: the gallery and the feed do
-	(`sketch/thumbnails.py`). The skill tells the agent to call check with
-	`screenshot: true` once at the end of every request, so that is the moment
-	the card is already worth re-taking, and it costs one extra page load
-	rather than a second check.
-
-	The stamp is read before the run and not after. A file written while the
-	browser was open must leave the pictures stale, so the next card view asks
-	for another capture.
-
 	The browser runs inline on a web worker, so one account with many agents
 	must not hold them all. `claim_slot` is what stops that, and it sits
 	against the run it guards: `run` gives the claim back on every way out, so
 	nothing between here and there can leave a slot held (`sketch/checkd.py`).
 	"""
 	doc = owned(args)
-	screenshot = bool(args.get("screenshot"))
-	rev = prototype_files.revision(doc.name) if screenshot else ""
+	screenshot = args.get("screenshot", False)
 	checkd.claim_slot()
-	report = checkd.run(doc, screenshot=screenshot, thumbnails=screenshot)
+	options = {key: args[key] for key in ("routes", "viewport", "full_page") if key in args}
+	report = checkd.run(doc, screenshot=screenshot, thumbnails=False, **options)
 
 	shots = report.pop("screenshots", None) or []
-	cards = report.pop("thumbnails", None) or []
-	if rev and cards:
-		thumbnails.store(doc.name, cards, rev)
+	report.pop("thumbnails", None)
 
-	images = [
-		{"type": "image", "data": shot.get("png_base64"), "mimeType": "image/png"}
-		for shot in shots
-		if shot.get("png_base64")
-	]
+	content = []
+	for shot in shots:
+		if not shot.get("png_base64"):
+			continue
+		viewport = shot.get("viewport", report.get("viewport", {"width": 1280, "height": 800}))
+		label = f"Screenshot: {shot.get('route', '/')} ({viewport['width']}x{viewport['height']}, {'full page' if shot.get('fullPage') else 'viewport'})"
+		content.extend(
+			[
+				{"type": "text", "text": label},
+				{"type": "image", "data": shot["png_base64"], "mimeType": "image/png"},
+			]
+		)
 	uncommitted = versions.pending_count(doc.name)
 	report["uncommitted"] = uncommitted
 	status = str(report.get("status") or "unknown")
@@ -376,7 +434,7 @@ def do_check(args: dict) -> ToolResult:
 	# that does not build. A check that never reached the browser raises out of
 	# `checkd.run` above and is a failed `tool_call` instead, with no row here.
 	events.record(events.CHECK, prototype=doc.name, ok=status == "ok", detail=status)
-	return ToolResult(text=check_text(report, uncommitted), structured=report, images=images)
+	return ToolResult(text=check_text(report, uncommitted), structured=report, content=content)
 
 
 def check_text(report: dict, uncommitted: int = 0) -> str:
@@ -392,6 +450,11 @@ def check_text(report: dict, uncommitted: int = 0) -> str:
 		lines.append(f"warning {entry.get('kind')}: {entry.get('file')} {entry.get('message')}")
 	for entry in report.get("consoleErrors") or []:
 		lines.append(f"console: {entry}")
+	if "visited" in report:
+		lines.append("visited: " + (", ".join(report["visited"]) or "none"))
+	if report.get("viewport"):
+		v = report["viewport"]
+		lines.append(f"viewport: {v['width']}x{v['height']}")
 	if report.get("routes"):
 		lines.append("routes: " + ", ".join(report["routes"]))
 	for entry in report.get("skipped") or []:
@@ -426,6 +489,9 @@ CHECK_SCHEMA = {
 		"warnings": {"type": "array", "items": {"type": "object"}},
 		"consoleErrors": {"type": "array"},
 		"routes": {"type": "array", "items": {"type": "string"}},
+		"visited": {"type": "array", "items": {"type": "string"}},
+		"viewport": {"type": "object"},
+		"fullPage": {"type": "boolean"},
 		"skipped": {"type": "array", "items": {"type": "object"}},
 		"timings": {"type": "object"},
 		"uncommitted": {
@@ -478,6 +544,38 @@ def build_tools() -> dict[str, Tool]:
 				},
 			),
 			Tool(
+				name="list_runtimes",
+				description="List installed frappe-ui runtime versions, newest first. Use an exact version with set_runtime.",
+				parameters={"type": "object", "properties": {}},
+				handler=do_list_runtimes,
+				output_schema={
+					"type": "object",
+					"properties": {
+						"versions": {"type": "array", "items": {"type": "string"}},
+						"latest": {"type": ["string", "null"]},
+					},
+					"required": ["versions", "latest"],
+				},
+			),
+			Tool(
+				name="set_runtime",
+				description="Change a Prototype's frappe-ui runtime to an installed version. Source files and its URL stay unchanged. Verify compatibility in the user's browser, or use check when browser access is unavailable. Component APIs can differ between versions. Use previous_pin from the result to switch back.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"version": {"type": "string", "minLength": 1},
+					},
+					"required": ["prototype", "version"],
+				},
+				handler=do_set_runtime,
+				output_schema={
+					**RECORD_SCHEMA,
+					"properties": {**RECORD_SCHEMA["properties"], "previous_pin": {"type": "string"}},
+					"required": [*RECORD_SCHEMA["required"], "previous_pin"],
+				},
+			),
+			Tool(
 				name="create_prototype",
 				description="Create an empty Prototype and return its record. `name` is required and there is no default: the slug and the public URL are derived from it and then frozen, so pick a good name. The new Prototype holds no files until you write them.",
 				parameters={
@@ -519,7 +617,12 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
-						"paths": {"type": "array", "items": {"type": "string"}},
+						"paths": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 500,
+							"items": {"type": "string", "minLength": 1},
+						},
 					},
 					"required": ["prototype", "paths"],
 				},
@@ -581,6 +684,56 @@ def build_tools() -> dict[str, Tool]:
 				handler=do_edit_file,
 			),
 			Tool(
+				name="edit_files",
+				description="Apply exact replacements across files in order. Repeated paths use the preceding edit's result. Every match and quota is checked before files change. An absent or ambiguous match leaves all files unchanged.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"edits": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": prototype_files.MAX_BATCH_FILES,
+							"items": {
+								"type": "object",
+								"properties": {
+									"path": {"type": "string", "minLength": 1},
+									"old_string": {"type": "string", "minLength": 1},
+									"new_string": {"type": "string"},
+								},
+								"required": ["path", "old_string", "new_string"],
+							},
+						},
+					},
+					"required": ["prototype", "edits"],
+				},
+				handler=do_edit_files,
+			),
+			Tool(
+				name="upload_asset",
+				description="Upload an image as a JavaScript module exporting a data URL. Import that module and bind the export to an image's src. Images work in checks without external network access. At most 512000 decoded bytes. Replaces an existing module at the same path; normal file and tree quotas apply.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"path": {
+							"type": "string",
+							"pattern": r"^src/assets/.+\.js$",
+							"description": "Module path, such as src/assets/logo.js.",
+						},
+						"mime_type": {"type": "string", "enum": list(assets.MIME_FORMATS)},
+						"data_base64": {
+							"type": "string",
+							"minLength": 4,
+							"maxLength": ((assets.MAX_ASSET_BYTES + 2) // 3) * 4,
+							"description": "Base64 image bytes, without a data URL prefix.",
+						},
+					},
+					"required": ["prototype", "path", "mime_type", "data_base64"],
+				},
+				handler=do_upload_asset,
+			),
+			Tool(
 				name="delete_file",
 				description="Delete one file from a Prototype. This cannot be undone.",
 				parameters={
@@ -592,14 +745,41 @@ def build_tools() -> dict[str, Tool]:
 			),
 			Tool(
 				name="check",
-				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Call it with screenshot: true once at the end of every user request: that is a workflow step, not an option. Fix every error it reports before you report done, then call commit.",
+				description="Compile and mount the Prototype in a real browser, walk its routes, and report compile errors, console errors and timings. Use this fallback when the user's browser is unavailable. Prefer that browser for rendering and interaction checks. Hosted checks do not test interactions. Fix reported errors before finishing.",
 				parameters={
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
+						"routes": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 20,
+							"uniqueItems": True,
+							"items": {
+								"type": "string",
+								"minLength": 1,
+								"maxLength": 2048,
+								"pattern": r"^/(?!/)[^\\\s]*$",
+							},
+							"description": "Concrete router paths to check instead of automatic discovery, such as /proposals/123 or /schedule?day=2.",
+						},
+						"viewport": {
+							"type": "object",
+							"properties": {
+								"width": {"type": "integer", "minimum": 320, "maximum": 2560},
+								"height": {"type": "integer", "minimum": 240, "maximum": 2160},
+							},
+							"required": ["width", "height"],
+							"description": "Capture viewport in pixels. Defaults to 1280x800. Use 390x844 for a mobile layout.",
+						},
+						"full_page": {
+							"type": "boolean",
+							"default": False,
+							"description": "Capture the full scrollable page. Gallery thumbnails keep their default viewport.",
+						},
 						"screenshot": {
 							"type": "boolean",
-							"description": "Return one PNG per static route, and refresh the picture on this Prototype's gallery card. Set it true at the end of each user request.",
+							"description": "Return one labeled PNG per visited route. Gallery previews refresh independently in the background.",
 							"default": False,
 						},
 					},
@@ -610,7 +790,7 @@ def build_tools() -> dict[str, Tool]:
 			),
 			Tool(
 				name="commit",
-				description="Record a version of the Prototype. Call it once at the end of every user request, after check, with `prompt` set to the user's message word for word. It files every change you made since the last version under that prompt, so the person can read back what they asked for and what it changed.",
+				description="Record a version of the Prototype. Call it once at the end of every user request, after verification, with `prompt` set to the user's message word for word. It files every change you made since the last version under that prompt, so the person can read back what they asked for and what it changed.",
 				parameters={
 					"type": "object",
 					"properties": {
@@ -621,7 +801,8 @@ def build_tools() -> dict[str, Tool]:
 						},
 						"summary": {
 							"type": "string",
-							"description": "One short line naming what you changed. Optional.",
+							"maxLength": 140,
+							"description": "One short line naming what you changed. At most 140 characters. Optional.",
 						},
 					},
 					"required": ["prototype", "prompt"],
@@ -660,4 +841,15 @@ def build_tools() -> dict[str, Tool]:
 	}
 
 
+def close_input_objects(schema: dict) -> None:
+	if schema.get("type") == "object":
+		schema["additionalProperties"] = False
+		for value in schema.get("properties", {}).values():
+			close_input_objects(value)
+	if "items" in schema:
+		close_input_objects(schema["items"])
+
+
 TOOLS = build_tools()
+for tool in TOOLS.values():
+	close_input_objects(tool.parameters)

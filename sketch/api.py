@@ -128,12 +128,11 @@ def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
 	an agent writing files is a change the user asked for, so the newest mtime
 	in the tree is what the label and the order both read.
 
-	The second is `prototype_files.revision()`'s own format, file count and
-	newest mtime in nanoseconds, and it must stay that format: the thumbnail
-	sidecar is written against one and compared against the other
-	(`sketch/thumbnails.py`).
+	The second includes the runtime pin through `revision_stamp`, shared with
+	`prototype_files.revision`. A pin change invalidates thumbnails without
+	changing the source timestamp or gallery order.
 
-	Both are "" when nothing can be stat'ed, including an empty tree.
+	The timestamp is "" for an empty tree. Its revision still includes the pin.
 	"""
 	base = prototype_files.prototype_dir(name)
 	count = 0
@@ -149,21 +148,20 @@ def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
 			newest_ns = stat.st_mtime_ns
 
 	if not newest_ns:
-		return "", ""
+		return "", prototype_files.revision_stamp(name, 0, 0)
 
 	# st_mtime is epoch UTC. `pretty_date` subtracts against `now_datetime()`,
 	# which is the site's timezone (frappe/utils/data.py:1866), so an
 	# unconverted stamp reads hours out and can print a time in the future.
 	local = convert_utc_to_system_timezone(datetime.fromtimestamp(newest_ns / 1e9, tz=UTC))
-	return local.strftime("%Y-%m-%d %H:%M:%S"), f"{count}-{newest_ns}"
+	return local.strftime("%Y-%m-%d %H:%M:%S"), prototype_files.revision_stamp(name, count, newest_ns)
 
 
 def _card_image(name: str, username: str, slug: str, rev: str, owner: str) -> dict | None:
 	"""The card pictures, one URL per theme, and a refresh when they are old.
 
 	Returns None when this Prototype has never been captured. The card then
-	draws its placeholder, which is the ordinary state of a Prototype whose
-	agent has not run `check` with `screenshot: true` yet.
+	draws its placeholder until a background capture completes.
 
 	Only the themes actually on disk are named. A dark capture that failed
 	leaves `dark` absent rather than pointing at a 404, so the reader falls
@@ -745,12 +743,9 @@ def set_public(slug: str, is_public: bool) -> dict:
 def refresh_preview(slug: str) -> dict:
 	"""Re-take this Prototype's card pictures now, and answer with the new row.
 
-	The card is normally taken during the `check` the agent runs at the end of
-	a request, and re-taken in the background when it goes stale
-	(`_card_image`). This is the manual door for the two cases neither of those
-	covers: a Prototype whose agent has not checked it since the pictures
-	existed, and one whose background refresh could not run because checkd or
-	the worker was down.
+	Commits, runtime changes, and owner gallery reads request background captures.
+	This manual action retries a missing or stale preview immediately, including
+	when a worker or checkd was unavailable.
 
 	It runs the browser inline rather than queueing, which is the point: the
 	user asked for this one and is watching the card. It costs about two

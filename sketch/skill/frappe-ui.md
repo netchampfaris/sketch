@@ -52,6 +52,69 @@ Every path you pass to a tool is the full relative path, such as
 Put the fixture data in plain `ref`s in the file that uses it, or in a shared
 `src/data.ts`. There is no backend to fetch it from.
 
+### Upload images
+
+Use `upload_asset` for logos and photos that must appear in checks and gallery thumbnails.
+Pass `path: "src/assets/logo.js"`, the image's `mime_type`, and its raw bytes encoded as `data_base64`.
+Accepted formats: PNG, JPEG, GIF, WebP, and SVG. Each image can contain at most 512,000 decoded bytes.
+The tool writes a module exporting a data URL. Normal file and tree quotas still apply.
+
+From `src/App.vue`, import and use it:
+
+```vue
+<script setup>
+import logo from './assets/logo.js'
+</script>
+<template><img :src="logo" alt="Company logo" /></template>
+```
+
+The check browser blocks external images. Uploaded images need no network request.
+
+### Change the runtime
+
+Call `list_runtimes` to find installed frappe-ui versions.
+Pass an exact `version` and the prototype slug to `set_runtime`.
+The result includes `previous_pin`; pass that value to `set_runtime` to switch back.
+Source files remain unchanged. Component APIs can differ between runtime versions.
+Verify compatibility after switching, using the workflow below. Correct reported errors before finishing.
+
+### Edit and verify
+
+Use `edit_files` for related changes. Its `edits` array contains `path`, `old_string`, and `new_string`.
+Edits run in order, including repeated edits to one file.
+Each old string must match exactly once. A failed match leaves every file unchanged.
+
+When you can access the user's authenticated browser:
+
+1. Open the prototype URL returned by `create_prototype` or `list_prototypes`.
+2. Reload after changes. Wait for `window.__sketch` and inspect its errors and the browser console.
+3. Visit the affected routes, including concrete detail paths. Inspect relevant desktop and mobile layouts.
+4. Test the changed interactions, such as button clicks and form submission. Fix errors before finishing.
+
+If browser access is unavailable, use the hosted `check` fallback.
+Request screenshots when you need to inspect appearance. For a mobile detail page, use:
+
+```json
+{
+  "prototype": "your-slug",
+  "routes": ["/issues/42"],
+  "viewport": {"width": 390, "height": 844},
+  "full_page": true,
+  "screenshot": true
+}
+```
+
+Explicit routes replace automatic route discovery. Supply concrete paths, including query parameters when needed.
+Without `routes`, checks visit static routes and report skipped dynamic patterns.
+Read `visited` and `skipped` before claiming route coverage.
+Screenshots identify their route and viewport.
+A passing check verifies rendering, not button clicks or form submission.
+
+Report which interactions you tested and what remains unverified.
+Gallery thumbnails refresh in the background after commits and runtime changes. They do not require `check`.
+
+Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary within 140 characters.
+
 ## 3. Rules
 
 1. **Pick the component, do not build one.** Reach for raw HTML only for

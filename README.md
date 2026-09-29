@@ -14,9 +14,9 @@ A Frappe app. Live at [sketch.netchamp.dev](https://sketch.netchamp.dev).
 2. Your agent connects to `https://<site>/mcp` with that token.
 3. The agent writes Vue files into a Prototype: `src/pages`, `src/components`,
    `src/App.vue`, `src/router.ts`.
-4. `check` compiles and mounts the tree in a real browser, walks the routes and
-   returns compile errors, console errors and a screenshot per route.
-5. `commit` records a version, with the prompt that produced it.
+4. The agent verifies rendering and interactions in your authenticated browser.
+   Without browser access, it uses hosted `check` for rendering errors and optional screenshots.
+5. `commit` records a version, with the prompt that produced it. Gallery previews refresh in the background.
 
 There is no backend inside a Prototype. Data lives in plain `ref`s in the
 files, so a prototype is a self-contained tree that renders anywhere.
@@ -46,23 +46,51 @@ sends no `Authorization` header.
 
 ## The tool surface
 
-Twelve tools. Every one but `list_prototypes` and `create_prototype` takes the
-`prototype` slug.
+Sixteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
+`create_prototype`, each tool takes the `prototype` slug.
 
 | Tool | What it does |
 | --- | --- |
 | `get_skill` | The frappe-ui skill for this server: components, tokens, icons, and the patterns that do not resolve. Read it first |
 | `list_prototypes` | Your prototypes, with slug, pin, public flag and URL |
+| `list_runtimes` | Installed runtime versions, newest first |
+| `set_runtime` | Switch a prototype to an installed runtime version |
 | `create_prototype` | An empty prototype. The slug and the public URL come from the name |
 | `list_files` | Every file with its size, no content |
 | `read_files` | Whole files, by relative path |
 | `write_files` | Create a file, or replace one end to end |
 | `edit_file` | Replace one exact string that occurs exactly once |
+| `edit_files` | Apply ordered replacements across files after validating the complete batch |
+| `upload_asset` | Embed an image as an importable data-URL module |
 | `delete_file` | Remove one file |
-| `check` | Compile, mount, walk the routes, report errors and screenshots |
+| `check` | Check automatic or explicit routes, with optional viewport and full-page screenshots |
 | `commit` | Record a version, with the user's prompt |
 | `set_name` | Rename. The slug never moves |
 | `set_public` | Turn the public link on or off |
+
+When using the hosted fallback for mobile detail pages, call `check` with `routes: ["/items/42"]`,
+`viewport: {"width": 390, "height": 844}`, `full_page: true`, and `screenshot: true`.
+The report lists visited routes. Each screenshot carries its route and capture size.
+Gallery thumbnails retain their desktop size.
+
+`upload_asset` takes a module path such as `src/assets/logo.js`, `mime_type`, and `data_base64`.
+It accepts PNG, JPEG, GIF, WebP, and SVG images up to 512,000 decoded bytes.
+Import the module's default export and bind it to an image's `src`.
+The image stays inside the prototype and renders without external requests.
+Normal file and tree quotas apply to the generated module.
+
+`edit_files` takes an `edits` array containing `path`, `old_string`, and `new_string`.
+Edits run in order. Repeated paths use the preceding edit's result.
+A missing or ambiguous match rejects the batch before files change.
+
+Use `list_runtimes` to find installed versions. Call `set_runtime` with the prototype slug and an exact `version`.
+The result includes `previous_pin` so you can switch back.
+Open owner viewers reload, and thumbnails become stale. Source files and URLs remain unchanged.
+Verify compatibility in your browser after switching, or use `check` if browser access is unavailable.
+Previews refresh in the background.
+
+Tool arguments are validated against their published schemas.
+Commit summaries allow 140 characters. The user's prompt remains unchanged.
 
 `/mcp` speaks streamable HTTP, POST only, and answers both the 2025-06-18 and
 2026-07-28 protocol revisions. Every failure is JSON that names the fix.

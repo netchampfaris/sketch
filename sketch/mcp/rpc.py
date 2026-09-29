@@ -9,7 +9,7 @@ is served on its own, and every reply is one JSON document.
 **Dual-era.** One endpoint serves the legacy revision `2025-06-18` and the
 modern revision `2026-07-28`. `2025-11-25` is not served: its nine changes are
 OAuth discovery, icons, elicitation, sampling and tasks, and none of them touch
-Sketch's twelve tools.
+Sketch's prototype tools.
 
 The era switch is one test: the presence of
 `params._meta["io.modelcontextprotocol/protocolVersion"]`. Sketch keeps no
@@ -51,7 +51,7 @@ HEADER_NAME = "Mcp-Name"
 HEADER_MISMATCH = -32020
 UNSUPPORTED_PROTOCOL_VERSION = -32022
 
-# The tool set is the same twelve for every account, so it caches publicly.
+# The tool set is the same for every account, so it caches publicly.
 # One hour, the value in the revision's own example.
 CACHE_TTL_MS = 3600000
 CACHE_SCOPE = "public"
@@ -65,15 +65,17 @@ PARSE_ERROR = "Parse error: body must be a JSON object"
 
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
-Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, verify the result, and finish with commit. Prefer the user's authenticated browser to inspect rendering and test interactions. Use check when that browser is unavailable. Gallery previews refresh independently in the background. Call commit once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except get_skill, list_prototypes, list_runtimes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
 
-A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files and edit_file for small changes to an existing one.
+A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files, edit_file for one replacement, and edit_files for related replacements across files. Use upload_asset for images that must render without external requests.
 
 There is no server and no backend. Data lives in plain refs inside the prototype files. Never import useList, useDoc, useCall, useDoctype, useNewDoc, createResource, createListResource, createDocumentResource, frappeRequest or call. They will throw.
 
+Use list_runtimes to find installed frappe-ui versions and set_runtime to change a prototype's pin. Verify compatibility afterward in the user's browser, or use check if browser access is unavailable.
+
 TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components and frappe-ui tokens all work; get_skill documents them.
 
-check returns compile errors, console errors, and one image per route when screenshot is true. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them."""
+The optional hosted check verifies rendering, not interactions. It returns errors, visited and skipped routes, and labeled screenshots. Set routes to concrete paths, viewport to width and height, and full_page to true for mobile or long-page checks. Fix every error before you report done. delete_file and set_public are annotated destructive, so your client asks before running them."""
 
 
 class RpcError(Exception):
@@ -311,9 +313,9 @@ def handle_tools_list(params: dict, modern: bool) -> dict:
 
 def handle_tools_call(params: dict, modern: bool) -> dict:
 	name = params.get("name")
-	if name not in surface.TOOLS:
+	if not isinstance(name, str) or name not in surface.TOOLS:
 		raise RpcError(-32602, f"Unknown tool: {name}")
-	arguments = params.get("arguments") or {}
+	arguments = params.get("arguments", {})
 	if not isinstance(arguments, dict):
 		raise RpcError(-32602, "arguments must be an object")
 
