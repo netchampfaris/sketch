@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The MCP tool surface: twelve tools, and no more.
+"""The MCP tool surface for prototype files, checks, and versions.
 
 There is **no `delete_prototype`**. Deleting is a human act in the Sketch UI.
 MCP refuses delete by exposing no tool, not by permission.
@@ -25,6 +25,7 @@ from typing import Callable
 
 import frappe
 from frappe.utils import strip_html
+from jsonschema import Draft202012Validator
 
 from sketch import checkd, events, prototype, prototype_files, thumbnails, versions
 
@@ -79,7 +80,8 @@ def call_tool(name: str, arguments: dict) -> dict:
 	started = time.monotonic()
 	frappe.db.savepoint("mcp_tool")
 	try:
-		out = tool.handler(dict(arguments or {}))
+		validate_arguments(tool.parameters, arguments)
+		out = tool.handler(dict(arguments))
 	except Exception as e:
 		frappe.db.rollback(save_point="mcp_tool")
 		logger.warning(f"mcp tool {name} raised: {e}", exc_info=True)
@@ -95,6 +97,28 @@ def call_tool(name: str, arguments: dict) -> dict:
 		reply["structuredContent"] = out.structured
 
 	return reply
+
+
+def validate_arguments(schema: dict, arguments: dict) -> None:
+	"""Reject invalid inputs without echoing source content or asset data."""
+	for error in Draft202012Validator(schema).iter_errors(arguments):
+		path = "arguments"
+		for part in error.absolute_path:
+			path += f"[{part}]" if isinstance(part, int) else f".{part}"
+		if error.validator == "required":
+			missing = [key for key in error.validator_value if key not in error.instance]
+			message = f"{path}: required field(s): {', '.join(missing)}"
+		elif error.validator == "additionalProperties":
+			message = f"{path}: use only these fields: {', '.join(error.schema.get('properties', {}))}"
+		elif error.validator == "type":
+			message = f"{path} must be {error.validator_value}"
+		elif error.validator in ("minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum"):
+			message = f"{path}: {error.validator} is {error.validator_value}"
+		elif error.validator == "enum":
+			message = f"{path}: choose one of {', '.join(map(str, error.validator_value))}"
+		else:
+			message = f"{path}: invalid value ({error.validator})"
+		frappe.throw(message, frappe.ValidationError)
 
 
 def _elapsed_ms(started: float) -> int:
@@ -519,7 +543,7 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {
 						"prototype": PROTOTYPE_PARAM,
-						"paths": {"type": "array", "items": {"type": "string"}},
+						"paths": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"type": "string", "minLength": 1}},
 					},
 					"required": ["prototype", "paths"],
 				},
@@ -621,7 +645,8 @@ def build_tools() -> dict[str, Tool]:
 						},
 						"summary": {
 							"type": "string",
-							"description": "One short line naming what you changed. Optional.",
+							"maxLength": 140,
+							"description": "One short line naming what you changed. At most 140 characters. Optional.",
 						},
 					},
 					"required": ["prototype", "prompt"],
@@ -660,4 +685,15 @@ def build_tools() -> dict[str, Tool]:
 	}
 
 
+def close_input_objects(schema: dict) -> None:
+	if schema.get("type") == "object":
+		schema["additionalProperties"] = False
+		for value in schema.get("properties", {}).values():
+			close_input_objects(value)
+	if "items" in schema:
+		close_input_objects(schema["items"])
+
+
 TOOLS = build_tools()
+for tool in TOOLS.values():
+	close_input_objects(tool.parameters)
