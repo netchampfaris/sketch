@@ -10,7 +10,7 @@ The wayfinder map for the MVP spec lives in `.scratch/sketch-mvp/map.md`.
 - **Viewer**: the page a Prototype renders in, at `/u/<username>/<slug>`. Its own document, its own global `fetch`, its own stylesheet. Sketch chrome lives outside it, and every link to it opens a new tab.
 - **Thumbnail**: the picture on a gallery or feed card. One PNG per theme, taken during `check` and stored outside the source tree. A card draws this, never a live Viewer: an iframe per card boots a Runtime per card.
 - **Runtime**: the shared browser bundle (Vue, vue-router, frappe-ui, Tailwind, SFC compiler, TS stripper) that renders a Prototype. One Runtime per supported frappe-ui version.
-- **Pin**: the frappe-ui version a Prototype targets. Set at creation. A Prototype renders with the Runtime that matches its Pin.
+- **Pin**: the frappe-ui version a Prototype targets. Chosen at creation. The owner can switch it to another installed version. A Prototype renders with the Runtime that matches its Pin.
 - **Check**: the MCP step the agent runs once at the end of a user request. Returns compile errors, console errors, and a screenshot. With `screenshot: true` it also re-takes the Thumbnail.
 - **Username**: the unique, user-chosen name that prefixes every Prototype URL. `sketch.netchamp.dev/u/<username>/<slug>`. 3-30 characters, `[a-z0-9-]`, starts with a letter, lowercase. Chosen at signup and never changed, because it is in every public link.
 - **Slug**: the URL segment for one Prototype, derived from its name at creation and never changed. Unique per Username.

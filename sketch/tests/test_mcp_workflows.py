@@ -193,3 +193,16 @@ class TestMcpWorkflows(IntegrationTestCase):
 		self.assertEqual(self.read("src/one.js")["src/one.js"], "export default 'one'\n")
 		files = self.call("list_files")["structuredContent"]["files"]
 		self.assertEqual(len(files), 2)
+
+	def test_runtime_selection_rejects_unknown_versions_and_other_owners(self):
+		from frappe.tests import set_user
+
+		for version in ("99.0.0-unbuilt", "../outside"):
+			reply = self.call("set_runtime", version=version)
+			self.assertTrue(reply["isError"], reply)
+			self.assertIn("list_runtimes", reply["content"][0]["text"])
+		with set_user("Guest"):
+			reply = self.call("set_runtime", version=self.doc.pin)
+			self.assertTrue(reply["isError"], reply)
+		self.doc.reload()
+		self.assertEqual(self.doc.pin, tools.call_tool("list_runtimes", {})["structuredContent"]["latest"])

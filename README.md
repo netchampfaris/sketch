@@ -46,13 +46,15 @@ sends no `Authorization` header.
 
 ## The tool surface
 
-Fourteen tools. Except for `get_skill`, `list_prototypes`, and
+Sixteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
 `create_prototype`, each tool takes the `prototype` slug.
 
 | Tool | What it does |
 | --- | --- |
 | `get_skill` | The frappe-ui skill for this server: components, tokens, icons, and the patterns that do not resolve. Read it first |
 | `list_prototypes` | Your prototypes, with slug, pin, public flag and URL |
+| `list_runtimes` | Installed runtime versions, newest first |
+| `set_runtime` | Switch a prototype to an installed runtime version |
 | `create_prototype` | An empty prototype. The slug and the public URL come from the name |
 | `list_files` | Every file with its size, no content |
 | `read_files` | Whole files, by relative path |
@@ -80,6 +82,11 @@ Normal file and tree quotas apply to the generated module.
 `edit_files` takes an `edits` array containing `path`, `old_string`, and `new_string`.
 Edits run in order. Repeated paths use the preceding edit's result.
 A missing or ambiguous match rejects the batch before files change.
+
+Use `list_runtimes` to find installed versions. Call `set_runtime` with the prototype slug and an exact `version`.
+The result includes `previous_pin` so you can switch back.
+Open owner viewers reload, and thumbnails become stale. Source files and URLs remain unchanged.
+Run `check` with `screenshot: true` after switching to verify compatibility and refresh previews.
 
 Tool arguments are validated against their published schemas.
 Commit summaries allow 140 characters. The user's prompt remains unchanged.

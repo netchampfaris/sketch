@@ -3,6 +3,7 @@
 
 """Prototype lookup, create, slug and pin."""
 
+import json
 import os
 import re
 
@@ -26,23 +27,47 @@ def slugify(title: str) -> str:
 	return slug
 
 
-def newest_pin() -> str:
-	"""The newest version folder name under sketch/public/runtimes/.
-
-	Raises frappe.ValidationError when none is built.
-	"""
+def available_pins() -> list[str]:
+	"""Installed runtime builds, newest first. Incomplete builds are omitted."""
 	root = frappe.get_app_path("sketch", *RUNTIMES_PATH)
-	versions = []
-	if os.path.isdir(root):
-		versions = [entry for entry in os.listdir(root) if os.path.isdir(os.path.join(root, entry))]
+	if not os.path.isdir(root):
+		return []
+	pins = []
+	for pin in os.listdir(root):
+		if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", pin):
+			continue
+		folder = os.path.join(root, pin)
+		if not os.path.isdir(folder) or os.path.islink(folder):
+			continue
+		try:
+			with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as handle:
+				manifest = json.load(handle)
+			if not isinstance(manifest, dict) or manifest.get("frappeUI") != pin:
+				continue
+			assets = manifest.get("assets")
+			if not isinstance(assets, dict) or "viewer.html" not in assets:
+				continue
+			if all(
+				os.path.basename(asset) == asset
+				and "\\" not in asset
+				and os.path.isfile(os.path.join(folder, asset))
+				for asset in assets
+			):
+				pins.append(pin)
+		except OSError, ValueError:
+			continue
+	return sorted(pins, key=_version_key, reverse=True)
 
-	if not versions:
+
+def newest_pin() -> str:
+	"""The newest complete runtime build. Refuse creation when none is built."""
+	pins = available_pins()
+	if not pins:
 		frappe.throw(
 			frappe._("No Runtime is built. Run the Runtime build before creating a Prototype."),
 			frappe.ValidationError,
 		)
-
-	return max(versions, key=_version_key)
+	return pins[0]
 
 
 def _version_key(version: str):

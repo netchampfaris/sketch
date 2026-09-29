@@ -128,12 +128,11 @@ def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
 	an agent writing files is a change the user asked for, so the newest mtime
 	in the tree is what the label and the order both read.
 
-	The second is `prototype_files.revision()`'s own format, file count and
-	newest mtime in nanoseconds, and it must stay that format: the thumbnail
-	sidecar is written against one and compared against the other
-	(`sketch/thumbnails.py`).
+	The second includes the runtime pin through `revision_stamp`, shared with
+	`prototype_files.revision`. A pin change invalidates thumbnails without
+	changing the source timestamp or gallery order.
 
-	Both are "" when nothing can be stat'ed, including an empty tree.
+	The timestamp is "" for an empty tree. Its revision still includes the pin.
 	"""
 	base = prototype_files.prototype_dir(name)
 	count = 0
@@ -149,13 +148,13 @@ def _tree_stamp(name: str, files: list[dict]) -> tuple[str, str]:
 			newest_ns = stat.st_mtime_ns
 
 	if not newest_ns:
-		return "", ""
+		return "", prototype_files.revision_stamp(name, 0, 0)
 
 	# st_mtime is epoch UTC. `pretty_date` subtracts against `now_datetime()`,
 	# which is the site's timezone (frappe/utils/data.py:1866), so an
 	# unconverted stamp reads hours out and can print a time in the future.
 	local = convert_utc_to_system_timezone(datetime.fromtimestamp(newest_ns / 1e9, tz=UTC))
-	return local.strftime("%Y-%m-%d %H:%M:%S"), f"{count}-{newest_ns}"
+	return local.strftime("%Y-%m-%d %H:%M:%S"), prototype_files.revision_stamp(name, count, newest_ns)
 
 
 def _card_image(name: str, username: str, slug: str, rev: str, owner: str) -> dict | None:

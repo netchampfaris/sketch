@@ -171,3 +171,42 @@ onMounted(async () => {
 		frappe.db.commit()
 		report = self.check(screenshot=True)["structuredContent"]
 		self.assertEqual(report["warnings"], [])
+
+	def test_runtime_switch_changes_rendering_and_invalidates_previews(self):
+		from sketch import api, thumbnails
+
+		available = tools.call_tool("list_runtimes", {})["structuredContent"]
+		target = next((pin for pin in available["versions"] if pin != self.doc.pin), None)
+		if target is None:
+			self.skipTest("runtime switching needs two installed builds")
+		self.check(screenshot=True)
+		self.assertEqual(thumbnails.state(self.doc.name), "fresh")
+		before = api.prototype_revision(self.doc.slug)["rev"]
+		old_pin = self.doc.pin
+		sources = tools.call_tool(
+			"read_files", {"prototype": self.doc.slug, "paths": ["src/App.vue", "src/router.ts"]}
+		)["structuredContent"]
+		reply = tools.call_tool("set_runtime", {"prototype": self.doc.slug, "version": target})
+		self.assertFalse(reply["isError"], reply)
+		self.assertEqual(reply["structuredContent"]["previous_pin"], old_pin)
+		self.assertEqual(reply["structuredContent"]["pin"], target)
+		self.assertNotEqual(api.prototype_revision(self.doc.slug)["rev"], before)
+		self.assertEqual(thumbnails.state(self.doc.name), "stale")
+		self.assertEqual(
+			sources,
+			tools.call_tool(
+				"read_files", {"prototype": self.doc.slug, "paths": ["src/App.vue", "src/router.ts"]}
+			)["structuredContent"],
+		)
+		frappe.db.commit()
+		self.check(screenshot=True)
+		self.assertEqual(thumbnails.state(self.doc.name), "fresh")
+		# The gallery computes its revision without a second source-tree walk.
+		row = next(row for row in api.list_prototypes() if row["slug"] == self.doc.slug)
+		self.assertEqual(row["pin"], target)
+		self.assertIn("light", row["thumbnail"])
+		reply = tools.call_tool("set_runtime", {"prototype": self.doc.slug, "version": old_pin})
+		self.assertFalse(reply["isError"], reply)
+		self.assertEqual(reply["structuredContent"]["pin"], old_pin)
+		frappe.db.commit()
+		self.check()

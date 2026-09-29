@@ -65,11 +65,13 @@ PARSE_ERROR = "Parse error: body must be a JSON object"
 
 INSTRUCTIONS = """Sketch MCP server: write high-fidelity frappe-ui prototypes that render in the browser.
 
-Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except get_skill, list_prototypes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
+Workflow: call get_skill first. Then list_prototypes or create_prototype, write the files, call check with screenshot: true, and finish with commit. Do that once at the end of each user request, with `prompt` set to the user's message word for word. Every tool except get_skill, list_prototypes, list_runtimes and create_prototype takes a `prototype` argument: the slug returned by create_prototype.
 
 A Prototype is an app-like source tree that lives on this server, not on your disk. Pages go in src/pages/, shared components in src/components/, with src/App.vue and src/router.ts at the top. Every path you pass is a full relative path such as src/pages/Home.vue. Use write_files for new or rewritten files, edit_file for one replacement, and edit_files for related replacements across files. Use upload_asset for images that must render without external requests.
 
 There is no server and no backend. Data lives in plain refs inside the prototype files. Never import useList, useDoc, useCall, useDoctype, useNewDoc, createResource, createListResource, createDocumentResource, frappeRequest or call. They will throw.
+
+Use list_runtimes to find installed frappe-ui versions and set_runtime to change a prototype's pin. Run check afterward to verify compatibility.
 
 TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components and frappe-ui tokens all work; get_skill documents them.
 

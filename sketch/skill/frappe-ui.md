@@ -70,6 +70,14 @@ import logo from './assets/logo.js'
 
 The check browser blocks external images. Uploaded images need no network request.
 
+### Change the runtime
+
+Call `list_runtimes` to find installed frappe-ui versions.
+Pass an exact `version` and the prototype slug to `set_runtime`.
+The result includes `previous_pin`; pass that value to `set_runtime` to switch back.
+Source files remain unchanged. Component APIs can differ between runtime versions.
+Run `check` with `screenshot: true` after switching. Correct any reported errors before finishing.
+
 ### Edit and verify
 
 Use `edit_files` for related changes. Its `edits` array contains `path`, `old_string`, and `new_string`.

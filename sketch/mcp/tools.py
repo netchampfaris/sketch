@@ -11,10 +11,8 @@ user through `prototype.resolve_owned`. Every agent-supplied file path goes
 through `prototype_files.safe_join`, which is the one path guard. This module
 writes no second guard.
 
-Seven tools return structured output: `create_prototype`, `list_prototypes`,
-`list_files`, `read_files`, `check`, `commit` and `set_public`. They declare an
-`outputSchema` and answer with `structuredContent`. `isError` is set
-explicitly, never guessed from the text.
+Tools with structured output declare an `outputSchema` and answer with
+`structuredContent`. `isError` is explicit, never guessed from the text.
 """
 
 import json
@@ -55,7 +53,7 @@ class ToolResult:
 	content: list[dict] = field(default_factory=list)
 
 
-READ_ONLY = {"list_prototypes", "list_files", "read_files", "check", "get_skill"}
+READ_ONLY = {"list_prototypes", "list_files", "read_files", "check", "get_skill", "list_runtimes"}
 
 DESTRUCTIVE = {"delete_file", "set_public"}
 
@@ -225,6 +223,28 @@ def do_list_prototypes(args: dict) -> ToolResult:
 	items = [record(frappe._dict(row)) for row in rows]
 	payload = {"prototypes": items}
 	return ToolResult(text=as_json(payload), structured=payload)
+
+
+def do_list_runtimes(args: dict) -> ToolResult:
+	pins = prototype.available_pins()
+	payload = {"versions": pins, "latest": pins[0] if pins else None}
+	return ToolResult(text=as_json(payload), structured=payload)
+
+
+def do_set_runtime(args: dict) -> ToolResult:
+	doc = owned(args)
+	pin = args["version"]
+	if pin not in prototype.available_pins():
+		frappe.throw("version must name an installed runtime. Call list_runtimes for available versions.")
+	previous = doc.pin
+	if previous != pin:
+		doc.pin = pin
+		doc.save()
+	payload = {**record(doc), "previous_pin": previous}
+	return ToolResult(
+		text=f"Runtime: {previous} -> {pin}. Source files are unchanged. Run check with screenshot: true to verify compatibility and refresh previews.",
+		structured=payload,
+	)
 
 
 def do_create_prototype(args: dict) -> ToolResult:
@@ -533,6 +553,38 @@ def build_tools() -> dict[str, Tool]:
 					"type": "object",
 					"properties": {"prototypes": {"type": "array", "items": RECORD_SCHEMA}},
 					"required": ["prototypes"],
+				},
+			),
+			Tool(
+				name="list_runtimes",
+				description="List installed frappe-ui runtime versions, newest first. Use an exact version with set_runtime.",
+				parameters={"type": "object", "properties": {}},
+				handler=do_list_runtimes,
+				output_schema={
+					"type": "object",
+					"properties": {
+						"versions": {"type": "array", "items": {"type": "string"}},
+						"latest": {"type": ["string", "null"]},
+					},
+					"required": ["versions", "latest"],
+				},
+			),
+			Tool(
+				name="set_runtime",
+				description="Change a Prototype's frappe-ui runtime to an installed version. Source files and its URL stay unchanged. Run check with screenshot: true afterward; component APIs can differ between versions. Use previous_pin from the result to switch back.",
+				parameters={
+					"type": "object",
+					"properties": {
+						"prototype": PROTOTYPE_PARAM,
+						"version": {"type": "string", "minLength": 1},
+					},
+					"required": ["prototype", "version"],
+				},
+				handler=do_set_runtime,
+				output_schema={
+					**RECORD_SCHEMA,
+					"properties": {**RECORD_SCHEMA["properties"], "previous_pin": {"type": "string"}},
+					"required": [*RECORD_SCHEMA["required"], "previous_pin"],
 				},
 			),
 			Tool(

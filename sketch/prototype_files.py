@@ -501,19 +501,18 @@ def delete_file(name: str, path: str) -> None:
 
 
 def revision(name: str) -> str:
-	"""A short string that changes whenever any file in the tree changes.
+	"""A short string that changes when the files or runtime pin change.
 
-	The Viewer polls this to decide when to reload. It is a stat walk, not a
-	content hash: the file count and the newest modification time in
-	nanoseconds. A write that leaves the mtime where it was is missed. No
-	writer in Sketch does that, and a stat walk stays cheap enough to answer
-	every two seconds.
+	The Viewer polls this to decide when to reload. It combines the runtime
+	pin, file count, and newest modification time in nanoseconds. Writes that
+	preserve the newest mtime can be missed. Sketch writers update it.
+	The stat walk runs every two seconds while an owner viewer is open.
 
-	Returns "" for a tree that does not exist.
+	Returns "" when neither a prototype nor its tree exists.
 	"""
 	base = prototype_dir(name)
 	if not os.path.isdir(base):
-		return ""
+		return revision_stamp(name, 0, 0)
 
 	count = 0
 	newest = 0
@@ -527,7 +526,15 @@ def revision(name: str) -> str:
 		if stamp > newest:
 			newest = stamp
 
-	return f"{count}-{newest}"
+	return revision_stamp(name, count, newest)
+
+
+def revision_stamp(name: str, count: int, newest_ns: int) -> str:
+	"""Shared by the file walk and gallery listing so thumbnail stamps agree."""
+	pin = frappe.db.get_value("Sketch Prototype", name, "pin")
+	if not pin and not count:
+		return ""
+	return f"{count}-{newest_ns}:{pin or ''}"
 
 
 def read_tree(name: str) -> dict[str, str]:
