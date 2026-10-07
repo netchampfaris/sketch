@@ -7,9 +7,9 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const version = '1.0.0-rc.2'
 const outDir = path.resolve(here, '../sketch/public/runtimes', version)
 
-// The annotate toolbar: one ES module that boot.js imports for the owner's live tab. Everything the
-// Prototype already loads stays external, so the toolbar shares its Vue, router, frappe-ui and
-// vueuse through the import map and adds none of them to the download. `frappe-ui/list` is
+// The annotate toolbar (imported by boot.js for the owner's live tab) and `sketch:variants` (imported
+// by Prototypes): one ES module each. Everything the Prototype already loads stays external, so both
+// share its Vue, router, frappe-ui and vueuse through the import map and add none of them to the download. `frappe-ui/list` is
 // matched by the pattern with the main entry.
 export default defineConfig({
   root: here,
@@ -23,11 +23,14 @@ export default defineConfig({
     // Own CSS is not needed: layer 2 generates the toolbar's utilities from the live DOM.
     cssCodeSplit: false,
     lib: {
-      entry: { annotate: path.resolve(here, 'annotate/index.ts') },
+      entry: {
+        annotate: path.resolve(here, 'annotate/index.ts'),
+        variants: path.resolve(here, 'variants/index.ts'),
+      },
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['vue', 'vue-router', '@vueuse/core', /^frappe-ui(\/.*)?$/],
+      external: ['vue', 'vue-router', '@vueuse/core', 'sketch:variants', /^frappe-ui(\/.*)?$/],
       output: { entryFileNames: '[name].js', chunkFileNames: '[name]-[hash].js' },
     },
   },

@@ -151,6 +151,10 @@ function setTitle(data) {
 // of the Prototype: no poller.
 const framed = window.top !== window.self
 
+// A framed Viewer and a `check` run (the Guest request that carries `sig` in its URL) show the design
+// alone: Variants reads this and leaves its pill out.
+if (framed || new URLSearchParams(location.search).has('sig')) document.documentElement.dataset.sketchChrome = 'off'
+
 // The one answer to "does this tab reload itself". startLiveReload and the
 // status copy both read it, so the promise can never outlive the poller. The
 // copy used to read `data.live` alone, so a card preview of the owner's own

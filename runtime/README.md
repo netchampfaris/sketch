@@ -30,6 +30,7 @@ the three test scripts, and the bench running on port 8007.
 | `runtime-entry/compiler.js` | In-browser SFC compiler: `@vue/compiler-sfc` plus sucrase |
 | `tailwind/` | The browser Tailwind engine with the frappe-ui preset |
 | `annotate/`, `vite.annotate.config.js` | The comment and tweak toolbar. One ES module, `annotate.js`, that `boot.js` imports for the owner's live tab. vue, vue-router, frappe-ui and vueuse are external |
+| `variants/` | `<Variants>`, the design-option switcher, `useDemoState` (personas and phases), and their two stacked pills. Built as `variants.js` by the same config. `sketch:variants` is a Prototype import, and annotate imports it too (external) to share its Keep handler |
 | `internals.css`, `internals.tailwind.config.js` | Layer 1: precompiled frappe-ui CSS |
 | `fonts/inter.css` | Inter, roman only |
 | `viewer/viewer.html` | The document: stylesheets, import map, the data slot |
