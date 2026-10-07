@@ -2,9 +2,14 @@
 // production: read the pinned viewer.html, substitute the data slot once, and
 // serve the result. Nothing here is part of the Runtime bundle.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { newest } from './versions.mjs'
 
-export const VERSION = '1.0.0-rc.2'
+const here = dirname(fileURLToPath(import.meta.url))
+
+/** The newest built Runtime. Set SKETCH_RUNTIME to drive another version. */
+export const VERSION = process.env.SKETCH_RUNTIME || newest(join(here, '../sketch/public/runtimes'))
 export const BASE = `http://localhost:8007/assets/sketch/runtimes/${VERSION}`
 export const VIEWER = `${BASE}/viewer.html`
 

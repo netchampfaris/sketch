@@ -1,12 +1,12 @@
 #!/bin/sh
-# Builds the browser Tailwind engine. Recipe from ticket 06, retargeted at
-# sketch's own node_modules and frappe-ui 1.0.0-rc.2.
+# Builds the browser Tailwind engine. Recipe from ticket 06. runtime/build.sh
+# calls it with NM set to one version's node_modules.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-NM=$HERE/../../frontend/node_modules
 OUT=${1:-$HERE/dist}
+: "${NM:?set NM to one version's node_modules}"
 mkdir -p "$OUT"
-"${ESBUILD:-/tmp/sfc-bench/node_modules/esbuild/bin/esbuild}" "$HERE/entry.js" \
+"${ESBUILD:-$NM/.bin/esbuild}" "$HERE/entry.js" \
   --bundle --format=esm --platform=browser --minify --outfile="$OUT/tailwind.js" \
   --loader:.css=text --loader:.json=json \
   --alias:fs="$HERE/shims/fs.js" --alias:path="$HERE/shims/path.js" \
