@@ -71,7 +71,7 @@ A Prototype is an app-like source tree that lives on this server, not on your di
 
 There is no server and no backend. Data lives in plain refs inside the prototype files. Never import useList, useDoc, useCall, useDoctype, useNewDoc, createResource, createListResource, createDocumentResource, frappeRequest or call. They will throw.
 
-Use list_runtimes to find installed frappe-ui versions and set_runtime to change a prototype's pin. Verify compatibility afterward in the user's browser, or use check if browser access is unavailable.
+Use list_runtimes to find installed frappe-ui versions and set_runtime to change a prototype's pin. A prototype record has upgrade_to when a newer runtime is installed, and list_files and read_files add a note. Then suggest the upgrade to the user once per conversation, and name both versions. Call set_runtime only after the user agrees. Then verify in the user's browser, or use check if browser access is unavailable. Fix breakages, and commit.
 
 TypeScript is stripped, not type-checked. Tailwind classes, frappe-ui components and frappe-ui tokens all work; get_skill documents them.
 

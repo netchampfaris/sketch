@@ -78,6 +78,10 @@ The result includes `previous_pin`; pass that value to `set_runtime` to switch b
 Source files remain unchanged. Component APIs can differ between runtime versions.
 Verify compatibility after switching, using the workflow below. Correct reported errors before finishing.
 
+A prototype record has `upgrade_to` when a newer runtime is installed. `list_files` and `read_files` then add a note.
+Suggest the upgrade to the user once per conversation. Name the current `pin` and the `upgrade_to` version.
+Do not switch without the user's consent. When the user agrees, call `set_runtime`, verify, fix breakages, and commit.
+
 ### Edit and verify
 
 Use `edit_files` for related changes. Its `edits` array contains `path`, `old_string`, and `new_string`.
