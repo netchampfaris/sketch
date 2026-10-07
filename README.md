@@ -111,8 +111,9 @@ it; `checkd/sketch-checkd.service` is the systemd unit.
 ```bash
 yarn install          # installs frontend/ too
 yarn dev              # vite, the SPA
-yarn build            # the SPA, then the runtime bundle
-yarn build:runtime    # the runtime bundle alone
+yarn build            # the SPA, then every changed Runtime
+yarn build:runtime    # every changed Runtime alone
+yarn runtime:add      # add a Runtime for frappe-ui `latest`
 bench --site <test-site> run-tests --app sketch
 ```
 
