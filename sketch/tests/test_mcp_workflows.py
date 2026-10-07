@@ -241,3 +241,23 @@ class TestMcpWorkflows(IntegrationTestCase):
 			self.assertTrue(reply["isError"], reply)
 		self.doc.reload()
 		self.assertEqual(self.doc.pin, tools.call_tool("list_runtimes", {})["structuredContent"]["latest"])
+
+	def test_outdated_prototype_offers_the_newest_runtime_until_upgraded(self):
+		from sketch import prototype
+
+		# Two runtimes may not be built here, so the older one is patched in.
+		newest, older = self.doc.pin, "0.0.1"
+		with patch.object(prototype, "available_pins", return_value=[newest, older]):
+			self.assertFalse(self.call("set_runtime", version=older)["isError"])
+
+			listed = tools.call_tool("list_prototypes", {})["structuredContent"]["prototypes"]
+			self.assertEqual([p["upgrade_to"] for p in listed if p["slug"] == self.doc.slug], [newest])
+			for name, arguments in (("read_files", {"paths": ["src/one.js"]}), ("list_files", {})):
+				reply = self.call(name, **arguments)
+				self.assertEqual(len(reply["content"]), 2, reply)
+				self.assertIn(older, reply["content"][1]["text"])
+				self.assertIn(newest, reply["content"][1]["text"])
+
+			reply = self.call("set_runtime", version=newest)
+			self.assertIsNone(reply["structuredContent"]["upgrade_to"])
+			self.assertEqual(len(self.call("read_files", paths=["src/one.js"])["content"]), 1)
