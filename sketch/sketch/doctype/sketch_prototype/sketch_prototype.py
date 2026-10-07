@@ -14,6 +14,8 @@ class SketchPrototype(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		annotations: DF.LongText | None
+		annotations_epoch: DF.Int
 		is_public: DF.Check
 		pending_changes: DF.LongText | None
 		pin: DF.Data

@@ -22,7 +22,7 @@ import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
-from sketch import prototype, prototype_files, runtime_assets, signature
+from sketch import annotations, prototype, prototype_files, runtime_assets, signature
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -262,9 +262,17 @@ class SketchViewerRenderer(BaseRenderer):
 		code reads the payload. It learns the revision counter of a tree it
 		already holds in full, one line above. Nothing else: the signature
 		covers this hash id, so it says nothing about any other Prototype.
+
+		`annotations`, `annotations_epoch`, `annotate_exp` and `annotate_sig` feed the owner's
+		toolbar and follow the same rule: live owner pages only, so a Guest and
+		a `check` request carry none (sketch/annotations.py).
 		"""
 		live = self.is_live()
 		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
+		# The toolbar's own credential, for the same page and the same TTL. A
+		# separate scope, so the poll signature cannot write annotations and
+		# this one cannot read the revision (sketch/signature.py).
+		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -277,6 +285,10 @@ class SketchViewerRenderer(BaseRenderer):
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"exp": stamp.get("exp", ""),
 			"sig": stamp.get("sig", ""),
+			"annotations": annotations.read(self.doc.name) if live else None,
+			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
+			"annotate_exp": mark.get("exp", ""),
+			"annotate_sig": mark.get("sig", ""),
 			"theme": url_theme(),
 		}
 

@@ -98,7 +98,8 @@ class TestSkillNames(unittest.TestCase):
 		cls.exports = {
 			specifier: bundle_exports(cls.runtime / filename)
 			for specifier, filename in cls.import_map.items()
-			if not specifier.startswith("sketch:")
+			# sketch:variants is the one Sketch bundle a Prototype imports.
+			if not specifier.startswith("sketch:") or specifier == "sketch:variants"
 		}
 		cls.blocks = [
 			(lang, body)

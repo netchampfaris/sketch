@@ -22,8 +22,9 @@ BASE=/assets/sketch/runtimes/$VERSION
 
 # The shared source that goes into every Runtime. A change to any of it, or
 # to this version's lockfile, changes the stamp.
-SOURCES="runtime-entry tailwind viewer fonts internals.css internals.tailwind.config.js
-  vite.runtime.config.js make-lucide-map.mjs make-manifest.mjs build.sh package.json"
+SOURCES="runtime-entry tailwind viewer fonts annotate variants internals.css
+  internals.tailwind.config.js vite.runtime.config.js vite.annotate.config.js
+  make-lucide-map.mjs make-manifest.mjs build.sh package.json"
 STAMP=$(cd "$HERE" && find $SOURCES "versions/$VERSION/package.json" "versions/$VERSION/yarn.lock" \
   -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16)
 if [ "$2" != "--force" ] && [ "$(cat "$OUT/.build-stamp" 2>/dev/null)" = "$STAMP" ]; then
@@ -56,17 +57,17 @@ DATA_SLOT='<script id="sketch-data" type="application/json">SKETCH_DATA</script>
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 
-echo "[1/5] frappe-ui ESM assets"
+echo "[1/6] frappe-ui ESM assets"
 RUNTIME_OUT="$STAGE" "$NM/.bin/vite" build -c "$WORK/vite.runtime.config.js" >/dev/null
 
-echo "[2/5] vue + vue-router"
+echo "[2/6] vue + vue-router"
 cp "$NM/vue/dist/vue.runtime.esm-browser.prod.js" "$STAGE/vue.js"
 cp "$NM/vue-router/dist/vue-router.esm-browser.prod.js" "$STAGE/vue-router.js"
 # vue-router's browser build imports "vue" by bare specifier; the import map
 # resolves it, so both it and frappe-ui share one Vue instance. The dev build
 # imports @vue/devtools-api, which no import map entry covers.
 
-echo "[3/5] precompiled frappe-ui CSS (layer 1)"
+echo "[3/6] precompiled frappe-ui CSS (layer 1)"
 "$NM/.bin/tailwindcss" -c "$WORK/internals.tailwind.config.js" \
   -i "$WORK/internals.css" -o "$STAGE/frappe-ui.css" --minify 2>/dev/null
 
@@ -77,7 +78,7 @@ echo "[3/5] precompiled frappe-ui CSS (layer 1)"
   --bundle --format=esm --platform=browser --minify --target=es2022 \
   --external:vue --outfile="$STAGE/vueuse.js" --log-level=warning
 
-echo "[4/5] SFC compiler + Tailwind browser engine"
+echo "[4/6] SFC compiler + Tailwind browser engine"
 node "$WORK/make-lucide-map.mjs" "$NM/lucide-static/icons"
 "$ESBUILD" "$WORK/runtime-entry/compiler.js" \
   --bundle --format=esm --platform=browser --minify --target=es2022 \
@@ -88,7 +89,12 @@ NM="$NM" ESBUILD="$ESBUILD" sh "$WORK/tailwind/build.sh" "$STAGE"
 # almost no Prototype sets in italic.
 cp "$NM/frappe-ui/src/fonts/Inter/Inter.var.woff2" "$STAGE/Inter.var.woff2"
 
-echo "[5/5] viewer + manifest"
+echo "[5/6] annotate toolbar"
+# Owner-only: boot.js imports it for the owner's live tab, nobody else downloads it. It builds after
+# the frappe-ui step because it shares that step's output folder (emptyOutDir is off in both).
+RUNTIME_OUT="$STAGE" "$NM/.bin/vite" build -c "$WORK/vite.annotate.config.js" >/dev/null
+
+echo "[6/6] viewer + manifest"
 # boot.js is cached by the browser and by Cloudflare. The document names it
 # with this hash, so a changed file is a changed URL and reaches every client
 # on the next page load.

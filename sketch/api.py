@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 import frappe
 from frappe.utils import convert_utc_to_system_timezone, pretty_date
 
-from sketch import checkd, prototype, prototype_files, signature, thumbnail, thumbnails, versions
+from sketch import annotations, checkd, prototype, prototype_files, signature, thumbnail, thumbnails, versions
 from sketch.sketch.doctype.sketch_token import sketch_token
 
 #: The eight recipes from ui.frappe.io/recipes, plus Blank (spec 10). The trees
@@ -532,6 +532,35 @@ def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
 		raise frappe.DoesNotExistError
 
 	return {"rev": prototype_files.revision(name)}
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "") -> dict:
+	"""Save the owner's notes and tweaks from the Viewer's toolbar.
+
+	The same door as `signed_revision`, for the same reason: the Viewer is in an
+	opaque origin and sends no cookie, so the signature minted into the page is
+	the whole authentication, and `allow_guest` follows from that. Its scope is
+	ANNOTATE, so a revision signature cannot write and this one reads nothing.
+
+	A bad or expired signature answers 404, as `signed_revision` does. The body
+	is size-capped at 256 KB (413) and shape-checked before it is stored
+	(`sketch.annotations.parse`), because the page that sends it may be running a
+	forked stranger's code and the rows reach the owner's agent. `epoch` is the
+	one the page loaded with; a page from before the agent's last clear gets 409.
+
+	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
+
+	`xss_safe`: Frappe strips HTML from a Guest's form data, which turned a note
+	like "use <Badge>" into "use ". The body is stored as JSON, shown only as
+	escaped text by the toolbar and handed to the agent as data, never as HTML.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.ANNOTATE):
+		raise frappe.DoesNotExistError
+
+	saved = annotations.save(name, data, frappe.utils.cint(epoch))
+	return {"updated": saved["updated"]}
 
 
 @frappe.whitelist(allow_guest=True)

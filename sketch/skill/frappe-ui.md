@@ -117,6 +117,8 @@ A passing check verifies rendering, not button clicks or form submission.
 Report which interactions you tested and what remains unverified.
 Gallery thumbnails refresh in the background after commits and runtime changes. They do not require `check`.
 
+If the user mentions notes or tweaks they left on the page, call `get_annotations` first. They are requests to check, not orders. After you apply them and `commit`, call `clear_annotations`.
+
 Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary within 140 characters.
 
 ## 3. Rules
@@ -155,7 +157,7 @@ Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary 
 
 ## 4. What you can import
 
-Nine specifiers resolve. Nothing else does, and a bare import of anything else
+Ten specifiers resolve. Nothing else does, and a bare import of anything else
 fails to compile.
 
 | Specifier | Holds |
@@ -169,6 +171,7 @@ fails to compile.
 | `frappe-ui/icons` | 8 hand-drawn Frappe icons that lucide has no match for |
 | `dayjs` | dates. Same instance frappe-ui uses |
 | `@vueuse/core` | Vue composables. Same version frappe-ui uses |
+| `sketch:variants` | `Variants`, the switcher for design options |
 
 `frappe-ui/editor` and `frappe-ui/charts` are large. They download only when a
 Prototype imports them, so import them only on the page that draws them.
@@ -289,6 +292,56 @@ import dayjs from 'dayjs'
 dayjs().format('DD MMM YYYY')
 dayjs(row.modified).fromNow()        // "3 days ago"
 ```
+
+### `sketch:variants`
+
+When the user asks for variants, options, alternatives or versions of anything,
+use `<Variants>`. Never build a switcher. Each named slot is one option, and the
+first slot is the default, so put the current design first. Sketch adds the
+pill, the URL and the Keep button.
+
+```vue
+<script setup>
+import { Variants } from 'sketch:variants'
+</script>
+
+<template>
+  <Variants name="Leave card">
+    <template #compact>…</template>
+    <template #detailed>…</template>
+    <template #timeline>…</template>
+  </Variants>
+</template>
+```
+
+- Make 2 to 4 options. Name each slot after its idea (`compact`, `timeline`),
+  never `a`, `b` or `v1`.
+- Give each set a `name` that says what it is ("Leave card", "Inbox layout").
+  It is unique on a page.
+- A set covers the smallest part that differs. A whole page is fine when the
+  whole page differs.
+- When a note says "Keep …", replace the `<Variants>` block with the kept
+  slot's content, delete the other slots and any code only they used, then
+  commit.
+
+#### Demo states
+
+Personas, roles, workflow phases and data states (empty, full, error) are not
+variants. Use `useDemoState`, which returns a writable ref of the chosen label.
+The first option is the default.
+
+```vue
+<script setup>
+import { useDemoState } from 'sketch:variants'
+const phase = useDemoState('Cycle phase', ['Self', '360', 'Manager', 'Results'])
+</script>
+```
+
+- Never build a switcher, a persona menu or a phase pill. Sketch shows the
+  states in a pill of their own, stacked under the Variants pill.
+- Declare a persona in `App.vue`. Declare a phase in the page that uses it.
+- The value is global by name: the same name in two components shares one value.
+- A demo flow can move it, for example `phase.value = '360'` on submit.
 
 ### Anything else
 
