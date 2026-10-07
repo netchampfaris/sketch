@@ -33,8 +33,9 @@ import {
 <template>
   <!-- Scope tabs, stackable attribute filters, then group and sort. -->
   <div class="flex flex-wrap items-center gap-2 pt-5">
-    <!-- rc.2 TabButtons reads `value` from an option. A label alone never
-         updates the model, so every option carries an explicit value. -->
+    <!-- frappe-ui 1.0.0 TabButtons reads `value` from an option. A label
+         alone never updates the model, so every option carries an explicit
+         value. -->
     <TabButtons
       v-model="view.tab"
       :options="[
