@@ -67,6 +67,24 @@ class TestSaveAnnotations(IntegrationTestCase):
 		self.save(body())
 		self.assertEqual(frappe.local.response_headers["Access-Control-Allow-Origin"], "*")
 
+	def test_angle_brackets_survive_the_http_door(self):
+		"""Notes name components ("<Badge>"); a Guest's form data must reach the field as sent."""
+		utils.require_webserver()
+		note = {**NOTE, "note": "Use <Badge> here & keep <b>bold</b>"}
+		mark = self.stamp()
+		form = {
+			"name": self.doc.name,
+			"exp": str(mark["exp"]),
+			"sig": mark["sig"],
+			"data": json.dumps({"notes": [note], "tweaks": []}),
+			"epoch": str(annotations.epoch(self.doc.name)),
+		}
+		frappe.db.commit()  # the web server reads this Prototype through its own connection
+		response = utils.request("POST", "/api/method/sketch.api.save_annotations", data=form)
+		self.assertEqual(response.status_code, 200, response.text)
+		frappe.db.rollback()
+		self.assertEqual(annotations.read(self.doc.name)["notes"][0]["note"], note["note"])
+
 	def test_unknown_keys_are_dropped(self):
 		self.save(body(extra="x", updated="1999"))
 		saved = annotations.read(self.doc.name)

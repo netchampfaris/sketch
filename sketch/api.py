@@ -534,7 +534,7 @@ def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
 	return {"rev": prototype_files.revision(name)}
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "") -> dict:
 	"""Save the owner's notes and tweaks from the Viewer's toolbar.
 
@@ -550,6 +550,10 @@ def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", ep
 	one the page loaded with; a page from before the agent's last clear gets 409.
 
 	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
+
+	`xss_safe`: Frappe strips HTML from a Guest's form data, which turned a note
+	like "use <Badge>" into "use ". The body is stored as JSON, shown only as
+	escaped text by the toolbar and handed to the agent as data, never as HTML.
 	"""
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
 	if not signature.verify(name, exp, sig, signature.ANNOTATE):

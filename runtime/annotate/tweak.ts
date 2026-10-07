@@ -965,7 +965,14 @@ const gapOf = (c: string) => c.replace(/^gap(?:-[xy])?-/, '') || '0'
 // What the list shows for a tweak: icon plus value, only for changes that change the page.
 function displayChanges(t: Tweak): Change[] {
   const out: Change[] = []
-  if (copiesChanged(t).length) out.push({ icon: 'lucide-text-cursor', text: 'Copy' })
+  // The new wording itself, so the row says what the copy became, not just that it changed.
+  const copies = copiesChanged(t)
+  if (copies.length) {
+    const to = copies[0].to.trim()
+    const shown = to.length > 32 ? `${to.slice(0, 31)}…` : to
+    const more = copies.length > 1 ? ` +${copies.length - 1}` : ''
+    out.push({ icon: 'lucide-text-cursor', text: `${shown ? `“${shown}”` : 'No text'}${more}` })
+  }
   const from = t.original.classes
   const to = t.classes
   for (const c of catsChanged(t)) {
