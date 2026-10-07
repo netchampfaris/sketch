@@ -29,8 +29,6 @@ PREFIX = "d2t"
 
 TEST_ROLE = "Sketch User"
 
-RUNTIMES = ("public", "runtimes")
-
 CHECKD_URL = os.environ.get("SKETCH_CHECKD_URL", "http://127.0.0.1:8010/check")
 
 
@@ -144,7 +142,7 @@ def node_reason() -> str | None:
 		)
 
 	if newest_runtime() is None:
-		return "no Runtime is built under sketch/public/runtimes; run runtime/build.sh"
+		return "no Runtime is built under sketch/public/runtimes; run runtime/build-all.sh"
 
 	return None
 
@@ -184,18 +182,19 @@ def require_runtime() -> None:
 	"""
 	if newest_runtime() is None:
 		raise unittest.SkipTest(
-			"no Runtime is built under sketch/public/runtimes; run runtime/build.sh"
+			"no Runtime is built under sketch/public/runtimes; run runtime/build-all.sh"
 		)
 
 
 def newest_runtime() -> str | None:
-	"""The newest built Runtime version, or None when none is built."""
-	root = frappe.get_app_path("sketch", *RUNTIMES)
-	if not os.path.isdir(root):
-		return None
+	"""The newest built Runtime version, or None when none is built.
 
-	versions = sorted(entry for entry in os.listdir(root) if os.path.isdir(os.path.join(root, entry)))
-	return versions[-1] if versions else None
+	The same choice a new Prototype gets: version order, not string order.
+	"""
+	from sketch import prototype
+
+	pins = prototype.available_pins()
+	return pins[0] if pins else None
 
 
 # ---------------------------------------------------------------- fixtures

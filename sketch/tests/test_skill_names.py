@@ -66,8 +66,10 @@ def newest_runtime() -> Path | None:
 	"""The Runtime is a build artifact and is not in git, so it may be absent."""
 	if not RUNTIMES.is_dir():
 		return None
-	versions = sorted(p for p in RUNTIMES.iterdir() if p.is_dir())
-	return versions[-1] if versions else None
+	from sketch.prototype import _version_key
+
+	versions = [p for p in RUNTIMES.iterdir() if p.is_dir() and (p / "manifest.json").is_file()]
+	return max(versions, key=lambda p: _version_key(p.name), default=None)
 
 
 def bundle_exports(path: Path) -> set:
@@ -89,7 +91,7 @@ class TestSkillNames(unittest.TestCase):
 		cls.runtime = newest_runtime()
 		if cls.runtime is None:
 			raise unittest.SkipTest(
-				f"no Runtime built under {RUNTIMES}; run runtime/build.sh"
+				f"no Runtime built under {RUNTIMES}; run runtime/build-all.sh"
 			)
 		cls.manifest = json.loads((cls.runtime / "manifest.json").read_text())
 		cls.import_map = cls.manifest["importMap"]
