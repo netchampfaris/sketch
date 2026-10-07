@@ -10,13 +10,13 @@ import { restore, startSaving } from './store'
 export function mountAnnotate(data: Payload) {
   const root = document.getElementById('app') as (HTMLElement & { __vue_app__?: any }) | null
   const router = root?.__vue_app__?.config.globalProperties.$router
-  if (!router || !data.annotate_sig || document.querySelector('[data-sketch-ui]')) return
+  if (!router || !data.annotate_sig || document.querySelector('[data-sketch-ui="annotate"]')) return
 
   initHost(data, router)
   restore()
 
   const el = document.createElement('div')
-  el.setAttribute('data-sketch-ui', '')
+  el.setAttribute('data-sketch-ui', 'annotate')
   document.body.append(el)
 
   const app = createApp(Annotate)

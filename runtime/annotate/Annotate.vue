@@ -8,6 +8,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { Badge, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
+import { setKeepHandler } from 'sketch:variants'
 import { saveState } from './store'
 import NotePopover from './NotePopover.vue'
 import Pins from './Pins.vue'
@@ -166,6 +167,31 @@ function save() {
 	}
 	close()
 }
+
+// Keep on a Variants set is a normal note, anchored on the set's first element.
+setKeepHandler((el, note) => {
+	const r = el.getBoundingClientRect()
+	const c = componentOf(el)
+	const info = infoOf(el)
+	addNote(
+		{
+			route: key.value,
+			viewport: `${window.innerWidth}x${window.innerHeight}`,
+			selector: info.selector,
+			component: c.component,
+			componentChain: c.chain,
+			file: c.file,
+			element: info.element,
+			text: info.text,
+			state: info.state || undefined,
+			note,
+			offset: { x: 0.5, y: 0.5 },
+			rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+		},
+		[el],
+	)
+})
+onBeforeUnmount(() => setKeepHandler(null))
 
 function remove() {
 	if (draft.value?.editing) removeNote(draft.value.editing)
@@ -523,6 +549,8 @@ const moved = ref(storedAnchor() !== null)
 const triggerStyle = computed(() => {
 	const [v, h] = (moved.value ? anchor.value : 'bottom-right').split('-')
 	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: '12px' }
+	// Above the Variants pill when there is one: the pill sets --sketch-variants-h, and the -8px fallback cancels the +8px.
+	if (v === 'bottom' && h === 'right') s.bottom = 'calc(12px + var(--sketch-variants-h, -8px) + 8px)'
 	if (h === 'left') s.left = '12px'
 	else if (h === 'right') s.right = '12px'
 	else s.left = 'calc(50% - 16px)'
