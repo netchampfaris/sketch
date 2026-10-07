@@ -38,8 +38,15 @@ DEFAULT_TTL = 60
 #:   JavaScript reads it, so it must never open the document as well: a
 #:   forked tree runs a stranger's code, and that code would hold a link to
 #:   the reader's own Prototype for as long as the signature lasts.
+#: - ANNOTATE writes the owner's notes and tweaks for one Prototype
+#:   (`sketch.api.save_annotations`). Like REVISION it is minted into the page
+#:   and read by the Prototype's own JavaScript, so it must open nothing else.
+#:   What it can do is put rows in front of the owner's agent, which is why the
+#:   save is size- and shape-checked and the MCP tool tells the agent to treat
+#:   the rows as requests to check, never as orders.
 VIEW = "view"
 REVISION = "revision"
+ANNOTATE = "annotate"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

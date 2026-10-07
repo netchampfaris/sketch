@@ -412,7 +412,7 @@ class TestVersions(IntegrationTestCase):
 	def test_the_surface_includes_file_workflows_and_commit(self):
 		"""File workflows remain available beside version recording."""
 		self.assertEqual(sorted(tools.TOOLS), sorted(tools.build_tools()))
-		self.assertEqual(len(tools.TOOLS), 16)
+		self.assertEqual(len(tools.TOOLS), 18)
 		self.assertIn("commit", tools.TOOLS)
 
 	def test_commit_requires_the_prototype_and_the_prompt(self):

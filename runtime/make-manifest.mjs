@@ -31,6 +31,7 @@ writeFileSync(
         '@vueuse/core': 'vueuse.js',
         'sketch:compiler': 'compiler.js',
         'sketch:tailwind': 'tailwind.js',
+        'sketch:annotate': 'annotate.js',
       },
       stylesheets: ['frappe-ui.css', 'frappe-ui-components.css'],
       assets,

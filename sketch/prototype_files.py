@@ -530,11 +530,19 @@ def revision(name: str) -> str:
 
 
 def revision_stamp(name: str, count: int, newest_ns: int) -> str:
-	"""Shared by the file walk and gallery listing so thumbnail stamps agree."""
-	pin = frappe.db.get_value("Sketch Prototype", name, "pin")
+	"""Shared by the file walk and gallery listing so thumbnail stamps agree.
+
+	The annotations epoch is part of it, bumped only when the agent clears
+	annotations (`sketch.annotations.clear`). A client save never moves it.
+	"""
+	row = frappe.db.get_value("Sketch Prototype", name, ["pin", "annotations_epoch"])
+	pin, epoch = row or (None, 0)
 	if not pin and not count:
 		return ""
-	return f"{count}-{newest_ns}:{pin or ''}"
+	# The agent clearing annotations is the one non-file write the open Viewer
+	# must see, so it moves the revision. Absent at 0, so a Prototype that was
+	# never cleared keeps the string it always had.
+	return f"{count}-{newest_ns}:{pin or ''}" + (f":a{epoch}" if epoch else "")
 
 
 def read_tree(name: str) -> dict[str, str]:

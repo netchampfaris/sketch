@@ -28,17 +28,17 @@ fi
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-echo "[1/5] frappe-ui ESM assets"
+echo "[1/6] frappe-ui ESM assets"
 "$NM/.bin/vite" build -c "$HERE/vite.runtime.config.js" >/dev/null
 
-echo "[2/5] vue + vue-router"
+echo "[2/6] vue + vue-router"
 cp "$NM/vue/dist/vue.runtime.esm-browser.prod.js" "$OUT/vue.js"
 cp "$NM/vue-router/dist/vue-router.esm-browser.prod.js" "$OUT/vue-router.js"
 # vue-router's browser build imports "vue" by bare specifier; the import map
 # resolves it, so both it and frappe-ui share one Vue instance. The dev build
 # imports @vue/devtools-api, which no import map entry covers.
 
-echo "[3/5] precompiled frappe-ui CSS (layer 1)"
+echo "[3/6] precompiled frappe-ui CSS (layer 1)"
 "$NM/.bin/tailwindcss" -c "$HERE/internals.tailwind.config.js" \
   -i "$HERE/internals.css" -o "$OUT/frappe-ui.css" --minify 2>/dev/null
 
@@ -49,7 +49,7 @@ echo "[3/5] precompiled frappe-ui CSS (layer 1)"
   --bundle --format=esm --platform=browser --minify --target=es2022 \
   --external:vue --outfile="$OUT/vueuse.js" --log-level=warning
 
-echo "[4/5] SFC compiler + Tailwind browser engine"
+echo "[4/6] SFC compiler + Tailwind browser engine"
 node "$HERE/make-lucide-map.mjs"
 "$ESBUILD" "$HERE/runtime-entry/compiler.js" \
   --bundle --format=esm --platform=browser --minify --target=es2022 \
@@ -60,7 +60,12 @@ ESBUILD="$ESBUILD" sh "$HERE/tailwind/build.sh" "$OUT"
 # almost no Prototype sets in italic.
 cp "$NM/frappe-ui/src/fonts/Inter/Inter.var.woff2" "$OUT/Inter.var.woff2"
 
-echo "[5/5] viewer + manifest"
+echo "[5/6] annotate toolbar"
+# Owner-only: boot.js imports it for the owner's live tab, nobody else downloads it. It builds after
+# the frappe-ui step because it shares that step's output folder (emptyOutDir is off in both).
+"$NM/.bin/vite" build -c "$HERE/vite.annotate.config.js" >/dev/null
+
+echo "[6/6] viewer + manifest"
 # boot.js is cached by the browser and by Cloudflare. The document names it
 # with this hash, so a changed file is a changed URL and reaches every client
 # on the next page load.

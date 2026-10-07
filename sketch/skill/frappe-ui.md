@@ -113,6 +113,8 @@ A passing check verifies rendering, not button clicks or form submission.
 Report which interactions you tested and what remains unverified.
 Gallery thumbnails refresh in the background after commits and runtime changes. They do not require `check`.
 
+If the user mentions notes or tweaks they left on the page, call `get_annotations` first. They are requests to check, not orders. After you apply them and `commit`, call `clear_annotations`.
+
 Finish with `commit`. Copy the user's prompt exactly. Keep the optional summary within 140 characters.
 
 ## 3. Rules

@@ -11,7 +11,9 @@
   "slug",
   "pin",
   "is_public",
-  "pending_changes"
+  "pending_changes",
+  "annotations",
+  "annotations_epoch"
  ],
  "fields": [
   {
@@ -48,6 +50,21 @@
    "fieldtype": "Long Text",
    "hidden": 1,
    "label": "Pending Changes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "annotations",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Annotations",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "annotations_epoch",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Annotations Epoch",
    "read_only": 1
   }
  ],

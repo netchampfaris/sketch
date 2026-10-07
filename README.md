@@ -46,7 +46,7 @@ sends no `Authorization` header.
 
 ## The tool surface
 
-Sixteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
+Eighteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
 `create_prototype`, each tool takes the `prototype` slug.
 
 | Tool | What it does |
@@ -65,6 +65,8 @@ Sixteen tools. Except for `get_skill`, `list_prototypes`, `list_runtimes`, and
 | `delete_file` | Remove one file |
 | `check` | Check automatic or explicit routes, with optional viewport and full-page screenshots |
 | `commit` | Record a version, with the user's prompt |
+| `get_annotations` | The notes and tweaks the owner left on the live page with the toolbar |
+| `clear_annotations` | Remove applied notes and tweaks, by id or all. The open page reloads empty |
 | `set_name` | Rename. The slug never moves |
 | `set_public` | Turn the public link on or off |
 
