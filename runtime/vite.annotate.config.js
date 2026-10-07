@@ -4,8 +4,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const version = '1.0.0-rc.2'
-const outDir = path.resolve(here, '../sketch/public/runtimes', version)
+// build.sh runs this from a work folder and names the output folder.
+const outDir = process.env.RUNTIME_OUT
+if (!outDir) throw new Error('RUNTIME_OUT is not set. Run runtime/build.sh <version>.')
 
 // The annotate toolbar (imported by boot.js for the owner's live tab) and `sketch:variants` (imported
 // by Prototypes): one ES module each. Everything the Prototype already loads stays external, so both

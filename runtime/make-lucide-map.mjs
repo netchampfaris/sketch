@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const icons = join(here, '../frontend/node_modules/lucide-static/icons')
+const icons = process.argv[2] // lucide-static/icons in one version's node_modules
 const out = join(here, 'tailwind/lucide-map.json')
 
 // Lucide ships at stroke-width 2. frappe-ui normalises to 1.5, so the browser

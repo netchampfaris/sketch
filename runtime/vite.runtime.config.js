@@ -5,8 +5,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const version = '1.0.0-rc.2'
-const outDir = path.resolve(here, '../sketch/public/runtimes', version)
+// build.sh runs this from a work folder and names the output folder.
+const outDir = process.env.RUNTIME_OUT
+if (!outDir) throw new Error('RUNTIME_OUT is not set. Run runtime/build.sh <version>.')
 
 // Runtime asset build. vue and vue-router stay external: they are copied in
 // from their own esm-browser.prod builds, so a Prototype and frappe-ui share

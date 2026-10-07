@@ -2,5 +2,5 @@
   "name": "sketch-runtime",
   "private": true,
   "type": "module",
-  "//": "Build source for the shared browser Runtime. Resolves packages through ../frontend/node_modules, which build.sh symlinks in as node_modules."
+  "//": "Shared build source for the browser Runtime. Each version in versions/ has its own package.json, yarn.lock and node_modules. build.sh copies this source into the version folder and builds it there."
 }

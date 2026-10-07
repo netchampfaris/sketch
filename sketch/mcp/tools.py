@@ -172,16 +172,47 @@ def user_prompt(args: dict) -> str:
 	return prompt
 
 
-def record(doc) -> dict:
+def upgrade_to(pin: str, pins: list[str]) -> str | None:
+	"""The newest installed pin when it is newer than `pin`, else None.
+
+	`pins` is `prototype.available_pins()`, newest first. The caller passes it
+	in, so one tool call reads the runtime folder once.
+	"""
+	if pins and prototype._version_key(pins[0]) > prototype._version_key(pin):
+		return pins[0]
+	return None
+
+
+def record(doc, pins: list[str] | None = None) -> dict:
 	"""The Prototype as structured fields. Never prose."""
+	if pins is None:
+		pins = prototype.available_pins()
 	return {
 		"id": doc.name,
 		"title": doc.title,
 		"slug": doc.slug,
 		"pin": doc.pin,
+		"upgrade_to": upgrade_to(doc.pin, pins),
 		"is_public": bool(doc.is_public),
 		"url": prototype.public_url(doc),
 	}
+
+
+def upgrade_note(doc) -> list[dict]:
+	"""One text block that tells the agent to offer a runtime upgrade.
+
+	Empty when the Prototype already uses the newest installed runtime. Agents
+	often skip list_prototypes, so the file tools carry this note too.
+	"""
+	latest = upgrade_to(doc.pin, prototype.available_pins())
+	if not latest:
+		return []
+	text = (
+		f"Runtime upgrade available: this Prototype uses frappe-ui {doc.pin}, and {latest} is installed. "
+		"Suggest the upgrade to the user once in this conversation. "
+		"Call set_runtime only after the user agrees."
+	)
+	return [{"type": "text", "text": text}]
 
 
 def as_json(payload) -> str:
@@ -195,10 +226,14 @@ RECORD_SCHEMA = {
 		"title": {"type": "string"},
 		"slug": {"type": "string", "description": "Pass this as `prototype` to every other tool."},
 		"pin": {"type": "string", "description": "The frappe-ui version this Prototype renders with."},
+		"upgrade_to": {
+			"type": ["string", "null"],
+			"description": "The newest installed frappe-ui version when it is newer than pin, else null. Suggest the upgrade to the user. Do not switch without consent.",
+		},
 		"is_public": {"type": "boolean"},
 		"url": {"type": "string"},
 	},
-	"required": ["id", "title", "slug", "pin", "is_public", "url"],
+	"required": ["id", "title", "slug", "pin", "upgrade_to", "is_public", "url"],
 }
 
 PROTOTYPE_PARAM = {
@@ -221,7 +256,8 @@ def do_list_prototypes(args: dict) -> ToolResult:
 		order_by="modified desc",
 		limit_page_length=0,
 	)
-	items = [record(frappe._dict(row)) for row in rows]
+	pins = prototype.available_pins()
+	items = [record(frappe._dict(row), pins) for row in rows]
 	payload = {"prototypes": items}
 	return ToolResult(text=as_json(payload), structured=payload)
 
@@ -235,14 +271,15 @@ def do_list_runtimes(args: dict) -> ToolResult:
 def do_set_runtime(args: dict) -> ToolResult:
 	doc = owned(args)
 	pin = args["version"]
-	if pin not in prototype.available_pins():
+	pins = prototype.available_pins()
+	if pin not in pins:
 		frappe.throw("version must name an installed runtime. Call list_runtimes for available versions.")
 	previous = doc.pin
 	if previous != pin:
 		doc.pin = pin
 		doc.save()
 		thumbnails.request_refresh(doc.name)
-	payload = {**record(doc), "previous_pin": previous}
+	payload = {**record(doc, pins), "previous_pin": previous}
 	return ToolResult(
 		text=f"Runtime: {previous} -> {pin}. Source files are unchanged. Verify compatibility in the user's browser, or use check if browser access is unavailable. Previews refresh in the background.",
 		structured=payload,
@@ -262,7 +299,7 @@ def do_create_prototype(args: dict) -> ToolResult:
 def do_list_files(args: dict) -> ToolResult:
 	doc = owned(args)
 	payload = {"files": prototype_files.list_files(doc.name)}
-	return ToolResult(text=as_json(payload), structured=payload)
+	return ToolResult(text=as_json(payload), structured=payload, content=upgrade_note(doc))
 
 
 def do_read_files(args: dict) -> ToolResult:
@@ -272,7 +309,7 @@ def do_read_files(args: dict) -> ToolResult:
 		frappe.throw(frappe._("paths must be a list of one or more relative paths"))
 
 	payload = {"files": prototype_files.read_files(doc.name, paths)}
-	return ToolResult(text=as_json(payload), structured=payload)
+	return ToolResult(text=as_json(payload), structured=payload, content=upgrade_note(doc))
 
 
 def do_write_files(args: dict) -> ToolResult:
@@ -558,7 +595,7 @@ def build_tools() -> dict[str, Tool]:
 		for tool in [
 			Tool(
 				name="list_prototypes",
-				description="List your Prototypes. Returns id, title, slug, pin, is_public and url for each one. The slug is what every other tool takes as `prototype`.",
+				description="List your Prototypes. Returns id, title, slug, pin, upgrade_to, is_public and url for each one. The slug is what every other tool takes as `prototype`.",
 				parameters={"type": "object", "properties": {}},
 				handler=do_list_prototypes,
 				output_schema={
