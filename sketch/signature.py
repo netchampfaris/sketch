@@ -81,7 +81,7 @@ def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
 	try:
 		expiry = int(str(exp).strip())
 		given = str(sig).strip()
-	except TypeError, ValueError:
+	except (TypeError, ValueError):
 		return False
 
 	if expiry < _now():
@@ -89,5 +89,5 @@ def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
 
 	try:
 		return hmac.compare_digest(given, _digest(prototype_name, expiry, scope))
-	except TypeError, ValueError:
+	except (TypeError, ValueError):
 		return False

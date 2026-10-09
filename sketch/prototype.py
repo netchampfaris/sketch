@@ -54,7 +54,7 @@ def available_pins() -> list[str]:
 				for asset in assets
 			):
 				pins.append(pin)
-		except OSError, ValueError:
+		except (OSError, ValueError):
 			continue
 	return sorted(pins, key=_version_key, reverse=True)
 

@@ -25,7 +25,7 @@ def image_module(data_base64: str, mime_type: str) -> str:
 		frappe.throw("mime_type must be image/png, image/jpeg, image/gif, image/webp, or image/svg+xml")
 	try:
 		raw = base64.b64decode(data_base64, validate=True)
-	except binascii.Error, ValueError:
+	except (binascii.Error, ValueError):
 		frappe.throw("data_base64 must contain valid base64 without a data URL prefix")
 	if not raw or len(raw) > MAX_ASSET_BYTES:
 		frappe.throw(f"An image must contain between 1 and {MAX_ASSET_BYTES} bytes")
@@ -42,7 +42,7 @@ def image_module(data_base64: str, mime_type: str) -> str:
 				if image.format != MIME_FORMATS[mime_type]:
 					raise ValueError("image format does not match mime_type")
 				image.verify()
-	except ValueError, ET.ParseError, UnidentifiedImageError, OSError, Image.DecompressionBombError:
+	except (ValueError, ET.ParseError, UnidentifiedImageError, OSError, Image.DecompressionBombError):
 		frappe.throw("data_base64 must contain a valid image matching mime_type")
 
 	url = f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
