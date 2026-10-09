@@ -1,0 +1,49 @@
+# Pilot downloads assets-<branch>/sketch-assets.tar.gz and extracts it into
+# sketch/public/ instead of building the app on the server.
+name: Build and Upload Assets
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: build-assets-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-assets:
+    name: Build frontend and runtimes, upload to release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: |
+            frontend/yarn.lock
+            runtime/versions/*/yarn.lock
+
+      - name: Install JS dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Build frontend and runtimes
+        run: yarn build
+
+      - name: Package assets
+        run: tar czf sketch-assets.tar.gz -C sketch/public frontend runtimes
+
+      - name: Upload to rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="assets-${GITHUB_REF_NAME//\//-}"
+          gh release create "$TAG" --prerelease --title "Assets: $GITHUB_REF_NAME" --notes "" 2>/dev/null || true
+          gh release upload "$TAG" sketch-assets.tar.gz --clobber
