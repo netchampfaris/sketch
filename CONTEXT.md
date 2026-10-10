@@ -22,8 +22,10 @@ The wayfinder map for the MVP spec lives in `.scratch/sketch-mvp/map.md`.
 ## Production
 
 `https://sketch.netchamp.dev` runs on Frappe Cloud v2: site
-`sketch.mumbai.frappe.cloud`, a pilot bench on its own VM. The Cloudflare
-tunnel on forge relays the hostname to it. `sketch-checkd` runs on that VM as
+`sketch.mumbai.frappe.cloud`, a pilot bench on its own VM.
+`sketch.netchamp.dev` is a pilot custom domain: a DNS-only CNAME to
+`proxy.mumbai.frappe.cloud`, with a Let's Encrypt certificate on the VM. Forge
+is not in the path. `sketch-checkd` runs on that VM as
 a `systemctl --user` unit, outside pilot. Pilot installs the app from `main`
 and downloads the assets that `.github/workflows/assets.yml` builds.
 
