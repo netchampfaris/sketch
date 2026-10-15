@@ -102,7 +102,7 @@ function click(n: Note, e: MouseEvent) {
 			data-annotate-pin
 			type="button"
 			:aria-label="`Note ${numberOf(n)}: ${n.note}`"
-			class="pointer-events-auto fixed z-[60] flex size-6 -translate-x-1/2 -translate-y-[29px] items-center justify-center text-xs font-semibold tabular-nums text-white transition-transform duration-150 origin-[50%_29px] hover:scale-110 motion-reduce:transition-none motion-reduce:hover:scale-100"
+			class="pointer-events-auto fixed z-[2147483000] flex size-6 -translate-x-1/2 -translate-y-[29px] items-center justify-center text-xs font-semibold tabular-nums text-white transition-transform duration-150 origin-[50%_29px] hover:scale-110 motion-reduce:transition-none motion-reduce:hover:scale-100"
 			:class="pos[n.id]?.found === false && 'opacity-50'"
 			:style="{ left: `${pos[n.id].x}px`, top: `${pos[n.id].y}px` }"
 			@mouseenter="enter(n)"
