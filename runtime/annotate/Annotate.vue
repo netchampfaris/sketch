@@ -778,7 +778,7 @@ function revealTweak(id: string) {
 			:aria-hidden="enabled"
 			:tabindex="enabled ? -1 : 0"
 			:style="triggerStyle"
-			class="fixed z-[60] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
+			class="fixed z-[2147483000] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
 			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount ? 'opacity-60' : 'opacity-20']"
 			@click="openFromTrigger"
 		>
@@ -797,7 +797,7 @@ function revealTweak(id: string) {
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
 			data-annotate-ui
-			class="pointer-events-none fixed left-0 top-0 z-[60] rounded-[4px] border-[1.5px] border-outline-blue-6"
+			class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border-[1.5px] border-outline-blue-6"
 			:class="[hoverOn ? 'opacity-100' : 'opacity-0', glide && !scrolling ? 'transition-[transform,width,height,opacity] duration-[90ms] ease-out motion-reduce:transition-opacity' : 'transition-opacity duration-100']"
 			:style="hoverBox ? { transform: `translate(${hoverBox.x}px, ${hoverBox.y}px)`, width: `${hoverBox.w}px`, height: `${hoverBox.h}px` } : { display: 'none' }"
 			aria-hidden="true"
@@ -816,7 +816,7 @@ function revealTweak(id: string) {
 			v-for="o in outs"
 			:key="o.key"
 			data-annotate-ui
-			class="pointer-events-none fixed z-[60] border-[1.5px] border-outline-blue-6"
+			class="pointer-events-none fixed z-[2147483000] border-[1.5px] border-outline-blue-6"
 			:class="o.dashed ? 'rounded-5 border-dashed' : 'rounded-[4px]'"
 			:style="{ left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px` }"
 			aria-hidden="true"
@@ -829,7 +829,7 @@ function revealTweak(id: string) {
 			<div
 				v-if="dragRect"
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
+				class="pointer-events-none fixed z-[2147483000] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
 				:style="{ left: `${dragRect.x}px`, top: `${dragRect.y}px`, width: `${dragRect.w}px`, height: `${dragRect.h}px` }"
 				aria-hidden="true"
 			>
@@ -845,13 +845,13 @@ function revealTweak(id: string) {
 		<template v-for="(l, i) in lines" :key="`l${i}`">
 			<div
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] bg-surface-red-7"
+				class="pointer-events-none fixed z-[2147483000] bg-surface-red-7"
 				:style="{ left: `${l.x}px`, top: `${l.y}px`, width: `${l.w}px`, height: `${l.h}px` }"
 				aria-hidden="true"
 			/>
 			<div
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
+				class="pointer-events-none fixed z-[2147483000] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
 				:style="{ left: `${l.lx}px`, top: `${l.ly}px` }"
 				aria-hidden="true"
 			>{{ l.label }}</div>
@@ -890,7 +890,7 @@ function revealTweak(id: string) {
 				v-if="listOpen"
 				data-annotate-ui
 				data-notes-panel
-				class="pointer-events-auto fixed z-[60] flex max-h-96 w-80 flex-col rounded-5 border border-outline-gray-2 bg-surface-elevation-2 shadow-xl"
+				class="pointer-events-auto fixed z-[2147483000] flex max-h-96 w-80 flex-col rounded-5 border border-outline-gray-2 bg-surface-elevation-2 shadow-xl"
 				:style="panelStyle"
 			>
 				<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -1008,7 +1008,7 @@ function revealTweak(id: string) {
 				data-annotate-ui
 				role="toolbar"
 				aria-label="Annotate"
-				class="pointer-events-auto fixed z-[60] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
+				class="pointer-events-auto fixed z-[2147483000] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
 				:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
 				:style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
 				@pointerdown="barDown"

@@ -65,7 +65,7 @@ function onKey(e: KeyboardEvent) {
 		data-annotate-ui
 		role="dialog"
 		aria-label="Note"
-		class="pointer-events-auto fixed z-[60] w-80 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-3 shadow-xl"
+		class="pointer-events-auto fixed z-[2147483000] w-80 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-3 shadow-xl"
 		:style="pos"
 		@keydown="onKey"
 	>
