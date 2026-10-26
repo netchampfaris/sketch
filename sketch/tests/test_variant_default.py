@@ -189,7 +189,8 @@ class TestSetVariantDefault(IntegrationTestCase):
 		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
 		rows = api.list_versions(SLUG)
 		self.assertEqual(rows[0]["sequence"], out["sequence"])
-		self.assertEqual(rows[0]["prompt"], 'Made "Budget bars" the default for Spend summary')
+		self.assertEqual(rows[0]["source"], "App")
+		self.assertEqual(rows[0]["prompt"], "Made \u201cBudget bars\u201d the default for Spend summary")
 		self.assertEqual(versions.pending(self.doc.name), [])
 
 	def test_undo_is_one_more_version(self):
@@ -249,7 +250,7 @@ class TestSetVariantDefault(IntegrationTestCase):
 		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
 		frappe.set_user("Administrator")
 		self.assertEqual(
-			versions.history(self.doc.name)[0]["prompt"], 'Made "Budget bars" the default for Spend summary'
+			versions.history(self.doc.name)[0]["prompt"], "Made \u201cBudget bars\u201d the default for Spend summary"
 		)
 
 
@@ -304,7 +305,7 @@ class TestUndoVariantDefault(IntegrationTestCase):
 
 		self.assertEqual(self.source(), NESTED)
 		top = api.list_versions("d2t-vdundo-work")[0]
-		self.assertEqual(top["prompt"], 'Undid making "Bars" the default for Spend summary')
+		self.assertEqual(top["prompt"], "Undid making \u201cBars\u201d the default for Spend summary")
 		self.assertEqual(len(api.list_versions("d2t-vdundo-work")), 3)
 
 	def test_undo_leaves_other_files_alone(self):

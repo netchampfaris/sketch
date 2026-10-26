@@ -240,11 +240,11 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 	# What the agent wrote and has not committed goes in its own version
 	# first, so the next version holds the reorder and nothing else.
 	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the default was changed")
+		versions.commit(doc, "Changes before the default was changed", source="App")
 
 	prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
 	versions.note(doc.name, file, versions.MODIFIED)
-	version = versions.commit(doc, f'Made "{label_of(option)}" the default for {name}')
+	version = versions.commit(doc, f"Made \u201c{label_of(option)}\u201d the default for {name}", source="App")
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
 
 
@@ -267,7 +267,8 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	versions.lock(doc.name)
 	changed_since = frappe._("the page changed since. Ask your agent instead.")
 	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
-	if sequence < 2 or not (prompt or "").startswith('Made "'):
+	# Straight quotes are what versions before the curly ones were saved with.
+	if sequence < 2 or not (prompt or "").startswith(("Made \u201c", 'Made "')):
 		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
 
 	after = versions._manifest_of(doc.name, sequence)
@@ -286,9 +287,9 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 
 	original = snapshots.read_blob(doc.name, before[file]).decode("utf-8")
 	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the default was undone")
+		versions.commit(doc, "Changes before the default was undone", source="App")
 
 	prototype_files.write_files(doc.name, [{"path": file, "content": original}])
 	versions.note(doc.name, file, versions.MODIFIED)
-	version = versions.commit(doc, f'Undid making "{label_of(option)}" the default for {name}')
+	version = versions.commit(doc, f"Undid making \u201c{label_of(option)}\u201d the default for {name}", source="App")
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}

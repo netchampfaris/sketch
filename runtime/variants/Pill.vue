@@ -94,9 +94,12 @@ const isKept = (s: VSet) => kept[idOf(s)] === currentOf(s)
 // Make default: the owner's pick becomes the first slot in the source. The page reloads once it is saved.
 const saving = ref<string | null>(null)
 const actions = computed(() => Boolean(keepHandler.value || credential.value))
-async function makeIt(s: VSet) {
+// The button keeps its width while it saves, so the panel does not move under the pointer.
+const held = ref(0)
+async function makeIt(s: VSet, e: MouseEvent) {
   const option = currentOf(s)
   if (!option || saving.value) return
+  held.value = (e.currentTarget as HTMLElement).offsetWidth
   saving.value = idOf(s)
   try {
     await makeDefault(s, option)
@@ -119,7 +122,7 @@ const keep = (s: VSet) => {
     <!-- In a panel each row is a subgrid, so names, options and Keep line up in columns across rows. -->
     <div
       class="items-center"
-      :class="solo ? 'flex gap-2' : 'col-span-full grid grid-cols-subgrid'"
+      :class="solo ? 'flex gap-2 max-sm:flex-col max-sm:items-start' : 'col-span-full grid grid-cols-subgrid max-sm:gap-y-1'"
       @mouseenter="hover(plain ? null : (s as VSet))"
       @mouseleave="hover(null)"
     >
@@ -129,29 +132,36 @@ const keep = (s: VSet) => {
       </span>
       <TabButtons
         class="justify-self-start"
+        :inert="!!saving"
         :options="opts(s)"
         :model-value="cur(s)"
         @update:model-value="(v: string) => pick(s, v)"
       />
       <template v-if="actions && !plain">
-        <span class="flex shrink-0 items-center justify-end gap-1">
+        <!-- On a phone the actions sit on their own line under the tabs, and only a row that has something to do shows one. -->
+        <span
+          class="flex shrink-0 items-center gap-1 max-sm:justify-self-start sm:justify-end"
+          :class="!solo && !off(s as VSet) && !isKept(s as VSet) ? 'max-sm:hidden' : ''"
+        >
           <Button
             v-if="canMakeDefault(s as VSet) && (!solo || off(s as VSet))"
-            :class="off(s as VSet) ? '' : 'invisible'"
+            :class="off(s as VSet) ? '' : 'invisible max-sm:hidden'"
             variant="ghost"
             :loading="saving === idOf(s as VSet)"
             :disabled="!!saving"
+            :style="saving === idOf(s as VSet) && held ? { width: `${held}px` } : undefined"
             :tabindex="off(s as VSet) ? undefined : -1"
             :aria-label="`Make ${label(s as VSet)} the default for ${(s as VSet).label}`"
-            @click="makeIt(s as VSet)"
-          >Make default</Button>
+            @click="makeIt(s as VSet, $event)"
+          ><span :class="saving === idOf(s as VSet) ? 'sr-only' : ''">Make default</span></Button>
           <span v-if="keepHandler && isKept(s)" class="flex items-center gap-1 text-p-sm text-ink-gray-5">
             <span class="lucide-check size-4" aria-hidden="true" />Kept
           </span>
           <Button
             v-else-if="keepHandler"
-            :class="solo || off(s) || hovered === s.key ? '' : 'invisible'"
+            :class="solo || off(s) || hovered === s.key ? '' : 'invisible max-sm:hidden'"
             variant="ghost"
+            :disabled="!!saving"
             :aria-label="`Keep ${label(s)} for ${s.label}`"
             @click="keep(s)"
           >Keep</Button>
@@ -168,7 +178,7 @@ const keep = (s: VSet) => {
           :id="`sketch-${g}-panel`"
           class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-5 bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-1"
         >
-          <div class="grid items-center gap-x-4 gap-y-3" :class="g === 'variants' && actions ? 'grid-cols-[auto_auto_auto]' : 'grid-cols-[auto_auto]'">
+          <div class="grid items-center gap-x-4 gap-y-3" :class="g === 'variants' && actions ? 'grid-cols-1 sm:grid-cols-[auto_auto_auto]' : 'grid-cols-[auto_auto]'">
             <template v-if="g === 'variants'"><Row v-for="s in rows" :key="idOf(s)" :s="s" /></template>
             <template v-else><Row v-for="s in stateRows" :key="s.key" :s="s" plain /></template>
           </div>
