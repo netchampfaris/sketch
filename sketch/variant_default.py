@@ -19,7 +19,7 @@ import re
 
 import frappe
 
-from sketch import prototype_files, versions
+from sketch import prototype_files, snapshots, versions
 
 #: HTML elements with no closing tag, so they never open a depth.
 VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
@@ -245,4 +245,50 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 	prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
 	versions.note(doc.name, file, versions.MODIFIED)
 	version = versions.commit(doc, f'Made "{label_of(option)}" the default for {name}')
+	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
+
+
+def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
+	"""Put `file` back exactly as it was before version `sequence` made `option` the default.
+
+	Only that one file is restored, from the version before. It is refused when
+	the file is not as that version left it, so a later write is never
+	clobbered. The caller has checked ownership.
+	"""
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+	try:
+		sequence = int(sequence)
+	except (TypeError, ValueError):
+		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	changed_since = frappe._("the page changed since. Ask your agent instead.")
+	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
+	if sequence < 2 or not (prompt or "").startswith('Made "'):
+		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
+
+	after = versions._manifest_of(doc.name, sequence)
+	before = versions._manifest_of(doc.name, sequence - 1)
+	if file not in before or file not in after:
+		frappe.throw(changed_since, frappe.ValidationError)
+
+	try:
+		with open(absolute, "rb") as handle:
+			current = handle.read()
+	except FileNotFoundError:
+		frappe.throw(changed_since, frappe.ValidationError)
+
+	if snapshots._sha(current) != after[file]:
+		frappe.throw(changed_since, frappe.ValidationError)
+
+	original = snapshots.read_blob(doc.name, before[file]).decode("utf-8")
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the default was undone")
+
+	prototype_files.write_files(doc.name, [{"path": file, "content": original}])
+	versions.note(doc.name, file, versions.MODIFIED)
+	version = versions.commit(doc, f'Undid making "{label_of(option)}" the default for {name}')
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}

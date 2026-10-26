@@ -549,6 +549,30 @@ def set_variant_default_signed(
 
 
 @frappe.whitelist(methods=["POST"])
+def undo_variant_default(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
+	"""Put `file` back exactly as it was before version `sequence` made `option` the default.
+
+	`resolve_owned` is the permission check. Refused when the file changed
+	since, so a later write is never clobbered. See `variant_default.undo_default`.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.undo_default(doc, file, sequence, name, option)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def undo_variant_default_signed(
+	name: str, exp: str = "", sig: str = "", file: str = "", sequence: str = "", set_name: str = "", option: str = ""
+) -> dict:
+	"""`undo_variant_default` for the Viewer, behind the same VARIANT_DEFAULT signature."""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
+		raise frappe.DoesNotExistError
+
+	doc = frappe.get_doc("Sketch Prototype", name)
+	return variant_default.undo_default(doc, file, sequence, set_name, option)
+
+
+@frappe.whitelist(methods=["POST"])
 def delete_versions(slug: str, sequence: int, dry_run: int = 0) -> dict:
 	"""Delete one version and every older one, to free history space.
 

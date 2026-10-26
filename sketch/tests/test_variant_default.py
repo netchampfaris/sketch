@@ -251,3 +251,108 @@ class TestSetVariantDefault(IntegrationTestCase):
 		self.assertEqual(
 			versions.history(self.doc.name)[0]["prompt"], 'Made "Budget bars" the default for Spend summary'
 		)
+
+
+class TestUndoVariantDefault(IntegrationTestCase):
+	"""Undo puts the one file back exactly, and never over a later write."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.owner = utils.make_user("vduown", "d2tvduown")
+		cls.other = utils.make_user("vduoth", "d2tvduoth")
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		for email in (cls.owner, cls.other):
+			utils.drop_user(email)
+		frappe.db.commit()
+		super().tearDownClass()
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.doc = utils.make_prototype(
+			self.owner, "d2t-vdundo-work", files={"src/App.vue": NESTED, "src/other.txt": "o\n"}
+		)
+		self.addCleanup(utils.drop_prototype, self.doc.name)
+		versions.record_created(self.doc, "Created")
+		frappe.db.commit()
+		refresh = patch("sketch.thumbnails.request_refresh")
+		refresh.start()
+		self.addCleanup(refresh.stop)
+		frappe.set_user(self.owner)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		super().tearDown()
+
+	def source(self) -> str:
+		return prototype_files.read_text(self.doc.name, "src/App.vue")["content"]
+
+	def make(self, option="bars") -> int:
+		return api.set_variant_default("d2t-vdundo-work", "src/App.vue", "Spend summary", option)["sequence"]
+
+	def test_undo_restores_the_file_exactly_with_three_options(self):
+		sequence = self.make("bars")
+		# Moving the old default back would give [totals, bars, timeline].
+		self.assertNotEqual(self.source(), NESTED)
+
+		api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertEqual(self.source(), NESTED)
+		top = api.list_versions("d2t-vdundo-work")[0]
+		self.assertEqual(top["prompt"], 'Undid making "Bars" the default for Spend summary')
+		self.assertEqual(len(api.list_versions("d2t-vdundo-work")), 3)
+
+	def test_undo_leaves_other_files_alone(self):
+		sequence = self.make("bars")
+		prototype_files.write_files(self.doc.name, [{"path": "src/other.txt", "content": "changed\n"}])
+		versions.note_write(self.doc.name, ["src/other.txt"], {"src/other.txt"})
+
+		api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertEqual(self.source(), NESTED)
+		self.assertEqual(prototype_files.read_text(self.doc.name, "src/other.txt")["content"], "changed\n")
+
+	def test_undo_is_refused_after_a_later_write(self):
+		sequence = self.make("bars")
+		later = self.source().replace("<Chart />", "<Chart size='lg' />")
+		prototype_files.write_files(self.doc.name, [{"path": "src/App.vue", "content": later}])
+		versions.note_write(self.doc.name, ["src/App.vue"], {"src/App.vue"})
+		versions.commit(self.doc, "The agent edited the page")
+
+		with self.assertRaises(frappe.ValidationError) as caught:
+			api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertIn("the page changed since. Ask your agent instead.", str(caught.exception))
+		self.assertEqual(self.source(), later)
+
+	def test_undo_only_undoes_a_make_default_version(self):
+		with self.assertRaises(frappe.ValidationError):
+			api.undo_variant_default("d2t-vdundo-work", "src/App.vue", 1, "Spend summary", "bars")
+
+	def test_a_non_owner_cannot_undo(self):
+		sequence = self.make("bars")
+		with set_user(self.other):
+			with self.assertRaises(frappe.DoesNotExistError):
+				api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertNotEqual(self.source(), NESTED)
+
+	def test_the_signed_undo_needs_this_scope(self):
+		sequence = self.make("bars")
+		frappe.set_user("Guest")
+		stamp = signature.mint(self.doc.name, 60, signature.ANNOTATE)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.undo_variant_default_signed(
+				self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", str(sequence), "Spend summary", "bars"
+			)
+
+		stamp = signature.mint(self.doc.name, 60, signature.VARIANT_DEFAULT)
+		api.undo_variant_default_signed(
+			self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", str(sequence), "Spend summary", "bars"
+		)
+		self.assertEqual(self.source(), NESTED)
