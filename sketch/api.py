@@ -26,6 +26,7 @@ from sketch import (
 	snapshots,
 	thumbnail,
 	thumbnails,
+	variant_default,
 	versions,
 )
 from sketch.sketch.doctype.sketch_token import sketch_token
@@ -511,6 +512,40 @@ def restore_version(slug: str, sequence: int, dry_run: int = 0) -> dict:
 		frappe.throw(frappe._("sequence must be a version number, 1 or more"), frappe.ValidationError)
 
 	return versions.restore(doc, sequence, bool(cint(dry_run)), source="App")
+
+
+@frappe.whitelist(methods=["POST"])
+def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
+	"""Make `option` the first slot of `<Variants name="{name}">` in `file`.
+
+	`resolve_owned` is the permission check, so only the owner may rewrite the
+	source. Saves a version, so the change can be undone. See
+	`variant_default.move_slot` for what is refused.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.set_default(doc, file, name, option)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def set_variant_default_signed(
+	name: str, exp: str = "", sig: str = "", file: str = "", set_name: str = "", option: str = ""
+) -> dict:
+	"""`set_variant_default` for the Viewer, which sends no session cookie.
+
+	The same door as `save_annotations`: the Viewer is sandboxed into an opaque
+	origin, so the signature minted into the owner's live page is the whole
+	authentication, and `allow_guest` follows from that. Its scope is
+	VARIANT_DEFAULT, so no other signature opens it and it opens nothing else.
+	A bad or expired signature answers 404.
+
+	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
+		raise frappe.DoesNotExistError
+
+	doc = frappe.get_doc("Sketch Prototype", name)
+	return variant_default.set_default(doc, file, set_name, option)
 
 
 @frappe.whitelist(methods=["POST"])

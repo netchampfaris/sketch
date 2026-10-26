@@ -4,13 +4,7 @@
 import { Fragment, defineComponent, getCurrentInstance, h, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { mountPill } from './mount'
-import { choices, currentOf, fromQuery, idOf, mirror, sets, slugOf, type VSet } from './state'
-
-// `scan-first` and `scanFirst` both read "Scan first".
-const humanise = (s: string) => {
-  const t = s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').toLowerCase()
-  return t.charAt(0).toUpperCase() + t.slice(1)
-}
+import { choices, currentOf, fromQuery, humanise, idOf, mirror, sets, slugOf, type VSet } from './state'
 
 export default defineComponent({
   name: 'Variants',
@@ -37,7 +31,10 @@ export default defineComponent({
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
       return out
     }
-    const set: VSet = { key, label, path, options, elements }
+    // The component whose template wrote this tag: its type carries the SFC's own path (`__file`,
+    // set by compileSFC), however deep in slots of other components the tag ends up.
+    const file = String((inst.vnode.ctx?.type as { __file?: string } | undefined)?.__file ?? '')
+    const set: VSet = { key, label, name: props.name, file, path, options, elements }
 
     // A link like #/inbox?v=leave-card.timeline opens on that option.
     const id = idOf(set)

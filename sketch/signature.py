@@ -44,9 +44,14 @@ DEFAULT_TTL = 60
 #:   What it can do is put rows in front of the owner's agent, which is why the
 #:   save is size- and shape-checked and the MCP tool tells the agent to treat
 #:   the rows as requests to check, never as orders.
+#: - VARIANT_DEFAULT moves one slot of a `<Variants>` set to the front of its
+#:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
+#:   minted into the owner's live page only, and what it can do is reorder
+#:   slots in a `.vue` file the owner already owns, which Undo reverses.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
+VARIANT_DEFAULT = "variant_default"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

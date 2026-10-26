@@ -4,7 +4,8 @@
 import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
-import { Button, TabButtons } from 'frappe-ui'
+import { Button, TabButtons, toast } from 'frappe-ui'
+import { canMakeDefault, credential, makeDefault } from './default'
 import { choices, currentOf, idOf, keepHandler, kept, mirrorStates, sets, stateOf, stateValues, states, type DState, type VSet } from './state'
 
 const [DefineRow, Row] = createReusableTemplate<{ s: VSet | DState; solo?: boolean; plain?: boolean }>({
@@ -90,6 +91,20 @@ const off = (s: VSet) => currentOf(s) !== s.options()[0]?.value
 const anyOff = computed(() => rows.value.some(off))
 const label = (s: VSet) => s.options().find((o) => o.value === currentOf(s))?.label ?? ''
 const isKept = (s: VSet) => kept[idOf(s)] === currentOf(s)
+// Make default: the owner's pick becomes the first slot in the source. The page reloads once it is saved.
+const saving = ref<string | null>(null)
+const actions = computed(() => Boolean(keepHandler.value || credential.value))
+async function makeIt(s: VSet) {
+  const option = currentOf(s)
+  if (!option || saving.value) return
+  saving.value = idOf(s)
+  try {
+    await makeDefault(s, option)
+  } catch (e) {
+    saving.value = null
+    toast.error(`Couldn't change the default. ${(e as Error).message}`)
+  }
+}
 const keep = (s: VSet) => {
   const el = s.elements()[0]
   if (!el) return
@@ -118,13 +133,23 @@ const keep = (s: VSet) => {
         :model-value="cur(s)"
         @update:model-value="(v: string) => pick(s, v)"
       />
-      <template v-if="keepHandler && !plain">
-        <span class="flex shrink-0 justify-end">
-          <span v-if="isKept(s)" class="flex items-center gap-1 text-p-sm text-ink-gray-5">
+      <template v-if="actions && !plain">
+        <span class="flex shrink-0 items-center justify-end gap-1">
+          <Button
+            v-if="canMakeDefault(s as VSet) && (!solo || off(s as VSet))"
+            :class="off(s as VSet) ? '' : 'invisible'"
+            variant="ghost"
+            :loading="saving === idOf(s as VSet)"
+            :disabled="!!saving"
+            :tabindex="off(s as VSet) ? undefined : -1"
+            :aria-label="`Make ${label(s as VSet)} the default for ${(s as VSet).label}`"
+            @click="makeIt(s as VSet)"
+          >Make default</Button>
+          <span v-if="keepHandler && isKept(s)" class="flex items-center gap-1 text-p-sm text-ink-gray-5">
             <span class="lucide-check size-4" aria-hidden="true" />Kept
           </span>
           <Button
-            v-else
+            v-else-if="keepHandler"
             :class="solo || off(s) || hovered === s.key ? '' : 'invisible'"
             variant="ghost"
             :aria-label="`Keep ${label(s)} for ${s.label}`"
@@ -143,7 +168,7 @@ const keep = (s: VSet) => {
           :id="`sketch-${g}-panel`"
           class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-5 bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-1"
         >
-          <div class="grid items-center gap-x-4 gap-y-3" :class="g === 'variants' && keepHandler ? 'grid-cols-[auto_auto_auto]' : 'grid-cols-[auto_auto]'">
+          <div class="grid items-center gap-x-4 gap-y-3" :class="g === 'variants' && actions ? 'grid-cols-[auto_auto_auto]' : 'grid-cols-[auto_auto]'">
             <template v-if="g === 'variants'"><Row v-for="s in rows" :key="idOf(s)" :s="s" /></template>
             <template v-else><Row v-for="s in stateRows" :key="s.key" :s="s" plain /></template>
           </div>

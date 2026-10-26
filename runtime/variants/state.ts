@@ -5,6 +5,10 @@ import { reactive, shallowReactive, shallowRef } from 'vue'
 export type VSet = {
   key: string
   label: string
+  // The `name` the page wrote on <Variants name="…">. `label` can carry a " 2" for a repeated name.
+  name: string
+  // The source file the <Variants> tag is written in, as the Prototype's own path. Empty when unknown.
+  file: string
   path: string
   options: () => { value: string; label: string }[]
   // The slot's top-level elements, in document order.
@@ -60,6 +64,12 @@ export const states = reactive<Record<string, DState>>({})
 // The chosen label per key. Absent means the first option.
 export const stateValues = reactive<Record<string, string>>({})
 export const stateOf = (s: DState) => (s.options.includes(stateValues[s.key]) ? stateValues[s.key] : s.options[0])
+
+// `scan-first` and `scanFirst` both read "Scan first".
+export const humanise = (s: string) => {
+  const t = s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').toLowerCase()
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
 
 export const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 export function mirrorStates(router: any, route: any) {

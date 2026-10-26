@@ -329,6 +329,9 @@ class SketchViewerRenderer(BaseRenderer):
 		# separate scope, so the poll signature cannot write annotations and
 		# this one cannot read the revision (sketch/signature.py).
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
+		# Make default writes the source, so it has a scope of its own: neither
+		# the poll nor the toolbar signature can reorder a slot.
+		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -345,6 +348,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
 			"annotate_exp": mark.get("exp", ""),
 			"annotate_sig": mark.get("sig", ""),
+			"variant_exp": variant.get("exp", ""),
+			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
 		}
 
