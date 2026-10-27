@@ -28,6 +28,8 @@ export type TileBox = {
   caption: string
   // Order of the option in its set, from 1.
   n?: number
+  // The username of the teammate who made this option, absent for the owner's own.
+  author?: string
   // The option this tile shows, for its accessible name.
   opt?: string
   kind: 'default' | 'state' | 'set' | 'gap'
@@ -77,6 +79,7 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
       caption: o.label,
       n: i + 1,
       opt: o.label,
+      author: o.author,
       kind: 'set' as const,
       setKey: set.key,
       setLabel: set.label,

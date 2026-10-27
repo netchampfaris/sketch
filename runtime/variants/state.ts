@@ -5,7 +5,8 @@ import { inject, reactive, shallowReactive, shallowRef } from 'vue'
 import type { InjectionKey } from 'vue'
 import { matchedRouteKey } from 'vue-router'
 
-export type Opt = { value: string; label: string }
+// `author` is the username of the teammate who made the option, and absent for the owner's own.
+export type Opt = { value: string; label: string; author?: string }
 export type VSet = {
   key: string
   label: string

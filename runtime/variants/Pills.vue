@@ -4,8 +4,9 @@
 import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
-import { Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
 import { canMakeDefault, credential, makeDefault, makeFailure } from './default'
+import { people, personName, shortName } from './extras'
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
@@ -103,6 +104,7 @@ const labelOf = (s: VSet) => s.options().find((o) => o.value === currentOf(s))?.
 const menuOf = (s: VSet) =>
   s.options().map((o) => ({
     label: o.label,
+    author: o.author,
     selected: o.value === currentOf(s),
     onClick: () => (choices[idOf(s.path, s.key)] = o.value),
   }))
@@ -188,7 +190,12 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
             <span class="size-4 shrink-0" :class="item.selected ? 'lucide-check' : ''" aria-hidden="true" />
           </template>
           <template #item-label="{ item }">
-            <span class="block max-w-[16rem] truncate" :title="item.label">{{ item.label }}</span>
+            <span class="flex min-w-0 max-w-[20rem] items-center gap-2">
+              <span class="truncate" :title="item.label">{{ item.label }}</span>
+              <span v-if="item.author" class="flex shrink-0 items-center gap-1 text-p-sm text-ink-gray-5" :title="`Made by ${personName(item.author)}`">
+                <Avatar size="xs" :image="people[item.author]?.image || undefined" :label="personName(item.author)" />Made by {{ shortName(item.author) }}
+              </span>
+            </span>
           </template>
         </Dropdown>
       </div>

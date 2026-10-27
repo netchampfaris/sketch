@@ -41,7 +41,10 @@ type Flash = { error: string }
 
 // Toasts sit above the pill stack and the annotate launcher in the corner, not over them. The
 // stack publishes its height in --sketch-variants-h.
-function placeToasts() {
+let placed = false
+export function placeToasts() {
+  if (placed) return
+  placed = true
   const style = document.createElement('style')
   style.textContent =
     '[data-sonner-toaster]{--offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;--mobile-offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;}'

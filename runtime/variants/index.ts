@@ -1,14 +1,17 @@
 // `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `setKeepHandler`, `enableMakeDefault`,
 // `makeDefault` and `Chrome` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
-import { computed, inject, onBeforeUnmount, onMounted } from 'vue'
+import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { applyStateLink, hookRouter, idOf, mirrorStates, pageKeyOf, sandboxKey, slugOf, stateValues, states } from './state'
+import Variants from './Variants.vue'
+import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sandboxKey, slugOf, stateValues, states } from './state'
 
-export { default as Variants } from './Variants.vue'
+export { Variants }
 export { default as Chrome } from './Chrome.vue'
 export { setKeepHandler } from './state'
 export { enableMakeDefault, makeDefault } from './default'
+export { enableVariantEdit } from './edit'
+export { registerExtras } from './extras'
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { closeCanvas, openCanvas } from './state'
@@ -59,5 +62,17 @@ export function useDemoState<T extends string>(name: string, options: readonly T
       stateValues[id] = v
       mirrorStates(router)
     },
+  })
+}
+
+// A component with no `<Variants>` of its own, once a teammate has made a variant for it: the same component, inside a
+// set whose first option is the original. It takes the original's props, listeners and slots, and hands them on.
+export function wrapComponent(Original: any, file: string) {
+  const name = humanise(file.split('/').pop()!.replace(/\.vue$/, ''))
+  return defineComponent({
+    name: Original?.name ?? 'Variants',
+    inheritAttrs: false,
+    setup: (_, { attrs, slots }) => () =>
+      h(Variants, { name, wrapper: true, file, forward: { attrs, slots } }, { original: () => h(Original, attrs, slots) }),
   })
 }

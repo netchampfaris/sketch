@@ -39,10 +39,10 @@ export function toCJS(filename, source) {
 
 export async function compileSFC(filename, source) {
   const id = scopeId(filename)
-  const { descriptor, errors } = parse(source, { filename })
+  const { descriptor, errors } = parse(source, { filename, ignoreEmpty: false })
   // Ticket 05: check parse errors before compileScript, or a broken template
   // compiles into a component that renders wrong instead of failing.
-  if (errors.length) return { code: '', css: '', errors: errors.map((e) => fmt(filename, e)) }
+  if (errors.length) return { code: '', css: '', blocks: [], errors: errors.map((e) => fmt(filename, e)) }
 
   const hasTS =
     descriptor.script?.lang === 'ts' || descriptor.scriptSetup?.lang === 'ts'
@@ -92,7 +92,9 @@ export async function compileSFC(filename, source) {
   code += `\n__sfc__.__file = ${JSON.stringify(filename)}\n`
   if (scopedStyle) code += `__sfc__.__scopeId = ${JSON.stringify('data-v-' + id)}\n`
   code += 'export default __sfc__\n'
-  return { code, css, errors: [] }
+  // Custom blocks (`<variant … />`) are metadata; the compiler skips them, the Viewer reads them.
+  const blocks = descriptor.customBlocks.map((b) => ({ type: b.type, attrs: { ...b.attrs } }))
+  return { code, css, blocks, errors: [] }
 }
 
 function fmt(filename, e) {
