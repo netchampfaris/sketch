@@ -1,18 +1,22 @@
 <script setup lang="ts">
 // Click-to-annotate toolbar for prototypes. A faint trigger sits in a corner; it opens the
-// toolbar in comment mode. While commenting, the page is read-only: every pointer event is
-// caught before the app sees it, so a click picks an element instead of using it.
-// The toolbar also hosts the tweak tool (its own files), which registers itself in `tweakApi`.
-// A signed-in reader of somebody else's public Prototype gets the comment tool alone: no tweaks,
-// no prompt, only their own notes until they ask to see everyone's (host.ts, `isReader`).
+// toolbar. Three modes: Note (the owner's instructions for their agent), Tweak (live token changes)
+// and Comment (a conversation with people, comments.ts). While noting or commenting, the page is
+// read-only: every pointer event is caught before the app sees it, so a click picks an element
+// instead of using it. The toolbar also hosts the tweak tool (its own files), which registers
+// itself in `tweakApi`. A signed-in reader sees Comment only; a Guest sees "Sign in to comment".
 // Mounted by index.ts into its own app, so it never becomes part of the Prototype's vnode tree.
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
-import { Badge, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
+import { Badge, BottomSheet, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
 import { setKeepHandler } from 'sketch:variants'
-import { isReader } from './host'
+import { openCount, openThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { isGuest, isOwner } from './host'
 import { saveState } from './store'
+import CommentPins from './CommentPins.vue'
+import CommentPopover from './CommentPopover.vue'
+import CommentsPanel from './CommentsPanel.vue'
 import NotePopover from './NotePopover.vue'
 import Pins from './Pins.vue'
 import TweakLayer from './TweakLayer.vue'
@@ -22,8 +26,6 @@ import {
 	addNote,
 	analyzeBox,
 	buildPrompt,
-	canDelete,
-	canEdit,
 	childOf,
 	clamp,
 	clearNotes,
@@ -37,7 +39,6 @@ import {
 	hoverFrac,
 	hoverLabel,
 	infoOf,
-	isMine,
 	labelOf,
 	listen,
 	markSent,
@@ -52,8 +53,6 @@ import {
 	resolveNote,
 	routeKey,
 	setEnabled,
-	showAll,
-	shownNotes,
 	storedAnchor,
 	tagOf,
 	targetOf,
@@ -76,10 +75,19 @@ const router = useRouter()
 const key = computed(() => routeKey(route))
 const { width: vw, height: vh } = useWindowSize()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const reader = isReader()
 
-// Comment-mode machinery (picking, box, measuring) runs only for the comment tool.
-const picking = computed(() => enabled.value && active.value && mode.value === 'comment')
+const owner = isOwner()
+const guest = isGuest()
+// Readers have one tool; a Guest has none, only the way to sign in.
+if (!owner) mode.value = 'comment'
+if (guest) setEnabled(true)
+// Phone only: the comments list as a bottom sheet.
+const sheetOpen = ref(false)
+
+// Picking machinery (hover, box, measuring) runs for the two tools that pin things to the page.
+// A phone's comments sheet covers the page, so nothing is picked while it is open.
+const pins = computed(() => mode.value === 'note' || mode.value === 'comment')
+const picking = computed(() => enabled.value && active.value && pins.value && !guest && !sheetOpen.value)
 
 // ---- Popover ---------------------------------------------------------------------------
 type Draft = {
@@ -90,10 +98,7 @@ type Draft = {
 	infos: ElInfo[]
 	comp?: ComponentInfo
 	box?: BoxInfo
-	editing?: string // id of the note being edited
-	readonly?: boolean // somebody else's note: shown, never edited
-	deletable?: boolean
-	author?: string
+	editing?: string // id of the note, or in Comment mode the thread, being edited
 	component: string
 	extra: number
 }
@@ -133,19 +138,7 @@ function show(els: Element[], x: number, y: number, box?: BoxInfo) {
 function openEdit(n: Note, x: number, y: number) {
 	const els = [0, ...(n.extras ?? []).map((_, i) => i + 1)].map((i) => resolveNote(n, i)).filter((e): e is Element => !!e)
 	text.value = n.note
-	draft.value = {
-		x,
-		y,
-		els,
-		infos: [],
-		box: n.box,
-		editing: n.id,
-		readonly: !canEdit(n),
-		deletable: canDelete(n),
-		author: n.author,
-		component: n.component || n.element.split(/[.\s]/)[0],
-		extra: n.extras?.length ?? 0,
-	}
+	draft.value = { x, y, els, infos: [], box: n.box, editing: n.id, component: n.component || n.element.split(/[.\s]/)[0], extra: n.extras?.length ?? 0 }
 	draftKey.value++
 }
 
@@ -156,40 +149,85 @@ function openBox(b: Rect) {
 	show([container], clamp(b.x + b.w, 8, vw.value - 8), clamp(b.y + b.h, 8, vh.value - 8), box)
 }
 
+// Where a new note or comment sits: the picked elements, and the point clicked within the first.
+function anchorOf(d: Draft): PinAnchor {
+	const r = d.els[0].getBoundingClientRect()
+	const c = d.comp!
+	const [info, ...rest] = d.infos
+	return {
+		route: key.value,
+		viewport: `${window.innerWidth}x${window.innerHeight}`,
+		selector: info.selector,
+		component: c.component,
+		componentChain: c.chain,
+		file: c.file,
+		element: info.element,
+		text: info.text,
+		state: info.state || undefined,
+		extras: rest.length ? rest : undefined,
+		box: d.box,
+		offset: {
+			x: r.width ? clamp((d.x - r.left) / r.width, 0, 1) : 0,
+			y: r.height ? clamp((d.y - r.top) / r.height, 0, 1) : 0,
+		},
+		rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+	}
+}
+
 function save() {
 	const d = draft.value
 	const t = text.value.trim()
-	if (!d || !t || d.readonly) return
+	if (!d || !t) return
 	if (d.editing) updateNote(d.editing, t)
-	else {
-		const el = d.els[0]
-		const r = el.getBoundingClientRect()
-		const c = d.comp!
-		const [info, ...rest] = d.infos
-		addNote(
-			{
-				route: key.value,
-				viewport: `${window.innerWidth}x${window.innerHeight}`,
-				selector: info.selector,
-				component: c.component,
-				componentChain: c.chain,
-				file: c.file,
-				element: info.element,
-				text: info.text,
-				state: info.state || undefined,
-				extras: rest.length ? rest : undefined,
-				box: d.box,
-				note: t,
-				offset: {
-					x: r.width ? clamp((d.x - r.left) / r.width, 0, 1) : 0,
-					y: r.height ? clamp((d.y - r.top) / r.height, 0, 1) : 0,
-				},
-				rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
-			},
-			d.els,
-		)
-	}
+	else addNote({ ...anchorOf(d), note: t }, d.els)
 	close()
+}
+
+// ---- Comments: the thread open beside its pin ---------------------------------------------
+const thread = computed(() => threadById(draft.value?.editing))
+const newAnchor = computed(() => (draft.value && !draft.value.editing && draft.value.comp ? anchorOf(draft.value) : undefined))
+
+function openThreadAt(t: Thread, x: number, y: number) {
+	const els = [0, ...(t.anchor.extras ?? []).map((_, i) => i + 1)]
+		.map((i) => resolve(i === 0 ? t.anchor.selector : (t.anchor.extras?.[i - 1]?.selector ?? '')))
+		.filter((e): e is Element => !!e)
+	draft.value = { x, y, els, infos: [], box: t.anchor.box, editing: t.id, component: t.anchor.component || t.anchor.element.split(/[.\s]/)[0], extra: t.anchor.extras?.length ?? 0 }
+	draftKey.value++
+}
+// A thread you made keeps its popover: it turns from the composer into the thread in place.
+function onCreated(t: Thread) {
+	const d = draft.value
+	if (d) draft.value = { ...d, editing: t.id, comp: undefined }
+	text.value = ''
+}
+// The owner's "Add to notes": the new note is on the server already; this tab learns of it, and its
+// next save carries the same row.
+function onNoted(row: Note) {
+	if (!notes.value.some((n) => n.id === row.id)) notes.value = [...notes.value, row]
+}
+// The thread is gone (deleted here, or by its author or the owner in another tab).
+watch(thread, (t, was) => {
+	if (was && !t && draft.value?.editing === was.id) close()
+})
+watch(
+	() => draft.value?.editing,
+	(id) => (openThread.value = mode.value === 'comment' ? (id ?? null) : null),
+)
+// Reaching a thread from the list: its page first, then the pin, then the thread.
+async function openFromList(t: Thread) {
+	sheetOpen.value = false
+	if (routeKey(route) !== t.anchor.route) await router.push(t.anchor.route).catch(() => {})
+	let el: Element | null = null
+	for (let i = 0; i < 30 && !unmounted; i++) {
+		el = resolve(t.anchor.selector)
+		if (el) break
+		await sleep(50)
+	}
+	el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+	await sleep(el ? 250 : 0)
+	const r = el?.getBoundingClientRect()
+	const a = t.anchor
+	openThreadAt(t, r ? r.left + a.offset.x * r.width : a.rect.x + a.offset.x * a.rect.w, r ? r.top + a.offset.y * r.height : a.rect.y + a.offset.y * a.rect.h)
 }
 
 // Keep on a Variants set is a normal note, anchored on the set's first element.
@@ -451,7 +489,23 @@ watch(enabled, (on) => {
 		listOpen.value = false
 	}
 })
-watch(mode, () => (listOpen.value = false))
+watch(mode, () => {
+	listOpen.value = false
+	close()
+})
+// Comment mode is the only time comments are read, kept fresh, or held under a pass.
+watch(
+	() => !guest && enabled.value && mode.value === 'comment',
+	(on) => {
+		if (on) startListening()
+		else {
+			stopListening()
+			sheetOpen.value = false
+		}
+	},
+	{ immediate: true },
+)
+onBeforeUnmount(stopListening)
 
 let flashTimer = 0
 let unmounted = false
@@ -528,7 +582,8 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 		return
 	}
 	if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
-	const tool: Mode | null = e.key === 'c' || e.key === 'C' ? 'comment' : !reader && (e.key === 't' || e.key === 'T') ? 'tweak' : null
+	const k = e.key.toLowerCase()
+	const tool: Mode | null = guest ? null : k === 'c' ? 'comment' : owner && k === 'n' ? 'note' : owner && k === 't' ? 'tweak' : null
 	if (tool && !e.repeat && !typing(e.target)) {
 		if (!enabled.value) {
 			setEnabled(true)
@@ -658,33 +713,50 @@ const tweakCount = computed(() => tweakApi.value?.count.value ?? 0)
 const tweakItems = computed(() => tweakApi.value?.items?.value ?? [])
 const unsent = computed(() => notes.value.filter((n) => !n.sent))
 const hasSent = computed(() => notes.value.some((n) => n.sent))
-const count = computed(() => (mode.value === 'tweak' ? tweakCount.value : shownNotes.value.length))
-// What Clear all removes: every note for the owner, only their own for a reader.
-const clearable = computed(() => (mode.value === 'tweak' ? tweakCount.value : notes.value.filter(canDelete).length))
-const others = computed(() => notes.value.filter((n) => !isMine(n)).length)
-const toggleAll = () => (showAll.value = !showAll.value)
+const count = computed(() => (mode.value === 'tweak' ? tweakCount.value : mode.value === 'note' ? notes.value.length : 0))
 const noun = computed(() => (mode.value === 'tweak' ? 'tweak' : 'note'))
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-const countLabel = computed(() =>
-	mode.value === 'tweak' ? plural(tweakCount.value, 'tweak') : reader ? plural(count.value, 'note') : unsent.value.length ? plural(unsent.value.length, 'note') : 'All sent',
-)
+const countLabel = computed(() => (mode.value === 'tweak' ? plural(tweakCount.value, 'tweak') : unsent.value.length ? plural(unsent.value.length, 'note') : 'All sent'))
 
-// Tabs: one tooltip for the pair, worded for the tab under the pointer.
-const tabOptions = [
-	{ label: 'Comment', value: 'comment', iconLeft: 'lucide-mouse-pointer-click', onClick: () => use('comment') },
+// Tabs: one tooltip for the three, worded for the tab under the pointer. The Comment tab carries
+// the number of threads still open.
+const commentLabel = computed(() => (openCount.value ? `Comment ${openCount.value}` : 'Comment'))
+const tabOptions = computed(() => [
+	{ label: 'Note', value: 'note', iconLeft: 'lucide-sticky-note', onClick: () => use('note') },
 	{ label: 'Tweak', value: 'tweak', iconLeft: 'lucide-paintbrush', onClick: () => use('tweak') },
-]
-const tabHover = ref<Mode>('comment')
+	{ label: commentLabel.value, value: 'comment', iconLeft: 'lucide-message-circle', onClick: () => use('comment') },
+])
+const tabHover = ref<Mode>('note')
 function onTabHover(e: PointerEvent) {
 	const v = (e.target as Element).closest('[data-value]')?.getAttribute('data-value')
-	if (v === 'comment' || v === 'tweak') tabHover.value = v
+	if (v === 'note' || v === 'comment' || v === 'tweak') tabHover.value = v
 }
-const tabTip = computed(() => (tabHover.value === 'tweak' ? 'Try token changes live (T)' : 'Leave notes on elements (C)'))
+const TIPS: Record<Mode, string> = {
+	note: 'Leave notes for your agent (N)',
+	tweak: 'Try token changes live (T)',
+	comment: 'Talk it through with people (C)',
+}
+const tabTip = computed(() => TIPS[tabHover.value])
 
 function openFromTrigger() {
 	setEnabled(true)
-	use('comment')
+	use(owner ? 'note' : 'comment')
 }
+
+// The comments panel: a floating card on the right, collapsed from its own button; on a phone a bottom sheet.
+const panelOpen = ref(true)
+const phone = computed(() => vw.value < 640)
+const showPanel = computed(() => enabled.value && mode.value === 'comment' && !guest)
+const togglePanel = () => (phone.value ? (sheetOpen.value = !sheetOpen.value) : (panelOpen.value = !panelOpen.value))
+const panelShown = computed(() => (phone.value ? sheetOpen.value : panelOpen.value))
+// The card keeps clear of the toolbar when the toolbar is parked on the right edge.
+const panelBox = computed(() => {
+	const b = barBox.value
+	const right = anchor.value.endsWith('right')
+	const top = anchor.value.startsWith('top') && right ? b.bottom + 8 : 12
+	const bottom = anchor.value.startsWith('bottom') && right ? vh.value - b.top + 8 : 12
+	return { top: `${top}px`, '--comments-list-max': `${Math.max(120, vh.value - top - bottom - 96)}px` }
+})
 
 // Notes: copies what hasn't gone out yet, or everything when it all has; then marks it sent.
 async function copy() {
@@ -731,7 +803,7 @@ const groupBy = <T extends { route: string }>(items: T[]) => {
 	for (const n of items) m.set(n.route, [...(m.get(n.route) ?? []), n])
 	return [...m]
 }
-const groups = computed(() => groupBy(shownNotes.value))
+const groups = computed(() => groupBy(notes.value))
 const tweakGroups = computed(() => groupBy(tweakItems.value))
 // The list has nothing left to show at zero, and a hovered tweak row must not leave its highlight behind.
 watch(count, (n) => !n && (listOpen.value = false))
@@ -792,6 +864,12 @@ async function edit(n: Note) {
 	openEdit(n, p.x, p.y)
 }
 
+// A Guest: the sandboxed page cannot remember where they were, so the server does, then shows the login.
+function signIn() {
+	const back = location.pathname + location.search
+	location.assign(`/api/method/sketch.api.sign_in_to_comment?back=${encodeURIComponent(back)}`)
+}
+
 function revealTweak(id: string) {
 	listOpen.value = false
 	tweakApi.value?.reveal(id)
@@ -800,11 +878,11 @@ function revealTweak(id: string) {
 
 <template>
 	<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
-	<Tooltip :text="tweakCount ? `Annotate (C), ${plural(tweakCount, 'tweak')} applied` : 'Annotate (C)'">
+	<Tooltip v-if="!guest" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : owner ? 'Annotate (N)' : 'Comment (C)'">
 		<button
 			type="button"
 			data-annotate-ui
-			aria-label="Annotate"
+			:aria-label="owner ? 'Annotate' : 'Comment'"
 			:aria-hidden="enabled"
 			:tabindex="enabled ? -1 : 0"
 			:style="triggerStyle"
@@ -812,17 +890,18 @@ function revealTweak(id: string) {
 			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount ? 'opacity-60' : 'opacity-20']"
 			@click="openFromTrigger"
 		>
-			<span class="lucide-mouse-pointer-click size-4" aria-hidden="true" />
+			<span :class="owner ? 'lucide-mouse-pointer-click' : 'lucide-message-circle'" class="size-4" aria-hidden="true" />
 			<!-- Tweaks stay applied with the toolbar closed; the dot says the page isn't as built. -->
 			<span v-if="tweakCount" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-violet-7 ring-2 ring-surface-base" aria-hidden="true" />
 		</button>
 	</Tooltip>
 
 	<!-- Always mounted so tweaks stay applied while the toolbar is closed. -->
-	<TweakLayer v-if="!reader" />
+	<TweakLayer v-if="owner" />
 
 	<template v-if="enabled">
-		<Pins v-if="mode === 'comment'" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
+		<Pins v-if="mode === 'note'" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
+		<CommentPins v-if="mode === 'comment' && !guest" :route="key" @open="openThreadAt" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
@@ -894,7 +973,7 @@ function revealTweak(id: string) {
 			leave-to-class="opacity-0"
 		>
 			<NotePopover
-				v-if="draft"
+				v-if="draft && mode === 'note'"
 				:key="draftKey"
 				:class="shiftPick && 'invisible'"
 				v-model="text"
@@ -903,15 +982,52 @@ function revealTweak(id: string) {
 				:component="draft.component"
 				:extra="draft.extra"
 				:editing="!!draft.editing"
-				:readonly="draft.readonly"
-				:deletable="draft.deletable"
-				:author="draft.author"
 				:avoid="ready ? barBox : null"
 				@save="save"
 				@cancel="close"
 				@delete="remove"
 			/>
 		</Transition>
+
+		<Transition
+			enter-from-class="opacity-0 scale-[0.96] motion-reduce:scale-100"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition duration-100 ease-in"
+			leave-to-class="opacity-0"
+		>
+			<CommentPopover
+				v-if="draft && mode === 'comment' && !guest"
+				:key="draftKey"
+				:class="shiftPick && 'invisible'"
+				v-model="text"
+				:x="draft.x"
+				:y="draft.y"
+				:component="draft.component"
+				:extra="draft.extra"
+				:anchor="newAnchor"
+				:thread="thread"
+				:avoid="ready ? barBox : null"
+				@created="onCreated"
+				@gone="close"
+				@noted="onNoted"
+				@close="close"
+			/>
+		</Transition>
+
+		<!-- The comments list: a floating card on the right, or a bottom sheet on a phone. It floats; the page never moves for it. -->
+		<Transition
+			enter-from-class="opacity-0 translate-x-2 motion-reduce:translate-x-0"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition-opacity duration-100"
+			leave-to-class="opacity-0"
+		>
+			<div v-if="showPanel && !phone && panelOpen" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
+				<CommentsPanel @choose="openFromList" @hide="panelOpen = false" />
+			</div>
+		</Transition>
+		<BottomSheet v-if="showPanel && phone" v-model:open="sheetOpen" title="Comments">
+			<CommentsPanel embedded @choose="openFromList" />
+		</BottomSheet>
 
 		<Transition
 			:enter-from-class="panelBelow ? 'opacity-0 -translate-y-1' : 'opacity-0 translate-y-1'"
@@ -928,7 +1044,7 @@ function revealTweak(id: string) {
 			>
 				<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
 					<!-- Notes -->
-					<template v-if="mode === 'comment'">
+					<template v-if="mode === 'note'">
 						<template v-for="[r, list] in groups" :key="r">
 							<p v-if="groups.length > 1" class="px-2 pt-2 pb-1 text-sm text-ink-gray-5">{{ r }}</p>
 							<div
@@ -944,19 +1060,18 @@ function revealTweak(id: string) {
 							>
 								<span
 									class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
-									:class="n.sent ? 'bg-surface-gray-6' : isMine(n) ? 'bg-surface-blue-7' : 'bg-surface-violet-7'"
+									:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
 								>{{ i + 1 }}</span>
 								<div class="min-w-0 flex-1">
 									<p class="flex items-baseline gap-2">
 										<span class="truncate text-base font-medium text-ink-gray-8">{{ n.component || n.element.split(/[.\s]/)[0] }}</span>
-										<span v-if="n.author" class="shrink-0 truncate text-sm text-ink-gray-5">@{{ n.author }}</span>
 										<span v-if="n.sent" class="shrink-0 text-sm text-ink-gray-5">Sent</span>
 									</p>
 									<p class="line-clamp-2 text-base text-ink-gray-6">{{ n.note }}</p>
 								</div>
 								<span class="hidden shrink-0 items-start group-hover:flex group-focus-within:flex">
-									<Button v-if="canEdit(n)" variant="ghost" icon="lucide-pencil" aria-label="Edit note" @click.stop="edit(n)" />
-									<Button v-if="canDelete(n)" variant="ghost" icon="lucide-trash-2" aria-label="Delete note" @click.stop="removeNote(n.id)" />
+									<Button variant="ghost" icon="lucide-pencil" aria-label="Edit note" @click.stop="edit(n)" />
+									<Button variant="ghost" icon="lucide-trash-2" aria-label="Delete note" @click.stop="removeNote(n.id)" />
 								</span>
 							</div>
 						</template>
@@ -1020,13 +1135,12 @@ function revealTweak(id: string) {
 						/>
 						{{ saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Not saved' : 'Saving…' }}
 					</span>
-					<Button v-if="mode === 'comment' && hasSent && !reader" variant="ghost" label="Clear sent" @click="clearSent" />
+					<Button v-if="mode === 'note' && hasSent" variant="ghost" label="Clear sent" @click="clearSent" />
 					<Button
-						v-if="clearable"
 						class="ml-auto"
 						:variant="confirming ? 'subtle' : 'ghost'"
 						:theme="confirming ? 'red' : 'gray'"
-						:label="confirming ? (mode === 'tweak' ? `Reset ${plural(clearable, 'tweak')}` : `Clear ${plural(clearable, 'note')}`) : mode === 'tweak' ? 'Reset all' : reader ? 'Clear mine' : 'Clear all'"
+						:label="confirming ? (mode === 'tweak' ? `Reset ${plural(count, 'tweak')}` : `Clear ${plural(count, 'note')}`) : mode === 'tweak' ? 'Reset all' : 'Clear all'"
 						@click="clear"
 					/>
 				</div>
@@ -1053,29 +1167,29 @@ function revealTweak(id: string) {
 				@click.capture="barClick"
 			>
 				<!-- Tool switch. The current tab stays lit; Escape or close is the way off. -->
-				<Tooltip v-if="!reader" :text="tabTip" :hover-delay="600">
+				<Button v-if="guest" variant="solid" theme="gray" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
+				<Tooltip v-else-if="owner" :text="tabTip" :hover-delay="600">
 					<div class="inline-flex" @pointerover="onTabHover">
 						<TabButtons :options="tabOptions" :model-value="mode" />
 					</div>
 				</Tooltip>
-				<!-- A reader: commenting is the only tool, and everyone else's notes stay hidden until asked for. -->
-				<template v-else>
-					<Tooltip :text="active ? 'Stop commenting (C)' : 'Leave notes on elements (C)'" :hover-delay="600">
-						<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-mouse-pointer-click" label="Comment" @click="pick('comment')" />
-					</Tooltip>
-					<Tooltip :text="showAll ? 'Show only your notes' : `Show everyone's notes (${others})`" :hover-delay="600">
-						<Button :variant="showAll ? 'subtle' : 'ghost'" icon-left="lucide-users" :label="showAll ? 'All notes' : 'My notes'" @click="toggleAll" />
-					</Tooltip>
-				</template>
+				<!-- A reader has one tool. -->
+				<Tooltip v-else :text="active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
+					<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-message-circle" :label="commentLabel" @click="pick('comment')" />
+				</Tooltip>
 
-				<span v-if="count" data-notes-trigger>
+				<Tooltip v-if="mode === 'comment' && !guest" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600">
+					<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
+				</Tooltip>
+
+				<span v-if="owner && count" data-notes-trigger>
 					<Tooltip :text="mode === 'tweak' ? 'Show tweaks' : 'Show notes'" :hover-delay="600">
 						<Button :variant="listOpen ? 'subtle' : 'ghost'" :label="countLabel" @click="listOpen = !listOpen" />
 					</Tooltip>
 				</span>
 
-				<!-- The prompt is the owner's: a reader's notes reach the owner's agent, not their own. -->
-				<template v-if="!reader">
+				<!-- The prompt is the owner's, and never holds a comment. -->
+				<template v-if="owner && mode !== 'comment'">
 					<Tooltip v-if="!count" :text="`No ${noun}s yet`" :hover-delay="600">
 						<span class="inline-flex" tabindex="0">
 							<Button variant="ghost" icon-left="lucide-copy" label="Copy prompt" disabled />
@@ -1086,7 +1200,7 @@ function revealTweak(id: string) {
 					</Tooltip>
 				</template>
 
-				<Tooltip text="Hide toolbar" :hover-delay="600">
+				<Tooltip v-if="!guest" text="Hide toolbar" :hover-delay="600">
 					<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
 				</Tooltip>
 			</div>

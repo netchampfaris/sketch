@@ -1,0 +1,102 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-28 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "prototype",
+  "thread",
+  "author",
+  "text",
+  "anchor",
+  "resolved",
+  "edited"
+ ],
+ "fields": [
+  {
+   "description": "The Prototype hash id. Data and not Link: the Prototype's own delete removes these rows (sketch_prototype.py on_trash).",
+   "fieldname": "prototype",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Prototype",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The first comment of the thread this one replies to. Empty on the first comment itself.",
+   "fieldname": "thread",
+   "fieldtype": "Data",
+   "label": "Thread",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The commenter's Sketch username, stamped by the server.",
+   "fieldname": "author",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Author",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "text",
+   "fieldtype": "Long Text",
+   "label": "Text",
+   "read_only": 1,
+   "ignore_xss_filter": 1,
+   "description": "Stored as sent: it is shown only as escaped text, never as HTML."
+  },
+  {
+   "description": "JSON. Where on the page the thread sits. Only on the first comment of a thread. Stored as sent: it is shown only as escaped text, never as HTML.",
+   "fieldname": "anchor",
+   "fieldtype": "Long Text",
+   "label": "Anchor",
+   "read_only": 1,
+   "ignore_xss_filter": 1
+  },
+  {
+   "default": "0",
+   "description": "Only on the first comment of a thread.",
+   "fieldname": "resolved",
+   "fieldtype": "Check",
+   "label": "Resolved",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "edited",
+   "fieldtype": "Check",
+   "label": "Edited",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-28 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sketch",
+ "name": "Sketch Comment",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

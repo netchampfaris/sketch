@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// The note box that opens beside a clicked element (new) or a pin (edit). Somebody else's note
-// opens read-only, with its author; the owner may still delete a reader's note.
+// The note box that opens beside a clicked element (new) or a pin (edit).
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { Button, Textarea } from 'frappe-ui'
 
@@ -11,9 +10,6 @@ const props = defineProps<{
 	component?: string
 	extra: number
 	editing: boolean
-	readonly?: boolean
-	deletable?: boolean
-	author?: string
 	// The toolbar's box: the popover keeps clear of it when they would overlap sideways.
 	avoid: { left: number; right: number; top: number; bottom: number } | null
 }>()
@@ -58,7 +54,7 @@ const canSave = computed(() => !!props.modelValue.trim())
 function onKey(e: KeyboardEvent) {
 	if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 		e.preventDefault()
-		if (canSave.value && !props.readonly) emit('save')
+		if (canSave.value) emit('save')
 	}
 }
 </script>
@@ -76,15 +72,9 @@ function onKey(e: KeyboardEvent) {
 		<p class="flex items-baseline gap-2 text-base">
 			<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ component }}</span>
 			<span v-if="extra" class="shrink-0 tabular-nums text-ink-gray-5">+{{ extra }} more</span>
-			<span v-if="author" class="ml-auto shrink-0 text-sm text-ink-gray-5">@{{ author }}</span>
 		</p>
-		<p v-if="readonly" class="mt-2 whitespace-pre-wrap break-words text-base text-ink-gray-7">{{ modelValue }}</p>
-		<Textarea v-else :model-value="modelValue" :rows="3" placeholder="What should change?" class="mt-2 text-base" @update:model-value="emit('update:modelValue', $event)" />
-		<div v-if="readonly" class="mt-3 flex items-center gap-2">
-			<Button v-if="deletable" variant="ghost" theme="red" icon="lucide-trash-2" aria-label="Delete note" @click="emit('delete')" />
-			<Button class="ml-auto" variant="ghost" label="Close" @click="emit('cancel')" />
-		</div>
-		<div v-else class="mt-3 flex items-center gap-2">
+		<Textarea :model-value="modelValue" :rows="3" placeholder="What should change?" class="mt-2 text-base" @update:model-value="emit('update:modelValue', $event)" />
+		<div class="mt-3 flex items-center gap-2">
 			<Button v-if="editing" variant="ghost" theme="red" icon="lucide-trash-2" aria-label="Delete note" @click="emit('delete')" />
 			<span class="text-xs text-ink-gray-4">⌘↵ to save</span>
 			<span class="ml-auto flex items-center gap-2">

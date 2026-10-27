@@ -44,14 +44,22 @@ DEFAULT_TTL = 60
 #:   What it can do is put rows in front of the owner's agent, which is why the
 #:   save is size- and shape-checked and the MCP tool tells the agent to treat
 #:   the rows as requests to check, never as orders.
-#: - COMMENT writes one signed-in reader's own notes on somebody else's public
-#:   Prototype (`sketch.api.save_comments`). It is minted over the hash id and
-#:   the reader's username together (`sketch.annotations.comment_subject`), so
-#:   it speaks for that one reader on that one Prototype and nothing else.
+#: - COMMENT writes and reads one signed-in person's comments on one Prototype
+#:   (`sketch.api.comment_*`). It is minted over the hash id and the username
+#:   together (`sketch.comments.subject`), so it speaks for that one person on
+#:   that one Prototype and nothing else. It lasts 15 minutes and is minted when
+#:   the person enters Comment mode, never into the page payload.
+#: - COMMENT_MINT is the one thing the payload carries for a commenter: it
+#:   opens `sketch.api.comment_pass` and nothing else. The Viewer sits in an
+#:   opaque origin and sends no cookie (measured: a fetch from it reaches the
+#:   server as Guest), so a call that only a session cookie could make is not
+#:   possible from the toolbar. This stands in for the cookie until the toolbar
+#:   moves out of the Prototype's page.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
 COMMENT = "comment"
+COMMENT_MINT = "comment-mint"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

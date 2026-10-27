@@ -14,11 +14,9 @@ written from an untrusted place: the size and the shape are checked, and unknown
 keys are dropped. What the rows say is for the agent to weigh, never to obey
 (sketch/mcp/tools.py `get_annotations`).
 
-Signed-in readers of a public Prototype leave notes too (never tweaks). Their
-rows sit in the same `notes` list, each stamped with the reader's `author`
-username by the server. A reader writes only their own rows
-(`save_comments`), and the owner's save can delete a reader's row but never
-edit or forge one (`_merge_owner`).
+Other people's comments live elsewhere (sketch/comments.py). Nothing here reads,
+writes or clears them, so the agent never meets a comment unless the owner copies
+one into their notes.
 
 `name` is always the Prototype's hash primary key, never its slug.
 """
@@ -34,14 +32,6 @@ PROTOTYPE = "Sketch Prototype"
 MAX_BYTES = 256 * 1024
 #: The prompt is a convenience copy of the rows, so it is capped on its own.
 MAX_PROMPT_BYTES = 64 * 1024
-
-#: How many notes one reader may keep on somebody else's Prototype.
-MAX_COMMENTS = 50
-#: The whole stored document, every reader's notes included.
-MAX_STORED_BYTES = 2 * 1024 * 1024
-
-#: Keys only the server writes on a reader's row.
-AUTHOR = "author"
 
 ANCHORS = ("top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right")
 
@@ -89,9 +79,8 @@ def parse(raw: str) -> dict:
 	"""Check one save and return the clean document. Raises when it is not one.
 
 	The size is checked before the parse, so an oversize body costs nothing.
-	Only `notes`, `tweaks`, `prompt`, `anchor` and `known` survive. `updated` is
-	the server's to set. `known` is the reader note ids the owner's page loaded
-	with (`_merge_owner`).
+	Only `notes`, `tweaks`, `prompt` and `anchor` survive. `updated` is the
+	server's to set.
 	"""
 	raw = raw or ""
 	if len(raw.encode()) > MAX_BYTES:
@@ -126,11 +115,6 @@ def parse(raw: str) -> dict:
 
 		clean["anchor"] = anchor
 
-	known = data.get("known", [])
-	if not isinstance(known, list) or not all(isinstance(i, str) for i in known):
-		frappe.throw(frappe._("known must be a list of ids"), frappe.ValidationError)
-
-	clean["known"] = known
 	return clean
 
 
@@ -145,77 +129,29 @@ def save(name: str, raw: str, seen_epoch: int) -> dict:
 	clear is refused (AnnotationsStale) and reloads instead.
 	"""
 	doc = parse(raw)
-	known = doc.pop("known")
+	# The lock first, then the epoch: a clear that commits while this waits for
+	# the lock is seen, so a stale page can never write cleared rows back.
+	read(name, for_update=True)
 	if seen_epoch != epoch(name):
 		frappe.throw(frappe._("Annotations changed since this page loaded"), AnnotationsStale)
 
-	stored = read(name, for_update=True)
-	doc["notes"] = _merge_owner(_rows(stored.get("notes")), doc["notes"], set(known))
+	doc["notes"] = [{k: v for k, v in n.items() if k != "author"} for n in doc["notes"]]
 	doc["updated"] = _now()
 	_write(name, doc)
 	return doc
 
 
-def comment_subject(name: str, username: str) -> str:
-	"""What a COMMENT signature covers: this Prototype for this one reader."""
-	return f"{name}|{username}"
+def add_note(name: str, row: dict) -> dict:
+	"""Append one owner note, under the row lock, and return it.
 
-
-def for_reader(name: str) -> dict:
-	"""What a reader's page starts from: every note, and nothing else.
-
-	The reader's toolbar shows only their own notes until they ask to see
-	everyone's. Tweaks and the prompt are the owner's, so they stay out.
+	The owner's "Add to notes" on a comment: the comment itself is untouched.
 	"""
-	return {"notes": _rows(read(name).get("notes"))}
-
-
-def save_comments(name: str, author: str, raw: str, seen_epoch: int) -> dict:
-	"""Replace one reader's own notes with one validated save.
-
-	Every row is stamped with `author` here; whatever the page sent for it is
-	dropped. A row reusing another author's id is dropped too, so a reader can
-	never overwrite somebody else's note. Tweaks, the prompt and the anchor in
-	the body are ignored: a reader only comments.
-
-	The owner's `sent` mark survives on a row whose text has not changed.
-	"""
-	doc = parse(raw)
-	mine = doc["notes"]
-	if len(mine) > MAX_COMMENTS:
-		message = frappe._("A reader may keep {0} notes at most").format(MAX_COMMENTS)
-		frappe.throw(message, AnnotationsTooLarge)
-
-	if seen_epoch != epoch(name):
-		frappe.throw(frappe._("Annotations changed since this page loaded"), AnnotationsStale)
-
 	stored = read(name, for_update=True)
 	notes = _rows(stored.get("notes"))
-	theirs = [n for n in notes if n.get(AUTHOR) != author]
-	taken = {n.get("id") for n in theirs}
-	before = {n.get("id"): n for n in notes if n.get(AUTHOR) == author}
-
-	rows = []
-	for row in mine:
-		if not isinstance(row.get("id"), str) or row["id"] in taken:
-			continue
-
-		row = {k: v for k, v in row.items() if k not in (AUTHOR, "sent")}
-		old = before.get(row["id"])
-		if old and old.get("sent") and old.get("note") == row.get("note"):
-			row["sent"] = True
-
-		row[AUTHOR] = author
-		rows.append(row)
-		taken.add(row["id"])
-
-	stored["notes"] = theirs + rows
-	stored["updated"] = _now()
-	if len(json.dumps(stored).encode()) > MAX_STORED_BYTES:
-		frappe.throw(frappe._("Annotations are too large"), AnnotationsTooLarge)
-
+	notes.append(row)
+	stored.update(notes=notes, tweaks=stored.get("tweaks") or [], prompt="", updated=_now())
 	_write(name, stored)
-	return {"notes": rows, "updated": stored["updated"]}
+	return row
 
 
 def clear(name: str, ids: list[str] | None = None) -> dict:
@@ -232,7 +168,7 @@ def clear(name: str, ids: list[str] | None = None) -> dict:
 	reloads. The reload is asked for through the epoch: this is the one write that
 	moves the revision, because it is the one the open Viewer has to see.
 	"""
-	doc = read(name)
+	doc = read(name, for_update=True)
 	notes = [n for n in doc.get("notes") or [] if isinstance(n, dict)]
 	tweaks = [t for t in doc.get("tweaks") or [] if isinstance(t, dict)]
 
@@ -265,39 +201,6 @@ def epoch(name: str) -> int:
 
 def _rows(notes) -> list[dict]:
 	return [n for n in notes or [] if isinstance(n, dict)]
-
-
-def _merge_owner(stored: list[dict], sent: list[dict], known: set[str]) -> list[dict]:
-	"""The owner's save, with every reader's row kept as the reader wrote it.
-
-	The owner's page holds the reader rows it loaded with (`known`) next to its
-	own. A reader row it still sends is kept as stored, taking only the owner's
-	`sent` mark. A known reader row it no longer sends was deleted by the owner.
-	A reader row added after the page loaded is not known, so it is kept.
-
-	A row the owner sends that is not a stored reader row is the owner's own,
-	and any `author` on it is dropped: the owner cannot sign as a reader.
-	"""
-	readers = {n["id"]: n for n in stored if n.get(AUTHOR) and isinstance(n.get("id"), str)}
-	out, seen = [], set()
-	for row in sent:
-		rid = row.get("id")
-		if rid in readers:
-			if rid in seen:
-				continue
-
-			kept = dict(readers[rid])
-			kept.pop("sent", None)
-			if row.get("sent"):
-				kept["sent"] = True
-
-			out.append(kept)
-			seen.add(rid)
-		else:
-			out.append({k: v for k, v in row.items() if k != AUTHOR})
-
-	out += [n for rid, n in readers.items() if rid not in seen and rid not in known]
-	return out
 
 
 def _write(name: str, doc: dict) -> None:

@@ -20,6 +20,7 @@ from frappe.utils import cint, convert_utc_to_system_timezone, pretty_date
 from sketch import (
 	annotations,
 	checkd,
+	comments,
 	prototype,
 	prototype_files,
 	signature,
@@ -611,31 +612,105 @@ def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", ep
 	return {"updated": saved["updated"]}
 
 
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def save_comments(
-	name: str, username: str = "", exp: str = "", sig: str = "", data: str = "", epoch: str = ""
-) -> dict:
-	"""Save one signed-in reader's own notes on somebody else's public Prototype.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def comment_pass(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
+	"""Mint a 15 minute comment pass. The toolbar calls it when Comment mode opens.
 
-	The same door as `save_annotations`, with a COMMENT signature minted over the
-	hash id and the reader's username together, so it writes as that reader on
-	that Prototype and nowhere else. The server stamps the author on every row
-	and keeps everybody else's rows (`sketch.annotations.save_comments`).
-
-	The Prototype must still be public: an owner who makes it private closes
-	this door at once, not when the page's signature runs out. Either refusal is
-	the same 404 a bad signature gets.
+	The page holds a ticket (`sketch.comments.mint_ticket`), not a pass. The
+	Viewer is in an opaque origin and sends no cookie, so the ticket stands in
+	for it. A bad ticket, a missing Prototype and a private Prototype that is not
+	theirs all answer 404.
 	"""
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	subject = annotations.comment_subject(name, username)
-	if not username or not signature.verify(subject, exp, sig, signature.COMMENT):
-		raise frappe.DoesNotExistError
+	return comments.mint_pass(name, username, exp, sig)
 
-	if not frappe.db.get_value("Sketch Prototype", name, "is_public"):
-		raise frappe.DoesNotExistError
 
-	saved = annotations.save_comments(name, username, data, frappe.utils.cint(epoch))
-	return {"updated": saved["updated"]}
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def sign_in_to_comment(back: str = "/") -> None:
+	"""Send a signed-out visitor to the login page and bring them back to `back`.
+
+	The Viewer is sandboxed and cannot set the `sketch_after_login` cookie
+	itself (sketch/www/sketch.py), so its "Sign in to comment" link comes here.
+	Only a path into a Prototype is remembered; anything else is dropped and the
+	visitor lands where login normally sends them.
+	"""
+	from sketch.www import sketch as sketch_page
+
+	if back.startswith("/u/") and sketch_page.is_safe_path(back):
+		sketch_page._remember_path(back)
+
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = sketch_page.LOGIN_PATH
+
+
+def _commenter(name: str, username: str, exp: str, sig: str) -> comments.Actor:
+	"""The pass-authenticated door every other comment call shares.
+
+	Like `signed_revision`: `Access-Control-Allow-Origin: *`, no credentials, the
+	pass is the whole authentication. Any refusal is a 404.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	return comments.actor_for(name, username, exp, sig)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comments_list(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
+	"""Every thread on a Prototype, for someone who may comment on it."""
+	actor = _commenter(name, username, exp, sig)
+	threads = comments.list_threads(name)
+	return {
+		"threads": threads,
+		"people": comments.people_in(threads),
+		"me": actor.username,
+		"is_owner": actor.is_owner,
+	}
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_add(name: str, username: str = "", exp: str = "", sig: str = "", anchor: str = "", text: str = ""):
+	"""Start a thread on an element. Returns the thread."""
+	actor = _commenter(name, username, exp, sig)
+	thread = comments.add_thread(name, actor, anchor, text)
+	return comments.one_thread(name, thread)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_reply(name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", text: str = ""):
+	"""Reply in a thread. Returns the thread."""
+	actor = _commenter(name, username, exp, sig)
+	comments.add_reply(name, actor, thread, text)
+	return comments.one_thread(name, thread)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_edit(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "", text: str = ""):
+	"""Edit your own comment. Returns its thread."""
+	actor = _commenter(name, username, exp, sig)
+	return comments.one_thread(name, comments.edit(name, actor, comment, text))
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_delete(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
+	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
+	actor = _commenter(name, username, exp, sig)
+	return comments.one_thread(name, comments.delete(name, actor, comment))
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_resolve(
+	name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", resolved: str = "1"
+):
+	"""Resolve (or reopen, with resolved=0) a thread. Returns the thread."""
+	actor = _commenter(name, username, exp, sig)
+	comments.set_resolved(name, actor, thread, bool(frappe.utils.cint(resolved)))
+	return comments.one_thread(name, thread)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_to_note(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "") -> dict:
+	"""The owner copies a comment into a new note of their own. Returns the note."""
+	actor = _commenter(name, username, exp, sig)
+	return comments.add_to_notes(name, actor, comment)
 
 
 @frappe.whitelist(allow_guest=True)
