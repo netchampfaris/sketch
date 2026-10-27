@@ -4,7 +4,7 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${1:-$HERE/dist}
-: "${NM:?set NM to one version's node_modules}"
+: "${NM:?set NM to the node_modules folder of one version}"
 mkdir -p "$OUT"
 "${ESBUILD:-$NM/.bin/esbuild}" "$HERE/entry.js" \
   --bundle --format=esm --platform=browser --minify --outfile="$OUT/tailwind.js" \

@@ -93,7 +93,7 @@ def pending_count(name: str) -> int:
 	return len(pending(name))
 
 
-def commit(doc, prompt: str, summary: str | None = None):
+def commit(doc, prompt: str, summary: str | None = None, source: str | None = None):
 	"""Record the pending changes as one version. Returns the version doc.
 
 	Returns None and changes nothing when nothing is pending, so a second
@@ -123,7 +123,9 @@ def commit(doc, prompt: str, summary: str | None = None):
 	if not changes:
 		return None
 
-	version = record(doc, REQUEST, prompt, changes, snapshots.capture(doc.name), summary=summary)
+	version = record(
+		doc, REQUEST, prompt, changes, snapshots.capture(doc.name), summary=summary, source=source
+	)
 	_set_pending(doc.name, [])
 	return version
 
