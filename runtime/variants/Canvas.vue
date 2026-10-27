@@ -536,6 +536,7 @@ watch(
             :sandbox="liveId === t.id ? liveSandbox : undefined"
             :app="app"
             :win="win"
+            :narrow="t.w * view.z < 280"
             @activate="(e) => activate(t, e)"
             @open-page="openPage(t)"
             @near="(n: boolean) => onNear(t.id, n)"
