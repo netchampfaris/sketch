@@ -4,9 +4,11 @@
 // use `--ls`, so zooming only scales the layout.
 import { computed, nextTick, ref, watch } from 'vue'
 import { useIntersectionObserver } from '@vueuse/core'
-import { Badge, Button, toast } from 'frappe-ui'
+import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
 import { bridge } from './bridge'
 import { canMakeDefault, makeDefault, makeFailure } from './default'
+import { canDelete, deleteFailure, deleteVariant } from './edit'
+import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
 import { restoreScrolls } from './snapshot'
@@ -38,6 +40,9 @@ useIntersectionObserver(
   { rootMargin: `${window.innerHeight}px ${window.innerWidth}px` },
 )
 
+// The label row wraps its actions under the name when the tile is narrow, and on a live tile that also says who made it:
+// there is no room for the name, the author and three actions on one line.
+const stacked = computed(() => !!props.narrow || (props.live && !!props.tile.author))
 const isSet = computed(() => props.tile.kind === 'set')
 // The part of the page this tile shows: the set's own box, or the whole window.
 const rect = computed(() => {
@@ -66,6 +71,19 @@ async function makeIt() {
   }
 }
 
+// Delete variant: on the live tile of an option a teammate made. The page reloads once the file is gone, and the
+// Undo toast is shown by the page that comes back (edit.ts).
+const deletable = computed(() => !!props.tile.author && !!props.tile.option && canDelete(props.tile.option))
+async function deleteIt() {
+  if (!deletable.value || saving.value) return
+  try {
+    await deleteVariant(props.tile.option!, props.tile.opt ?? props.tile.caption)
+  } catch (e) {
+    toast.error(deleteFailure(e as Error))
+  }
+}
+const menu = computed(() => [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }])
+
 const margin = computed(() => (isSet.value ? MARGIN : 0))
 const clip = computed(() => ({ left: margin.value + 'px', top: margin.value + 'px', width: rect.value.w + 'px', height: rect.value.h + 'px' }))
 const shift = computed(() => ({ transform: `translate(${-rect.value.x}px, ${-rect.value.y}px)` }))
@@ -81,20 +99,24 @@ watch(
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The caption sits under the tile. It is laid out at 1x and scaled to its on-screen size (never larger than at the
          fit zoom), so the row wraps by what the eye sees. Number, name and Default badge on one line; the live tile adds
-         Make default (owner) and Open page at the right end. On a narrow tile the badge and the buttons go under the
+         Make default (owner) and Open page at the right end. On a stacked tile the badge and the buttons go under the
          name, so the name never truncates away (there is room for one button a line). -->
     <div
       class="absolute left-0 top-full origin-top-left text-p-sm"
       :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
-      <div class="flex items-center gap-x-1.5" :class="narrow ? 'flex-wrap gap-y-0.5' : ''">
-        <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="narrow ? 'w-full' : ''">
+      <div class="flex items-center gap-x-1.5" :class="stacked ? 'flex-wrap gap-y-0.5' : ''">
+        <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="stacked ? 'w-full' : ''">
           <span v-if="tile.n" class="tabular-nums text-ink-gray-4">{{ tile.n }}</span>
           <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
-          <Badge v-if="tile.isDefault && !narrow" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
+          <span v-if="tile.author" class="flex min-w-0 shrink items-center gap-1 text-ink-gray-4" :title="`Made by ${personName(tile.author)}`">
+            <Avatar class="shrink-0" size="xs" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
+            <span class="truncate">Made by {{ shortName(tile.author) }}</span>
+          </span>
+          <Badge v-if="tile.isDefault && !stacked" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         </div>
-        <Badge v-if="tile.isDefault && narrow" label="Default" theme="gray" variant="subtle" size="sm" />
-        <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="narrow ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
+        <Badge v-if="tile.isDefault && stacked" label="Default" theme="gray" variant="subtle" size="sm" />
+        <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="stacked ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
           <Button
             v-if="canDefault"
             variant="ghost"
@@ -105,7 +127,10 @@ watch(
           >
             <span :class="saving ? 'sr-only' : ''">Make default</span>
           </Button>
-          <Button :class="narrow ? '-ml-0.5' : ''" variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
+          <Button :class="stacked ? '-ml-0.5' : ''" variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
+          <Dropdown v-if="deletable" :options="menu" placement="bottom-end">
+            <Button variant="ghost" size="sm" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
+          </Dropdown>
         </div>
       </div>
     </div>
