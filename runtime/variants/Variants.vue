@@ -1,10 +1,9 @@
 <script lang="ts">
 // <Variants name="Leave card"><template #compact>…</template><template #detailed>…</template></Variants>
 // Renders the chosen slot only, with no wrapper element. The first slot is the default.
-import { Fragment, defineComponent, getCurrentInstance, h, onBeforeUnmount, watch } from 'vue'
+import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { mountPill } from './mount'
-import { choices, currentOf, fromQuery, humanise, idOf, mirror, sets, slugOf, type VSet } from './state'
+import { choices, currentOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
 
 export default defineComponent({
   name: 'Variants',
@@ -14,10 +13,11 @@ export default defineComponent({
     const inst = getCurrentInstance()!
     const route = useRoute()
     const router = useRouter()
-    const path = route.path
+    const sb = inject(sandboxKey, null)
+    const path = pageKeyOf()
     let key = slugOf(props.name)
     let label = props.name
-    if (sets.some((s) => s.path === path && s.key === key)) {
+    if ((sb ? sb.reg.sets : sets).some((s) => s.path === path && s.key === key)) {
       console.warn(`[sketch variants] Two sets on this page are named "${props.name}". Names must be unique.`)
       key += '-2'
       label += ' 2'
@@ -35,21 +35,33 @@ export default defineComponent({
     // set by compileSFC), however deep in slots of other components the tag ends up.
     const file = String((inst.vnode.ctx?.type as { __file?: string } | undefined)?.__file ?? '')
     const set: VSet = { key, label, name: props.name, file, path, options, elements }
+    const id = setId(set)
 
-    // A link like #/inbox?v=leave-card.timeline opens on that option.
-    const id = idOf(set)
-    if (choices[id] === undefined) {
-      const opt = fromQuery(route, 'v', key)
-      if (opt && options().some((o) => o.value === opt)) choices[id] = opt
+    // Keyed by the option: slot vnodes are compiled with static props that Vue assumes are unchanged, so
+    // two options that render the same component would otherwise be patched in place, not swapped.
+    if (sb) {
+      sb.reg.sets.push(set)
+      return () => {
+        const v = sb.variants[id]
+        const o = options()
+        const cur = o.some((x) => x.value === v) ? v : o[0]?.value
+        return h(Fragment, { key: cur }, slots[cur!]?.())
+      }
     }
 
+    hookRouter(router)
+    // A link that names an option wins over what was picked earlier.
+    const opt = fromQuery(route, 'v', key)
+    if (opt && options().some((o) => o.value === opt)) choices[id] = opt
     sets.push(set)
-    mountPill(router)
-    watch(() => currentOf(set), () => mirror(router, route), { flush: 'post' })
-    mirror(router, route)
+    watch(() => currentOf(set), () => mirrorSets(router), { flush: 'post' })
+    mirrorSets(router)
     onBeforeUnmount(() => sets.splice(sets.indexOf(set), 1))
 
-    return () => h(Fragment, null, slots[currentOf(set)!]?.())
+    return () => {
+      const cur = currentOf(set)!
+      return h(Fragment, { key: cur }, slots[cur]?.())
+    }
   },
 })
 </script>
