@@ -47,7 +47,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 				<Button v-if="query" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 			</template>
 		</TextInput>
-		<div class="mt-1 flex h-7 shrink-0 items-center px-2">
+		<div v-if="notes.length" class="mt-1 flex h-7 shrink-0 items-center px-2">
 			<span class="text-xs font-medium text-ink-gray-5">{{ plural(notes.length, 'note') }}, for your agent</span>
 		</div>
 		<ScrollArea class="mt-1 min-h-0 shrink" style="max-height: calc(100dvh - 13rem)">

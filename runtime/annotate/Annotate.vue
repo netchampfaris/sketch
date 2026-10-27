@@ -252,8 +252,11 @@ const until = async (ok: () => boolean, ms = 4000) => {
 	for (const t0 = Date.now(); !ok(); await sleep(50)) if (Date.now() - t0 > ms || unmounted) return false
 	return true
 }
+// A thread or note opened from the canvas's list lives on the live page, so the toolbar stays open for it.
+let stayOpen = false
 async function leaveCanvas() {
 	if (!canvasOpen.value) return
+	stayOpen = true
 	closeCanvas(router)
 	await until(() => !bridge.open)
 }
@@ -604,11 +607,19 @@ watch(
 		}
 	},
 )
+// The canvas has its own toolbar: this one, placed beside the panel. It is open while the canvas is (so nothing
+// floats over it twice), and the page's faint trigger and close button are hidden. Leaving puts it back as it was.
 // Tweaks are for the live page: the canvas has none.
+let openBefore = enabled.value
 watch(
 	canvasOpen,
 	(open) => {
 		close()
+		if (open) {
+			openBefore = enabled.value
+			setEnabled(true)
+		} else if (!guest) setEnabled(stayOpen || openBefore)
+		if (!open) stayOpen = false
 		if (open && mode.value === 'tweak') {
 			active.value = false
 			mode.value = 'note'
@@ -1037,7 +1048,7 @@ function revealTweak(id: string) {
 
 <template>
 	<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
-	<Tooltip v-if="!guest" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : owner ? 'Annotate (N)' : 'Comment (C)'">
+	<Tooltip v-if="!guest && !canvasOpen" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : owner ? 'Annotate (N)' : 'Comment (C)'">
 		<button
 			type="button"
 			data-annotate-ui
@@ -1376,7 +1387,7 @@ function revealTweak(id: string) {
 					</Tooltip>
 				</template>
 
-				<Tooltip v-if="!guest" text="Hide toolbar" :hover-delay="600">
+				<Tooltip v-if="!guest && !canvasOpen" text="Hide toolbar" :hover-delay="600">
 					<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
 				</Tooltip>
 			</div>
