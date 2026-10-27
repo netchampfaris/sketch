@@ -96,7 +96,7 @@ watch(
         <Badge v-if="tile.isDefault && narrow" label="Default" theme="gray" variant="subtle" size="sm" />
         <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="narrow ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
           <Button
-            v-if="canDefault"
+            v-if="canDefault && !bridge.tool"
             variant="ghost"
             size="xs"
             :loading="saving"

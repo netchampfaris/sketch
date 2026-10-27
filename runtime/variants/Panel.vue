@@ -43,6 +43,7 @@ function enter() {
   const r = rows.value[active.value < 0 ? 0 : active.value]
   if (r) emit('choose', r.value)
 }
+// While it has tabs the panel takes the full height, so a tab switch changes what is inside and never the outline.
 // Browse, and next to it Comments, or Notes for the owner while noting. The tab and the toolbar's tool follow
 // each other (the toolbar does the following). Without a tool to pick with (a guest) there is nothing to tab to.
 const tabbed = computed(() => !props.embedded && (bridge.canComment || bridge.canNote))
@@ -63,7 +64,7 @@ const countClass = (i: PickItem) =>
     :data-canvas-panel="embedded ? undefined : ''"
     :aria-label="embedded ? undefined : 'Show on the canvas'"
     class="flex flex-col"
-    :class="embedded ? 'p-2' : 'absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2'"
+    :class="embedded ? 'p-2' : ['absolute right-3 top-3 z-10 w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2', tabbed ? 'bottom-3' : 'max-h-[calc(100%-1.5rem)]']"
     :style="embedded ? { width: 'var(--reka-popover-trigger-width)' } : undefined"
     data-ui
   >

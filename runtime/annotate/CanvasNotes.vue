@@ -11,7 +11,6 @@ defineProps<{ selected?: string }>()
 const emit = defineEmits<{ choose: [note: Note, el: HTMLElement] }>()
 
 const query = ref('')
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 const spotOf = (n: Note) => (n.tile ? { route: n.route, tile: n.tile } : null)
 const matches = computed(() => {
@@ -47,9 +46,6 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 				<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 			</template>
 		</TextInput>
-		<div v-if="notes.length" class="mt-1 flex h-7 shrink-0 items-center px-2">
-			<span class="text-xs font-medium text-ink-gray-5">{{ plural(notes.length, 'note') }}, for your agent</span>
-		</div>
 		<ScrollArea class="mt-1 min-h-0 shrink" style="max-height: calc(100dvh - 13rem)">
 			<div class="w-[16.5rem] min-w-0">
 				<div v-if="!notes.length" class="px-2 py-3">
@@ -59,7 +55,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 				<p v-else-if="!matches.length" class="px-2 py-2 text-p-sm text-ink-gray-5">No notes match</p>
 				<template v-else>
 				<section v-for="g in groups" :key="g.key" class="flex flex-col gap-0.5" :aria-label="g.name">
-					<p class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }} · <span class="tabular-nums">{{ g.notes.length }}</span></p>
+					<p class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }}</p>
 					<button
 						v-for="n in g.notes"
 						:key="n.id"

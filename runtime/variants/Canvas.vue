@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The canvas: one collection at a time (a variant set, a state across pages, or a page), picked in "Show".
 // The grid is laid out once per view (see layout.ts); zoom and pan only transform it.
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { Button, Dropdown, Popover, Tooltip } from 'frappe-ui'
@@ -335,11 +335,7 @@ onMounted(() => {
   measureDots()
   themeWatch = new MutationObserver(measureDots)
   themeWatch.observe(document.documentElement, { attributes: true })
-  discover().then(() => {
-    pump()
-    // Desktop: the search is where you start, so ↑/↓ work straight away.
-    nextTick(() => document.querySelector<HTMLElement>('[data-canvas-panel] input')?.focus())
-  })
+  discover().then(() => pump())
 })
 onBeforeUnmount(() => {
   bridge.open = false
