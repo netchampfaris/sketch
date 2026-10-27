@@ -727,6 +727,7 @@ async function run() {
   startAnnotate(data)
   startMakeDefault(data)
   startVariantEdit(data)
+  startBadges(data)
 }
 
 // The annotate toolbar: Note, Tweak and Comment for the owner's own live tab, Comment alone for a
@@ -766,6 +767,18 @@ async function startVariantEdit(data) {
     enableVariantEdit(data)
   } catch (e) {
     console.warn('[sketch] Delete variant did not load:', e)
+  }
+}
+
+// What is new for this person (sketch/badges.py): the server's snapshot, and the credential that reports what they look at.
+// Nobody else gets either, so a Guest, a `check` request and a framed card load nothing.
+async function startBadges(data) {
+  if (framed || !data.seen_sig) return
+  try {
+    const { initBadges } = await import('sketch:variants')
+    initBadges(data)
+  } catch (e) {
+    console.warn('[sketch] New badges did not load:', e)
   }
 }
 

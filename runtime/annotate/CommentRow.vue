@@ -20,8 +20,10 @@ const replies = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`
 	>
 		<span class="flex shrink-0"><AuthorAvatar :username="thread.author" size="sm" /></span>
 		<span class="min-w-0 flex-1">
-			<span class="flex items-baseline gap-2">
-				<span class="min-w-0 flex-1 truncate text-p-sm font-medium text-ink-gray-8">{{ thread.name }}</span>
+			<span class="flex items-center gap-2">
+				<span class="min-w-0 flex-1 truncate text-p-sm font-medium" :class="thread.unread ? 'text-ink-gray-9' : 'text-ink-gray-8'">{{ thread.name }}</span>
+				<span v-if="thread.mentioned" class="lucide-at-sign size-3 shrink-0 text-ink-gray-5" role="img" aria-label="Mentions you" title="Mentions you" />
+				<span v-if="thread.unread" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" role="img" :aria-label="`${thread.unread} unread`" />
 				<span class="w-10 shrink-0 text-right text-p-sm tabular-nums text-ink-gray-5">{{ ago(thread.ts) }}</span>
 			</span>
 			<span class="flex items-center gap-2">

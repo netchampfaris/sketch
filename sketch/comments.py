@@ -27,13 +27,14 @@ and shown only as escaped text.
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import frappe
 
-from sketch import annotations, sharing, signature
+from sketch import annotations, badges, sharing, signature
 
 PROTOTYPE = "Sketch Prototype"
 COMMENT = "Sketch Comment"
@@ -44,6 +45,10 @@ MAX_TEXT_BYTES = 4 * 1024
 MAX_THREADS = 200
 #: How many replies one thread keeps, all authors together.
 MAX_REPLIES = 500
+#: How many people one comment may mention.
+MAX_MENTIONS = 10
+#: A mention as stored in the text: the person's Sketch username, never their name or email.
+MENTION = re.compile(r"@\[([a-z][a-z0-9-]{2,29})\]")
 #: The anchor describes one spot on the page; it is small.
 MAX_ANCHOR_BYTES = 8 * 1024
 #: How long a pass lasts. The toolbar renews it while the person is active.
@@ -230,6 +235,7 @@ def list_threads(name: str) -> list[dict]:
 def people_in(threads: list[dict]) -> dict:
 	"""Name and picture of everyone who spoke in these threads, by username."""
 	names = {c["author"] for t in threads for c in (t, *t["replies"])}
+	names |= {u for t in threads for c in (t, *t["replies"]) for u in MENTION.findall(c["text"])}
 	if not names:
 		return {}
 
@@ -239,8 +245,63 @@ def people_in(threads: list[dict]) -> dict:
 	return {u.username: {"name": u.full_name or "", "image": u.user_image or ""} for u in users}
 
 
-def one_thread(name: str, thread: str) -> dict | None:
-	return next((t for t in list_threads(name) if t["id"] == thread), None)
+def one_thread(name: str, thread: str, user: str = "") -> dict | None:
+	"""One thread. With `user`, it carries what is unread and mentions that person (`sketch.badges.decorate`)."""
+	found = next((t for t in list_threads(name) if t["id"] == thread), None)
+	if found and user:
+		badges.decorate(name, user, [found])
+
+	return found
+
+
+# ------------------------------------------------------------------- mentions
+
+
+def mentionable(name: str) -> list[dict]:
+	"""Who a comment on this Prototype may mention: [{username, name, image}].
+
+	The owner and the invited editors, and on a public Prototype also anyone who has
+	commented on it. A private Prototype is for the owner and the people invited, so
+	its commenters are not offered (decision 30). Nobody else, whatever the text says.
+	"""
+	row = frappe.db.get_value(PROTOTYPE, name, ["owner", "is_public"], as_dict=True)
+	if not row:
+		return []
+
+	order = [sharing.username_of(row.owner), *(e["username"] for e in sharing.editors(name))]
+	if row.is_public:
+		order += frappe.get_all(COMMENT, filters={"prototype": name}, pluck="author", order_by="creation asc", limit_page_length=0)
+
+	known = sharing.people(order)
+	return [{"username": u, **known[u]} for u in dict.fromkeys(order) if u in known]
+
+
+def with_mentions(name: str, text: str) -> tuple[str, list[str]]:
+	"""Keep a mention only when that person can be mentioned here; anything else is plain text.
+
+	The page writes `@[username]`. A name that is not on the list loses its brackets and
+	reads as the plain `@name` it would have been. Returns the text and the usernames kept.
+	"""
+	allowed = {p["username"] for p in mentionable(name)} if MENTION.search(text) else set()
+	kept: list[str] = []
+
+	def keep(match):
+		who = match.group(1)
+		if who not in allowed or (who not in kept and len(kept) >= MAX_MENTIONS):
+			return f"@{who}"
+
+		if who not in kept:
+			kept.append(who)
+
+		return match.group(0)
+
+	return MENTION.sub(keep, text), kept
+
+
+def plain_mentions(text: str) -> str:
+	"""The words with each mention as `@Full Name`, for a place that has no styling (a note)."""
+	names = full_names(MENTION.findall(text))
+	return MENTION.sub(lambda m: f"@{names.get(m.group(1), m.group(1))}", text)
 
 
 # --------------------------------------------------------------------- writes
@@ -248,7 +309,7 @@ def one_thread(name: str, thread: str) -> dict | None:
 
 def add_thread(name: str, actor: Actor, anchor, text: str) -> str:
 	"""Start a thread on an element. Returns its id."""
-	text = clean_text(text)
+	text, mentions = with_mentions(name, clean_text(text))
 	anchor = clean_anchor(anchor)
 	_lock(name)
 	started = frappe.db.count(COMMENT, {"prototype": name, "author": actor.username, "thread": ["is", "not set"]})
@@ -258,29 +319,29 @@ def add_thread(name: str, actor: Actor, anchor, text: str) -> str:
 			TooManyThreads,
 		)
 
-	return _insert(name, actor.username, text, anchor=json.dumps(anchor))
+	return _insert(name, actor.username, text, anchor=json.dumps(anchor), mentions=mentions)
 
 
 def add_reply(name: str, actor: Actor, thread: str, text: str) -> str:
 	"""Reply in a thread. A thread that has gone is a 404."""
-	text = clean_text(text)
+	text, mentions = with_mentions(name, clean_text(text))
 	_lock(name)
 	_root(name, thread)
 	if frappe.db.count(COMMENT, {"prototype": name, "thread": thread}) >= MAX_REPLIES:
 		frappe.throw(frappe._("This thread has too many replies"), TooManyThreads)
 
-	return _insert(name, actor.username, text, thread=thread)
+	return _insert(name, actor.username, text, thread=thread, mentions=mentions)
 
 
 def edit(name: str, actor: Actor, comment: str, text: str) -> str:
 	"""Change the words of your own comment. Nobody edits anybody else's, the owner included."""
-	text = clean_text(text)
+	text, mentions = with_mentions(name, clean_text(text))
 	_lock(name)
 	row = _row(name, comment)
 	if row.author != actor.username:
 		raise frappe.PermissionError
 
-	frappe.db.set_value(COMMENT, comment, {"text": text, "edited": 1})
+	frappe.db.set_value(COMMENT, comment, {"text": text, "edited": 1, "mentions": json.dumps(mentions)})
 	return row.thread or row.name
 
 
@@ -328,7 +389,7 @@ def add_to_notes(name: str, actor: Actor, comment: str) -> dict:
 	note = {
 		**anchor,
 		"id": _note_id(),
-		"note": f"{full_names([row.author])[row.author]}: “{(row.text or '').strip()}”",
+		"note": f"{full_names([row.author])[row.author]}: “{plain_mentions((row.text or '').strip())}”",
 		"createdAt": int(datetime.now(UTC).timestamp() * 1000),
 	}
 	return annotations.add_note(name, note)
@@ -524,9 +585,19 @@ def _root(name: str, thread: str):
 	return row
 
 
-def _insert(name: str, author: str, text: str, thread: str = "", anchor: str = "") -> str:
+def _insert(
+	name: str, author: str, text: str, thread: str = "", anchor: str = "", mentions: list[str] | None = None
+) -> str:
 	doc = frappe.get_doc(
-		{"doctype": COMMENT, "prototype": name, "thread": thread, "author": author, "text": text, "anchor": anchor}
+		{
+			"doctype": COMMENT,
+			"prototype": name,
+			"thread": thread,
+			"author": author,
+			"text": text,
+			"anchor": anchor,
+			"mentions": json.dumps(mentions or []),
+		}
 	)
 	doc.insert(ignore_permissions=True)
 	return doc.name

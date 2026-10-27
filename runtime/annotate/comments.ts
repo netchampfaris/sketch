@@ -7,6 +7,7 @@
 // renewed while the person is active; leaving Comment mode drops it. The Viewer is sandboxed and sends
 // no cookie, so every call carries the pass and nothing else.
 import { computed, ref } from 'vue'
+import { readThread, setUnread } from 'sketch:variants'
 import type { TileSpot } from 'sketch:variants'
 import { host } from './host'
 import type { Note } from './annotate'
@@ -15,8 +16,11 @@ import type { Note } from './annotate'
 export type Reply = { id: string; author: string; name: string; text: string; ts: number; edited: boolean }
 // Where a thread sits: a note's anchor without the words.
 export type Anchor = Omit<Note, 'id' | 'note' | 'createdAt' | 'sent'>
-export type Thread = Reply & { resolved: boolean; anchor: Anchor; replies: Reply[] }
+// `unread` is how many comments by others this person has not seen; `mentioned` says one of them names this person.
+export type Thread = Reply & { resolved: boolean; anchor: Anchor; replies: Reply[]; unread: number; mentioned: boolean }
 export type Person = { name?: string; image?: string }
+// Someone a comment can mention: the owner, the editors and, on a public prototype, everyone who has commented.
+export type Mentionable = { username: string; name: string; image: string }
 
 const BASE = '/api/method/sketch.api.'
 const POLL_MS = 20000
@@ -25,6 +29,7 @@ export const MAX_BYTES = 4096
 
 export const threads = ref<Thread[]>([])
 export const people = ref<Record<string, Person>>({})
+export const mentionable = ref<Mentionable[]>([])
 // idle until Comment mode opens; loading on the first read; error when it failed with nothing to show.
 export const status = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 export const showResolved = ref(false)
@@ -91,16 +96,25 @@ async function call<T = any>(method: string, fields: Record<string, string> = {}
 }
 
 // ---- Reading ---------------------------------------------------------------------------------
+const RECENT_MS = 5000
+const readAt: Record<string, number> = {}
 let timer = 0
 let listening = false
 
 export async function load(silent = false) {
   if (!silent && status.value !== 'ready') status.value = 'loading'
   try {
-    const r = await call<{ threads: Thread[]; people: Record<string, Person> }>('comments_list')
+    const r = await call<{ threads: Thread[]; people: Record<string, Person>; mentionable: Mentionable[] }>('comments_list')
+    // A thread opened a moment ago is read, even if the server has not heard yet.
+    for (const t of r.threads) if (t.unread && Date.now() - (readAt[t.id] ?? 0) < RECENT_MS) t.unread = 0
     threads.value = r.threads
     people.value = r.people
+    mentionable.value = r.mentionable
     status.value = 'ready'
+    setUnread(r.threads.map((t) => ({ id: t.id, route: t.anchor.route, unread: t.unread, mention: t.mentioned })))
+    // A thread that is open shows what came in: it stays read.
+    const open = threadById(openThread.value)
+    if (open?.unread) read(open.id)
   } catch (e) {
     // A quiet refresh that fails keeps what is on screen.
     if (!silent || status.value !== 'ready') status.value = 'error'
@@ -147,6 +161,13 @@ export async function remove(thread: string, comment: string) {
 export async function setResolved(thread: string, resolved: boolean) {
   take(await call<Thread | null>('comment_resolve', { thread, resolved: resolved ? '1' : '0' }), thread)
 }
+// The person opened a thread: it is read, here at once and on the server when it can be told.
+export function read(id: string) {
+  readAt[id] = Date.now()
+  const t = threadById(id)
+  if (t?.unread) threads.value = threads.value.map((x) => (x.id === id ? { ...x, unread: 0 } : x))
+  readThread(id)
+}
 // The owner copies a comment into a note of their own; the comment stays. The row is the new note.
 export const toNote = (comment: string) => call<Note>('comment_to_note', { comment })
 
@@ -166,8 +187,30 @@ export function ago(ts: number): string {
 }
 export const whenOf = (ts: number) => new Date(ts * 1000).toLocaleString()
 
+// ---- Mentions ----------------------------------------------------------------------------------
+// A mention is stored in the text as `@[username]` (sketch/comments.py), and drawn as the person's full name.
+const TOKEN = /@\[([a-z][a-z0-9-]{2,29})\]/g
+export const nameOf = (username: string) => people.value[username]?.name || mentionable.value.find((m) => m.username === username)?.name || username
+
+// The words with each mention as "@Full Name", for a list row or a title.
+export const plain = (text: string) => text.replace(TOKEN, (_, u: string) => `@${nameOf(u)}`)
+
+// The words in pieces, so a mention can be drawn in its own colour. Text is never HTML.
+export type Piece = { text: string; mention?: string }
+export function pieces(text: string): Piece[] {
+  const out: Piece[] = []
+  let at = 0
+  for (const m of text.matchAll(TOKEN)) {
+    if (m.index! > at) out.push({ text: text.slice(at, m.index) })
+    out.push({ text: `@${nameOf(m[1])}`, mention: m[1] })
+    at = m.index! + m[0].length
+  }
+  if (at < text.length) out.push({ text: text.slice(at) })
+  return out
+}
+
 // The first line of a comment, for the list.
-export const firstLine = (text: string) => text.split('\n').find((l) => l.trim())?.trim() ?? ''
+export const firstLine = (text: string) => plain(text).split('\n').find((l) => l.trim())?.trim() ?? ''
 
 
 // A page's name for the list: the router's name for it, else its last path segment ("/" is Home).

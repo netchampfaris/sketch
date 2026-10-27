@@ -9,7 +9,8 @@ export type Pick =
   | { kind: 'set'; page: PageModel; key: string }
   | { kind: 'state'; name: string }
   | { kind: 'page'; page: PageModel }
-export type PickItem = { value: string; label: string; sub?: string; short: string; complete?: boolean; group: 'sets' | 'states' | 'pages' }
+// `options` on a set row: the values of its options, for the dot that says some of them are new.
+export type PickItem = { value: string; label: string; sub?: string; short: string; complete?: boolean; group: 'sets' | 'states' | 'pages'; options?: string[] }
 
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 // A state exists on a page when one of its non-default options carries the name.
@@ -30,7 +31,7 @@ export const valueOfPick = (p: Pick) =>
 export function pickItems(pages: PageModel[]): PickItem[] {
   const withStates = pages.filter((p) => p.states.length)
   const sets = pages.flatMap((p) =>
-    p.sets.map((s) => ({ value: `set:${p.slug}/${s.key}`, label: s.label, sub: p.title, short: String(s.options.length), group: 'sets' as const })),
+    p.sets.map((s) => ({ value: `set:${p.slug}/${s.key}`, label: s.label, sub: p.title, short: String(s.options.length), group: 'sets' as const, options: s.options.map((o) => o.value) })),
   )
   const states = stateNames(pages).map((n) => {
     const k = pages.filter((p) => namesOf(p).has(n)).length

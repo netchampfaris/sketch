@@ -13,7 +13,8 @@
   "text",
   "anchor",
   "resolved",
-  "edited"
+  "edited",
+  "mentions"
  ],
  "fields": [
   {
@@ -73,6 +74,13 @@
    "fieldname": "edited",
    "fieldtype": "Check",
    "label": "Edited",
+   "read_only": 1
+  },
+  {
+   "description": "JSON list of the usernames this comment mentions. The text carries each as @[username]; only people the author could mention are kept.",
+   "fieldname": "mentions",
+   "fieldtype": "Small Text",
+   "label": "Mentions",
    "read_only": 1
   }
  ],

@@ -8,7 +8,7 @@
 import { computed } from 'vue'
 import { bridge, sameTile, spotOf, type TileSpot } from 'sketch:variants'
 import { noteNumber, notes, type Note } from './annotate'
-import { matching, openThread, spotOfThread, type Thread } from './comments'
+import { matching, openThread, plain, spotOfThread, type Thread } from './comments'
 import { host } from './host'
 import { canvasUi, handlers } from './tiles'
 import PinShape from './PinShape.vue'
@@ -70,7 +70,7 @@ function open(p: Item & { k: number }, e: MouseEvent) {
 }
 const label = (p: Item) =>
 	p.thread
-		? `Comment from ${p.thread.name}${p.thread.replies.length ? `, ${p.thread.replies.length} ${p.thread.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${p.thread.text.slice(0, 80)}`
+		? `Comment from ${p.thread.name}${p.thread.replies.length ? `, ${p.thread.replies.length} ${p.thread.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${plain(p.thread.text).slice(0, 80)}`
 		: `Note ${noteNumber(p.note!)}: ${p.note!.note.slice(0, 80)}`
 </script>
 

@@ -6,13 +6,13 @@
 // instead of using it. The toolbar also hosts the tweak tool (its own files), which registers
 // itself in `tweakApi`. A signed-in reader sees Comment only; a Guest sees "Sign in to comment".
 // Mounted by index.ts into its own app, so it never becomes part of the Prototype's vnode tree.
-import { computed, defineComponent, h, markRaw, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, defineComponent, h, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import { bridge, closeCanvas, openCanvas, setKeepHandler, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
-import { openCount, openThread, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { isGuest, isOwner } from './host'
 import { saveState } from './store'
 import CommentPins from './CommentPins.vue'
@@ -257,6 +257,8 @@ watch(
 	() => draft.value?.editing,
 	(id) => {
 		openThread.value = mode.value === 'comment' ? (id ?? null) : null
+		// Opening a thread is reading it.
+		if (id && mode.value === 'comment') read(id)
 		canvasUi.noteId = mode.value === 'note' ? (id ?? '') : ''
 	},
 )
@@ -306,6 +308,20 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 	const a = t.anchor
 	openThreadAt(t, r ? r.left + a.offset.x * r.width : a.rect.x + a.offset.x * a.rect.w, r ? r.top + a.offset.y * r.height : a.rect.y + a.offset.y * a.rect.h)
 }
+
+// A link from the gallery ("Arohi mentioned you") opens the prototype on that thread: `?comment=<id>`. The link is
+// used once, so a reload does not open it again.
+async function openLinked() {
+	const url = new URL(location.href)
+	const id = url.searchParams.get('comment')
+	if (!id || guest) return
+	url.searchParams.delete('comment')
+	history.replaceState(history.state, '', url.pathname + url.search + url.hash)
+	if (!enabled.value) setEnabled(true)
+	use('comment')
+	if (await until(() => !!threadById(id), 8000)) await openFromList(threadById(id)!)
+}
+onMounted(openLinked)
 
 // The canvas draws the pins and the panel's extra tabs from components registered here, since the two bundles share
 // no imports. The pins call back into `handlers`; the tabs are the lists with this toolbar's actions wired in.

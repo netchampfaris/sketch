@@ -5,6 +5,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Button, ScrollArea, TabButtons, TextInput, Tooltip } from 'frappe-ui'
 import { bridge } from './bridge'
 import type { Tab } from './bridge'
+import { freshIn } from './badges'
 import type { PickItem } from './picker'
 
 const props = defineProps<{ items: PickItem[]; selected: string; embedded?: boolean }>()
@@ -47,6 +48,8 @@ function enter() {
 // Browse, and next to it Comments, or Notes for the owner while noting. The tab and the toolbar's tool follow
 // each other (the toolbar does the following). Without a tool to pick with (a guest) there is nothing to tab to.
 const tabbed = computed(() => !props.embedded && (bridge.canComment || bridge.canNote))
+// How many options of a set are new to this person and not looked at yet. Pages and states have none.
+const freshOf = (i: PickItem) => (i.options ? freshIn(i.options) : 0)
 const second = computed<Tab>(() => (bridge.tab === 'notes' ? 'notes' : 'comments'))
 const tabOptions = computed(() => [
   { label: 'Browse', value: 'browse', onClick: () => (bridge.tab = 'browse') },
@@ -132,7 +135,12 @@ const countClass = (i: PickItem) =>
             >
               <span class="min-w-0 truncate" :class="i.value === selected ? 'font-medium text-ink-gray-9' : 'text-ink-gray-8'">{{ i.label }}</span>
               <span v-if="i.sub" class="shrink-0 text-ink-gray-5">{{ i.sub }}</span>
-              <span class="ml-auto shrink-0 pl-2 tabular-nums" :class="countClass(i)">{{ i.short }}</span>
+              <span v-if="freshOf(i)" class="ml-auto flex shrink-0 items-center pl-2">
+                <Tooltip :text="`${freshOf(i)} new since you last looked`" :hover-delay="300">
+                  <span class="block size-1.5 rounded-full bg-surface-blue-6" role="img" :aria-label="`${freshOf(i)} new since you last looked`" />
+                </Tooltip>
+              </span>
+              <span class="shrink-0 tabular-nums" :class="[countClass(i), freshOf(i) ? 'pl-1.5' : 'ml-auto pl-2']">{{ i.short }}</span>
             </button>
           </template>
         </section>

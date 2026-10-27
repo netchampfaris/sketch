@@ -13,6 +13,7 @@ import { bridge, findTile, spotOf, tileExists } from './bridge'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
+import { lookAt } from './badges'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
@@ -64,6 +65,16 @@ watch(
     }
     const next = fallbackPick(model.value, openedOn)
     if (next) router.replace({ query: { ...route.query, canvas: next } })
+  },
+  { immediate: true },
+)
+// Opening a set is looking at all of its options: the ones a teammate made stop being new (the tiles keep their
+// "New" badge until the next visit, so nothing vanishes under the pointer).
+watch(
+  pick,
+  (p) => {
+    if (p?.kind !== 'set') return
+    lookAt(p.page.sets.find((s) => s.key === p.key)?.options.map((o) => o.value) ?? [])
   },
   { immediate: true },
 )

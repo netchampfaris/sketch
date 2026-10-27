@@ -28,7 +28,7 @@ import json
 import frappe
 from frappe.query_builder import Order
 
-from sketch import snapshots, thumbnails
+from sketch import badges, snapshots, thumbnails
 
 ADDED = "added"
 MODIFIED = "modified"
@@ -77,6 +77,9 @@ def note_write(name: str, paths: list[str], existed: set[str], by: str | None = 
 	for path in paths or []:
 		if path:
 			_fold(changes, path, MODIFIED if path in existed else ADDED, by)
+			if path not in existed:
+				# A variant added now is new to everyone but its author (`sketch.badges`).
+				badges.stamp(name, path)
 
 	_set_pending(name, changes)
 

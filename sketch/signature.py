@@ -64,6 +64,10 @@ DEFAULT_TTL = 60
 #:   page of the owner and of each invited editor. The server reads the person
 #:   from it: an editor can delete files in their own folder, the owner any
 #:   variant, and what is deleted comes back with Undo.
+#: - SEEN marks what one signed-in person has looked at on one Prototype
+#:   (`sketch.api.seen_mark`). Minted over the hash id and the username together, like
+#:   COMMENT, into the page of anyone who may comment. It opens one write, a mark on that
+#:   person's own list of seen variants and threads, which the person could make by hand.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
@@ -71,6 +75,7 @@ COMMENT = "comment"
 COMMENT_MINT = "comment-mint"
 VARIANT_DEFAULT = "variant_default"
 VARIANT_EDIT = "variant_edit"
+SEEN = "seen"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:
