@@ -4,10 +4,12 @@
 // world; each pin undoes the zoom (`--inv`), so it keeps its size on screen. Comment pins show in Comment mode,
 // note pins in Note mode, and none while browsing.
 // Pins that land on each other fan out sideways, so every one of them stays reachable by pointer.
+// While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button.
 import { computed } from 'vue'
 import { bridge, sameTile, spotOf, type TileSpot } from 'sketch:variants'
 import { noteNumber, notes, type Note } from './annotate'
 import { matching, openThread, spotOfThread, type Thread } from './comments'
+import { host } from './host'
 import { canvasUi, handlers } from './tiles'
 import PinShape from './PinShape.vue'
 
@@ -15,21 +17,26 @@ const props = defineProps<{ tiles: any[]; zoom: number; view: string }>()
 
 // Within this many screen px two pins count as one pile; each further pin in a pile steps this far to the right.
 const PILE = 20
-const STEP = 14
+const STEP = 22
 
-type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note }
+type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean }
 const items = computed<Item[]>(() => {
+	const d = canvasUi.draft
 	if (bridge.tool === 'comment') {
-		return matching.value.flatMap((t) => {
+		const list: Item[] = matching.value.flatMap((t) => {
 			const spot = spotOfThread(t)
 			return spot ? [{ id: t.id, kind: 'comment' as const, spot, fx: t.anchor.offset.x, fy: t.anchor.offset.y, thread: t }] : []
 		})
+		return d ? [...list, { id: 'draft', kind: 'comment', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
 	}
 	if (bridge.tool === 'note') {
-		return notes.value.flatMap((n) => (n.tile ? [{ id: n.id, kind: 'note' as const, spot: { route: n.route, tile: n.tile }, fx: n.offset.x, fy: n.offset.y, note: n }] : []))
+		const list: Item[] = notes.value.flatMap((n) => (n.tile ? [{ id: n.id, kind: 'note' as const, spot: { route: n.route, tile: n.tile }, fx: n.offset.x, fy: n.offset.y, note: n }] : []))
+		return d ? [...list, { id: 'draft', kind: 'note', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
 	}
 	return []
 })
+// The number the draft note will have once it is saved.
+const draftNumber = computed(() => notes.value.filter((n) => n.tile).length + 1)
 
 const pins = computed(() => {
 	const placed: { x: number; y: number }[] = []
@@ -46,8 +53,9 @@ const pins = computed(() => {
 		const x = hit.t.x + it.fx * hit.t.w
 		const y = hit.t.y + it.fy * hit.t.h
 		const near = (p: { x: number; y: number }) => Math.abs(p.x - x) * props.zoom < PILE && Math.abs(p.y - y) * props.zoom < PILE
-		const k = placed.filter(near).length
-		placed.push({ x, y })
+		// The draft sits exactly where the click was, on top of whatever is there.
+		const k = it.draft ? 0 : placed.filter(near).length
+		if (!it.draft) placed.push({ x, y })
 		out.push({ ...it, x, y, k })
 	}
 	return out
@@ -73,27 +81,30 @@ const label = (p: Item) =>
 				v-for="p in pins"
 				:key="p.id"
 				class="absolute size-0 origin-top-left"
-				:class="p.thread ? (openThread === p.id ? 'z-10' : '') : canvasUi.noteId === p.id ? 'z-10' : ''"
+				:class="p.draft || (p.thread ? openThread === p.id : canvasUi.noteId === p.id) ? 'z-10' : ''"
 				:style="{ left: `${p.x}px`, top: `${p.y}px`, transform: 'scale(var(--inv))' }"
 			>
-				<button
-					type="button"
-					data-annotate-pin
+				<component
+					:is="p.draft ? 'span' : 'button'"
+					:type="p.draft ? undefined : 'button'"
+					:data-annotate-pin="p.draft ? undefined : ''"
+					:data-draft-pin="p.draft ? '' : undefined"
 					:data-comment-pin="p.thread ? '' : undefined"
-					:aria-label="label(p)"
-					class="pointer-events-auto absolute left-0 top-0 flex -translate-x-1/2 items-center justify-center transition-transform duration-150 hover:z-10 hover:scale-110 focus-visible:z-10 motion-reduce:transition-none motion-reduce:hover:scale-100"
-					:class="[p.kind === 'comment' ? 'size-7 origin-[50%_34px] -translate-y-[34px]' : 'size-6 origin-[50%_29px] -translate-y-[29px]', p.thread?.resolved && 'opacity-60', p.note?.sent && 'opacity-60']"
+					:aria-label="p.draft ? undefined : label(p)"
+					:aria-hidden="p.draft ? 'true' : undefined"
+					class="absolute left-0 top-0 flex -translate-x-1/2 items-center justify-center transition-transform duration-150 hover:z-10 hover:scale-110 focus-visible:z-10 motion-reduce:transition-none motion-reduce:hover:scale-100"
+					:class="[p.draft ? 'pointer-events-none' : 'pointer-events-auto', p.kind === 'comment' ? 'size-7 origin-[50%_34px] -translate-y-[34px]' : 'size-6 origin-[50%_29px] -translate-y-[29px]', p.thread?.resolved && 'opacity-60', p.note?.sent && 'opacity-60']"
 					:style="{ marginLeft: `${p.k * STEP}px` }"
-					@click.stop="open(p, $event)"
+					@click.stop="!p.draft && open(p, $event)"
 				>
 					<PinShape
 						:kind="p.kind"
-						:username="p.thread?.author"
-						:number="p.note ? noteNumber(p.note) : undefined"
+						:username="p.draft ? host.me : p.thread?.author"
+						:number="p.draft ? draftNumber : p.note ? noteNumber(p.note) : undefined"
 						:muted="p.thread ? p.thread.resolved : !!p.note?.sent"
-						:selected="p.thread ? openThread === p.id : canvasUi.noteId === p.id"
+						:selected="p.draft || (p.thread ? openThread === p.id : canvasUi.noteId === p.id)"
 					/>
-				</button>
+				</component>
 			</div>
 		</TransitionGroup>
 	</div>
