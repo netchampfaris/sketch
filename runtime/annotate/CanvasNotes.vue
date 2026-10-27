@@ -44,7 +44,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 		<TextInput v-model="query" class="[&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search notes" autocomplete="off">
 			<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
 			<template #suffix>
-				<Button v-if="query" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
+				<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 			</template>
 		</TextInput>
 		<div v-if="notes.length" class="mt-1 flex h-7 shrink-0 items-center px-2">
