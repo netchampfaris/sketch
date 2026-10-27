@@ -21,7 +21,7 @@ const last: Record<string, { x: number; y: number }> = {}
 
 // Within this distance two pins count as one pile; each further pin in a pile steps to the right.
 const PILE = 20
-const STEP = 14
+const STEP = 22
 
 function measure() {
 	const next: Record<string, Pos> = {}
