@@ -1,15 +1,15 @@
 <script setup lang="ts">
 // Numbered markers on the page. Each follows its element: re-resolved by selector on every
 // scroll, resize, route change and (throttled) DOM change. A pin whose element has gone
-// stays where it last was, faded. Sent notes turn gray.
+// stays where it last was, faded. Sent notes turn gray, and somebody else's notes are violet.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, isOurs, notes, resolveNote, tagOf, type Note } from './annotate'
+import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, isMine, isOurs, resolveNote, shownNotes, tagOf, type Note } from './annotate'
 
 const props = defineProps<{ route: string; selected?: string }>()
 const emit = defineEmits<{ open: [note: Note, x: number, y: number] }>()
 
-const visible = computed(() => notes.value.filter((n) => n.route === props.route))
+const visible = computed(() => shownNotes.value.filter((n) => n.route === props.route))
 type Pos = { x: number; y: number; found: boolean }
 const pos = ref<Record<string, Pos>>({})
 // A pin appears once it has a position, so it pops in instead of flashing at 0,0.
@@ -101,7 +101,7 @@ function click(n: Note, e: MouseEvent) {
 			:[UI_ATTR]="''"
 			data-annotate-pin
 			type="button"
-			:aria-label="`Note ${numberOf(n)}: ${n.note}`"
+			:aria-label="`Note ${numberOf(n)}${n.author ? ` from @${n.author}` : ''}: ${n.note}`"
 			class="pointer-events-auto fixed z-[60] flex size-6 -translate-x-1/2 -translate-y-[29px] items-center justify-center text-xs font-semibold tabular-nums text-white transition-transform duration-150 origin-[50%_29px] hover:scale-110 motion-reduce:transition-none motion-reduce:hover:scale-100"
 			:class="pos[n.id]?.found === false && 'opacity-50'"
 			:style="{ left: `${pos[n.id].x}px`, top: `${pos[n.id].y}px` }"
@@ -112,14 +112,14 @@ function click(n: Note, e: MouseEvent) {
 			<!-- A map pin: a square rounded on three corners, turned so the sharp one points at the spot. -->
 			<span
 				class="absolute inset-0 rotate-45 rounded-full rounded-br-none shadow ring-2 ring-surface-base transition-colors duration-150"
-				:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
+				:class="n.sent ? 'bg-surface-gray-6' : isMine(n) ? 'bg-surface-blue-7' : 'bg-surface-violet-7'"
 				aria-hidden="true"
 			/>
 			<!-- The pin being edited: a 2px ring in its own colour, 2px off the edge. -->
 			<span
 				v-if="selected === n.id"
 				class="pointer-events-none absolute -inset-1 rotate-45 rounded-full rounded-br-none border-2"
-				:class="n.sent ? 'border-outline-gray-5' : 'border-outline-blue-6'"
+				:class="n.sent ? 'border-outline-gray-5' : isMine(n) ? 'border-outline-blue-6' : 'border-outline-violet-6'"
 				aria-hidden="true"
 			/>
 			<span class="relative">{{ numberOf(n) }}</span>

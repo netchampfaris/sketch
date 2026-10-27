@@ -2,8 +2,8 @@
 // The state, the element helpers and the prompt builder live here; the .vue files draw.
 // Saved state is restored by store.ts once the Prototype's payload is known; nothing here reads
 // the Prototype's files or storage directly.
-import { ref, shallowRef, type Ref } from 'vue'
-import { host, subject } from './host'
+import { computed, ref, shallowRef, type Ref } from 'vue'
+import { host, isReader, subject } from './host'
 import type { TweakItem } from './tweak'
 
 
@@ -40,6 +40,8 @@ export type Note = {
   box?: BoxInfo
   note: string
   sent?: boolean
+  // The username of the reader who left it. The server stamps it; the owner's own notes have none.
+  author?: string
   offset: { x: number; y: number }
   rect: { x: number; y: number; w: number; h: number }
   createdAt: number
@@ -87,6 +89,15 @@ export type TweakApi = {
 export const tweakApi = shallowRef<TweakApi | null>(null)
 export const notes = ref<Note[]>([])
 export const isNote = (n: any) => typeof n.id === 'string' && typeof n.route === 'string' && typeof n.note === 'string' && !!n.offset && !!n.rect
+
+// Whose note is whose. The owner writes the unsigned ones; a reader writes the ones signed with
+// their username. The owner may delete a reader's note but never edit it.
+export const isMine = (n: Note) => (isReader() ? n.author === host.me : !n.author)
+export const canEdit = isMine
+export const canDelete = (n: Note) => isMine(n) || !isReader()
+// A reader sees only their own notes until they ask for everyone's. The owner always sees all.
+export const showAll = ref(false)
+export const shownNotes = computed(() => (isReader() && !showAll.value ? notes.value.filter(isMine) : notes.value))
 // Element outlined right now (hovered in comment mode, or the element of a hovered pin).
 export const hoverEl = shallowRef<Element | null>(null)
 export const hoverLabel = ref('')
@@ -105,7 +116,8 @@ const live = new Map<string, WeakRef<Element>>()
 export function addNote(n: Omit<Note, 'id' | 'createdAt'>, els: Element[] = []) {
   const id = newId()
   els.forEach((el, i) => live.set(`${id}:${i}`, new WeakRef(el)))
-  notes.value = [...notes.value, { ...n, id, createdAt: Date.now() }]
+  const author = isReader() ? host.me : undefined
+  notes.value = [...notes.value, { ...n, id, author, createdAt: Date.now() }]
 }
 // The note's i-th element (0 is the main one, then the extras): the live reference, else the selector.
 export function resolveNote(n: Note, i = 0): Element | null {
@@ -114,7 +126,7 @@ export function resolveNote(n: Note, i = 0): Element | null {
   return resolve(i === 0 ? n.selector : (n.extras?.[i - 1]?.selector ?? ''))
 }
 export function updateNote(id: string, note: string) {
-  notes.value = notes.value.map((x) => (x.id === id ? { ...x, note } : x))
+  notes.value = notes.value.map((x) => (x.id === id && canEdit(x) ? { ...x, note } : x))
 }
 // A note that is gone no longer needs its live elements.
 function forget(ids: string[]) {
@@ -122,11 +134,12 @@ function forget(ids: string[]) {
 }
 export function removeNote(id: string) {
   forget([id])
-  notes.value = notes.value.filter((x) => x.id !== id)
+  notes.value = notes.value.filter((x) => x.id !== id || !canDelete(x))
 }
+// The owner clears every note; a reader clears only their own.
 export function clearNotes() {
-  live.clear()
-  notes.value = []
+  forget(notes.value.filter(canDelete).map((x) => x.id))
+  notes.value = notes.value.filter((x) => !canDelete(x))
 }
 export function markSent(ids: string[]) {
   notes.value = notes.value.map((x) => (ids.includes(x.id) ? { ...x, sent: true } : x))
@@ -555,6 +568,7 @@ export function buildPrompt(list: Note[]): string {
         if (n.state) out.push(`   State: ${n.state}`)
       }
       if (n.componentChain.length > 1) out.push(`   Path: ${n.componentChain.join(' > ')}`)
+      if (n.author) out.push(`   From: @${n.author} (a reader, not the owner)`)
       out.push(`   Note: ${n.note.trim().replace(/\n/g, '\n         ')}`)
     })
   }

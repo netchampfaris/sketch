@@ -21,7 +21,14 @@ export type Payload = {
   annotations_epoch?: number
   annotate_exp?: string
   annotate_sig?: string
+  commenter?: string
+  comment_exp?: string
+  comment_sig?: string
 }
+
+// The owner annotates their own Prototype (notes and tweaks). A reader is a signed-in user on
+// somebody else's public Prototype: notes only, their own, written as `me`.
+export type Role = 'owner' | 'reader'
 
 export const host = {
   name: '',
@@ -31,8 +38,12 @@ export const host = {
   epoch: 0,
   exp: '',
   sig: '',
+  role: 'owner' as Role,
+  me: '',
   router: null as Router | null,
 }
+
+export const isReader = () => host.role === 'reader'
 
 export function initHost(data: Payload, router: Router) {
   host.name = data.name ?? ''
@@ -40,8 +51,10 @@ export function initHost(data: Payload, router: Router) {
   host.files = data.files ?? {}
   host.saved = data.annotations && typeof data.annotations === 'object' ? data.annotations : null
   host.epoch = Number(data.annotations_epoch) || 0
-  host.exp = data.annotate_exp ?? ''
-  host.sig = data.annotate_sig ?? ''
+  host.role = data.annotate_sig ? 'owner' : 'reader'
+  host.me = host.role === 'reader' ? (data.commenter ?? '') : ''
+  host.exp = (host.role === 'owner' ? data.annotate_exp : data.comment_exp) ?? ''
+  host.sig = (host.role === 'owner' ? data.annotate_sig : data.comment_sig) ?? ''
   host.router = router
 }
 

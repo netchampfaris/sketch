@@ -268,3 +268,129 @@ class TestAnnotationTools(IntegrationTestCase):
 		settled = prototype_files.revision(self.doc.name)
 		self.call("clear_annotations")
 		self.assertEqual(settled, prototype_files.revision(self.doc.name))
+
+
+class TestReaderComments(IntegrationTestCase):
+	"""Signed-in readers leave their own notes on somebody else's public Prototype."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.owner = utils.make_user("annowner", "d2tannowner")
+		cls.addClassCleanup(utils.drop_user, cls.owner)
+		cls.reader = utils.make_user("annreader", "d2tannreader")
+		cls.addClassCleanup(utils.drop_user, cls.reader)
+		cls.other_reader = utils.make_user("annreader2", "d2tannreadertwo")
+		cls.addClassCleanup(utils.drop_user, cls.other_reader)
+		cls.owner_name = utils.username_of(cls.owner)
+
+	def setUp(self):
+		super().setUp()
+		self.doc = utils.make_prototype(self.owner, "d2t-anncomment", files=FILES, is_public=True)
+		self.addCleanup(utils.drop_prototype, self.doc.name)
+
+	def comment(self, username: str, notes: list, mark: dict | None = None, epoch: str | None = None) -> dict:
+		subject = annotations.comment_subject(self.doc.name, username)
+		mark = mark or signature.mint(subject, ttl_seconds=600, scope=signature.COMMENT)
+		if epoch is None:
+			epoch = str(annotations.epoch(self.doc.name))
+
+		with set_user("Guest"):
+			return api.save_comments(
+				self.doc.name, username, str(mark["exp"]), mark["sig"], json.dumps({"notes": notes}), epoch
+			)
+
+	def notes(self) -> list[dict]:
+		return annotations.read(self.doc.name)["notes"]
+
+	def payload(self) -> dict:
+		renderer = SketchViewerRenderer(path=f"u/{self.owner_name}/{self.doc.slug}")
+		self.assertTrue(renderer.can_render())
+		return renderer.payload()
+
+	def test_a_readers_note_is_stamped_with_their_username(self):
+		self.comment("d2tannreader", [{**NOTE, "author": "someone-else", "sent": True}])
+		self.assertEqual(self.notes(), [{**NOTE, "author": "d2tannreader"}])
+
+	def test_a_reader_never_touches_anybody_elses_row(self):
+		annotations.save(self.doc.name, body(), 0)
+		self.comment("d2tannreadertwo", [{**NOTE, "id": "r2"}])
+		hijack = [{**NOTE, "id": "n1", "note": "hijack"}, {**NOTE, "id": "r2", "note": "hijack"}]
+		self.comment("d2tannreader", hijack)
+		authors = {n["id"]: n.get("author") for n in self.notes()}
+		self.assertEqual(authors, {"n1": None, "r2": "d2tannreadertwo"})
+		self.assertNotIn("hijack", [n["note"] for n in self.notes()])
+
+	def test_a_reader_replaces_only_their_own_rows(self):
+		self.comment("d2tannreader", [{**NOTE, "id": "a"}, {**NOTE, "id": "b"}])
+		self.comment("d2tannreadertwo", [{**NOTE, "id": "c"}])
+		self.comment("d2tannreader", [{**NOTE, "id": "b"}])
+		self.assertEqual(sorted(n["id"] for n in self.notes()), ["b", "c"])
+
+	def test_the_owner_keeps_new_reader_rows_and_deletes_known_ones(self):
+		self.comment("d2tannreader", [{**NOTE, "id": "r1"}, {**NOTE, "id": "r2"}])
+		# The owner's page loaded with r1 and r2, deleted r1, and marked r2 sent.
+		self.comment("d2tannreadertwo", [{**NOTE, "id": "r3"}])
+		sent = [NOTE, {**NOTE, "id": "r2", "note": "edited by owner", "sent": True}]
+		annotations.save(self.doc.name, body(notes=sent, known=["r1", "r2"]), 0)
+		rows = {n["id"]: n for n in self.notes()}
+		self.assertEqual(sorted(rows), ["n1", "r2", "r3"], "r3 came after the owner's page loaded")
+		self.assertEqual(rows["r2"]["note"], NOTE["note"], "the owner cannot edit a reader's words")
+		self.assertTrue(rows["r2"]["sent"])
+
+	def test_the_owner_cannot_sign_as_a_reader(self):
+		annotations.save(self.doc.name, body(notes=[{**NOTE, "author": "d2tannreader"}]), 0)
+		self.assertNotIn("author", self.notes()[0])
+
+	def test_the_signature_speaks_for_one_reader(self):
+		subject = annotations.comment_subject(self.doc.name, "d2tannreader")
+		mark = signature.mint(subject, ttl_seconds=600, scope=signature.COMMENT)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.comment("d2tannreadertwo", [NOTE], mark=mark)
+
+		annotate = signature.mint(self.doc.name, ttl_seconds=600, scope=signature.ANNOTATE)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.comment("d2tannreader", [NOTE], mark=annotate)
+
+	def test_a_private_prototype_takes_no_comments(self):
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.comment("d2tannreader", [NOTE])
+
+	def test_a_reader_page_from_before_a_clear_is_409(self):
+		self.comment("d2tannreader", [NOTE])
+		annotations.clear(self.doc.name)
+		with self.assertRaises(annotations.AnnotationsStale):
+			self.comment("d2tannreader", [NOTE], epoch="0")
+
+	def test_a_reader_keeps_a_bounded_number_of_notes(self):
+		rows = [{**NOTE, "id": f"x{i}"} for i in range(annotations.MAX_COMMENTS + 1)]
+		with self.assertRaises(annotations.AnnotationsTooLarge):
+			self.comment("d2tannreader", rows)
+
+	def test_a_readers_page_carries_every_note_and_their_signature(self):
+		annotations.save(self.doc.name, body(), 0)
+		with set_user(self.reader):
+			payload = self.payload()
+
+		self.assertEqual(payload["commenter"], "d2tannreader")
+		self.assertEqual(payload["annotations"], {"notes": [NOTE]}, "no tweaks, no prompt")
+		self.assertEqual(payload["annotate_sig"], "", "a reader never gets the owner's door")
+		subject = annotations.comment_subject(self.doc.name, "d2tannreader")
+		self.assertTrue(
+			signature.verify(subject, payload["comment_exp"], payload["comment_sig"], signature.COMMENT)
+		)
+
+	def test_the_owner_a_guest_and_a_private_page_carry_no_comment_door(self):
+		with set_user(self.owner):
+			self.assertEqual(self.payload()["commenter"], "")
+
+		with set_user("Guest"):
+			payload = self.payload()
+			self.assertEqual((payload["commenter"], payload["comment_sig"]), ("", ""))
+
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		with set_user(self.reader):
+			renderer = SketchViewerRenderer(path=f"u/{self.owner_name}/{self.doc.slug}")
+			self.assertFalse(renderer.can_render())
