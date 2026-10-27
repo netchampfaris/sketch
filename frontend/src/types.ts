@@ -65,6 +65,8 @@ export interface Prototype {
    * absent when that capture failed, so a reader falls back to `light`.
    */
   thumbnail: PrototypeThumbnail | null
+  /** Who it is shared with, oldest invite first. Empty on a shared card: that is the owner's to know. */
+  editors?: SharePerson[]
   /** Null when nothing is new. Absent on rows the gallery does not draw for a person. */
   new?: PrototypeNew | null
 }

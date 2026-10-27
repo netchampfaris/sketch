@@ -10,6 +10,11 @@
  * keeps the whole tree. The list below says so in one line while nobody is
  * invited yet, and goes quiet after that.
  *
+ * Each editor row ends in a role column, "Editor" with a menu that holds
+ * Remove, the way a share dialog elsewhere reads. The owner's row says "Owner"
+ * there. A new invite lands right under the owner's row, flashes once and
+ * scrolls into view, so twenty people never hide it.
+ *
  * Removing is immediate: it can be undone with one click, so there is no
  * confirm. The variants a removed person made stay in the prototype.
  *
@@ -17,11 +22,12 @@
  * users, so a name is only ever answered with the person it names or with
  * "No Sketch user called ...".
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
   Avatar,
   Button,
   Dialog,
+  Dropdown,
   ErrorMessage,
   FormControl,
   LoadingText,
@@ -37,6 +43,10 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
 const state = ref<ShareState | null>(null)
+const form = ref<HTMLElement | null>(null)
+const list = ref<HTMLElement | null>(null)
+/** The person invited last. Their row is lit for a moment, then fades. */
+const fresh = ref('')
 const typed = ref('')
 /** What went wrong with the last invite, under the field. The typed name stays. */
 const problem = ref('')
@@ -101,10 +111,15 @@ async function load(): Promise<void> {
     state.value = await read.submit({ slug: props.prototype.slug })
   } catch (error) {
     loadFailure.value = words(error)
+    return
   }
+  // The body only exists now, after the dialog took focus for its Close button.
+  await nextTick()
+  form.value?.querySelector('input')?.focus()
 }
 
-const editors = computed(() => state.value?.editors ?? [])
+/** Newest invite first, so a new person is right under the owner. */
+const editors = computed(() => [...(state.value?.editors ?? [])].reverse())
 const owner = computed(() => state.value?.owner ?? null)
 const busy = computed(() => invite.loading || withdraw.loading || access.loading)
 
@@ -115,10 +130,23 @@ async function add(): Promise<void> {
   try {
     state.value = await invite.submit({ slug: props.prototype.slug, username })
     typed.value = ''
+    emit('changed')
+    await show(username)
   } catch (error) {
     // The name stays where it is, so a typo is one key away from fixed.
     problem.value = words(error)
   }
+}
+
+/** Light the row of the person just added and bring it into view. */
+async function show(username: string): Promise<void> {
+  const row = state.value?.editors.find((p) => p.username === username)
+  if (!row) return
+  fresh.value = row.username
+  await nextTick()
+  if (list.value) list.value.scrollTop = 0
+  // One frame lit, then the class goes and the colour fades out over its transition.
+  setTimeout(() => (fresh.value = ''), 120)
 }
 
 async function takeOff(person: SharePerson): Promise<void> {
@@ -126,6 +154,7 @@ async function takeOff(person: SharePerson): Promise<void> {
   try {
     state.value = await withdraw.submit({ slug: props.prototype.slug, username: person.username })
     problem.value = ''
+    emit('changed')
   } catch (error) {
     toast.error(words(error))
     return
@@ -138,6 +167,8 @@ async function takeOff(person: SharePerson): Promise<void> {
 async function bringBack(person: SharePerson): Promise<void> {
   try {
     state.value = await invite.submit({ slug: props.prototype.slug, username: person.username })
+    emit('changed')
+    await show(person.username)
   } catch (error) {
     toast.error(`Couldn't undo. ${words(error)}`)
   }
@@ -167,7 +198,7 @@ async function copyLink(): Promise<void> {
 </script>
 
 <template>
-  <Dialog v-model:open="open" size="md" title="Share">
+  <Dialog v-model:open="open" size="md" title="Share" position="top">
     <template #default>
       <div v-if="loadFailure" class="flex flex-col items-start gap-2">
         <ErrorMessage :message="loadFailure" />
@@ -177,7 +208,7 @@ async function copyLink(): Promise<void> {
       <div v-else-if="!state || !owner" class="min-h-24"><LoadingText /></div>
 
       <div v-else class="flex flex-col gap-5">
-        <form class="flex flex-col gap-1.5" @submit.prevent="add">
+        <form ref="form" class="flex flex-col gap-1.5" @submit.prevent="add">
           <div class="flex items-end gap-2">
             <FormControl
               v-model="typed"
@@ -196,41 +227,63 @@ async function copyLink(): Promise<void> {
               :disabled="!typed.trim()"
             />
           </div>
-          <ErrorMessage v-if="problem" :message="problem" />
+          <!--
+            The note and a failed invite's reason share one cell, so the dialog is as tall with the
+            reason as without it. The note comes back when the name is edited.
+          -->
+          <div class="grid">
+            <p class="col-start-1 row-start-1 text-xs text-ink-gray-5" :class="problem ? 'invisible' : ''">
+              Editors' variants run as code in your prototype. Invite people you trust.
+            </p>
+            <ErrorMessage v-if="problem" class="col-start-1 row-start-1 !text-xs" :message="problem" />
+          </div>
         </form>
 
         <div class="flex flex-col gap-2">
-          <!-- Twenty people scroll inside the dialog, not past it. -->
-          <ul class="-mx-1 flex max-h-60 flex-col gap-0.5 overflow-y-auto px-1" aria-label="People">
-            <li class="flex items-center gap-3 py-1.5">
+          <!-- Twenty people scroll inside the dialog, not past it. The 268px cut leaves row 7 half in view. -->
+          <ul
+            ref="list"
+            class="-mx-2 flex max-h-[268px] flex-col gap-0.5 overflow-y-auto px-2"
+            aria-label="People"
+          >
+            <li class="-mx-1 flex items-center gap-3 px-1 py-2">
               <Avatar :image="owner.user_image" :label="owner.full_name" size="md" />
-              <span class="min-w-0 flex-1 truncate text-p-base text-ink-gray-8" :title="owner.full_name">
-                {{ owner.full_name }}
+              <span class="min-w-0 flex-1 truncate text-p-base text-ink-gray-8" :title="`${owner.full_name} (you)`">
+                {{ owner.full_name }} (you)
               </span>
-              <span class="shrink-0 text-p-sm text-ink-gray-5">You &middot; Owner</span>
-              <span class="w-[4.5rem] shrink-0" aria-hidden="true" />
+              <span class="shrink-0 text-p-sm text-ink-gray-5">Owner</span>
             </li>
-            <li v-for="person in editors" :key="person.username" class="flex items-center gap-3 py-1.5">
+            <li
+              v-for="person in editors"
+              :key="person.username"
+              class="-mx-1 flex items-center gap-3 rounded-4 px-1 py-2 transition-colors duration-[1500ms] ease-out motion-reduce:transition-none"
+              :class="fresh === person.username ? 'bg-surface-gray-3' : ''"
+            >
               <Avatar :image="person.user_image" :label="person.full_name" size="md" />
               <!-- On a phone the handle goes under the name, so neither is cut to a few letters. -->
               <span class="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-1.5">
-                <span class="truncate text-p-base text-ink-gray-8" :title="person.full_name">
+                <span class="min-w-0 truncate text-p-base text-ink-gray-8" :title="person.full_name">
                   {{ person.full_name }}
                 </span>
-                <span class="truncate text-p-sm text-ink-gray-5" :title="`@${person.username}`">
+                <span
+                  class="truncate text-p-sm text-ink-gray-5 sm:max-w-[40%] sm:shrink-0"
+                  :title="`@${person.username}`"
+                >
                   @{{ person.username }}
                 </span>
               </span>
-              <span class="shrink-0 text-p-sm text-ink-gray-5">Editor</span>
-              <span class="flex w-[4.5rem] shrink-0 justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  label="Remove"
-                  :aria-label="`Remove ${person.full_name}`"
-                  :disabled="busy"
-                  @click="takeOff(person)"
-                />
+              <!-- The role is the control: its menu holds Remove. -6px lines the text up with Invite and the switch. -->
+              <span class="-mr-1.5 flex shrink-0">
+                <Dropdown
+                  :options="[{ label: 'Remove', onClick: () => takeOff(person) }]"
+                  placement="bottom-end"
+                >
+                  <!-- Slot content, not `label`: Button lets `label` replace the aria-label. -->
+                  <Button variant="ghost" size="xs" :aria-label="`${person.full_name}: Editor`" :disabled="busy">
+                    Editor
+                    <template #suffix><span class="lucide-chevron-down size-3.5" aria-hidden="true" /></template>
+                  </Button>
+                </Dropdown>
               </span>
             </li>
           </ul>
@@ -241,7 +294,7 @@ async function copyLink(): Promise<void> {
 
         <Switch
           :model-value="state.is_public"
-          :label="state.is_public ? 'Public' : 'Private'"
+          label="Public link"
           :description="
             state.is_public
               ? 'Anyone with the link can view and comment'

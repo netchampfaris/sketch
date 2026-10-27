@@ -253,6 +253,16 @@ def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 	owner = doc_or_dict.get("owner")
 	files = prototype_files.list_files(name)
 	count = len(files)
+	# A row the caller owns carries who it is shared with, for the card's avatar stack. A shared
+	# row is somebody else's, and the people it is shared with are the owner's to know.
+	editors = (
+		[]
+		if username
+		else [
+			{key: person[key] for key in ("username", "full_name", "user_image")}
+			for person in sharing.editors(name)
+		]
+	)
 	username = username or _username()
 	# Falls back to `creation`, never to `modified`. `modified` is the field
 	# that moves on a visibility toggle, which is the jump this stamp exists to
@@ -275,6 +285,7 @@ def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 		# a new user nothing they could act on (review 5.8). It stays in the
 		# `pin` field above, for the surfaces that print a build detail.
 		"description": f"{count} {'file' if count == 1 else 'files'}",
+		"editors": editors,
 		"modified": updated_at,
 		"updated": pretty_date(updated_at) if updated_at else "",
 		"viewer_path": f"/u/{username}/{slug}",
