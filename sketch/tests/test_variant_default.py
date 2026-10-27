@@ -20,6 +20,8 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
+from frappe.utils import set_request
+from frappe.website.serve import get_response
 
 from sketch import api, prototype_files, signature, variant_default, versions
 from sketch.tests import utils
@@ -357,3 +359,107 @@ class TestUndoVariantDefault(IntegrationTestCase):
 			self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", str(sequence), "Spend summary", "bars"
 		)
 		self.assertEqual(self.source(), NESTED)
+
+
+class TestMakeDefaultOnTheViewer(IntegrationTestCase):
+	"""The Viewer is where the canvas tile and the Demo card get their credential.
+
+	Only the owner's own live page is minted one. A signed-in reader of a public
+	Prototype and a Guest see the canvas and the card, but nothing to change the
+	default with, and what they hold cannot reach the owner's files.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		utils.require_runtime()
+		cls.owner = utils.make_user("vdvown", "d2tvdvown")
+		cls.reader = utils.make_user("vdvrdr", "d2tvdvrdr")
+		for email in (cls.owner, cls.reader):
+			cls.addClassCleanup(utils.drop_user, email)
+		cls.doc = utils.make_prototype(cls.owner, "d2t-vdv-work", files={"src/App.vue": SIMPLE}, is_public=True)
+		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
+		cls.other = utils.make_prototype(cls.owner, "d2t-vdv-other", files={"src/App.vue": SIMPLE}, is_public=True)
+		cls.addClassCleanup(utils.drop_prototype, cls.other.name)
+		cls.path = f"/u/{utils.username_of(cls.owner)}/{cls.doc.slug}"
+
+	def setUp(self):
+		super().setUp()
+		self.enterContext(patch.dict(frappe.flags, force_website_cache=False))
+		self.enterContext(patch.object(frappe.local, "request", None, create=True))
+		self.enterContext(patch.object(frappe.local, "no_cache", False, create=True))
+		self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict()))
+		self.enterContext(patch.object(frappe.local, "response_headers", frappe._dict()))
+		self.enterContext(patch.dict(frappe.local.response, from_cache=False))
+		self.enterContext(patch("sketch.thumbnails.request_refresh"))
+
+	def payload(self, user: str, form: dict | None = None) -> dict:
+		frappe.local.no_cache = False
+		frappe.local.response.from_cache = False
+		frappe.local.response_headers = frappe._dict()
+		path = self.path
+		set_request(method="GET", path=path)
+		frappe.local.form_dict.update(form or {})
+		url = frappe.local.request.url
+		self.addCleanup(frappe.cache.hdel, "website_404", url)
+		with set_user(user):
+			response = get_response(path)
+		self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:300])
+		return utils.data_slot(response.get_data(as_text=True))
+
+	def test_the_owner_gets_a_credential_that_opens_this_prototype_only(self):
+		data = self.payload(self.owner)
+
+		self.assertTrue(data["is_owner"])
+		self.assertTrue(data["variant_sig"])
+		self.assertTrue(signature.verify(self.doc.name, data["variant_exp"], data["variant_sig"], signature.VARIANT_DEFAULT))
+		self.assertFalse(
+			signature.verify(self.other.name, data["variant_exp"], data["variant_sig"], signature.VARIANT_DEFAULT),
+			"the owner's other prototype must not open with it",
+		)
+		# It moves a slot and nothing else: it is no poll, toolbar or view signature.
+		for scope in (signature.REVISION, signature.ANNOTATE, signature.VIEW):
+			self.assertFalse(signature.verify(self.doc.name, data["variant_exp"], data["variant_sig"], scope))
+
+	def test_a_signed_in_reader_of_a_public_prototype_gets_none(self):
+		data = self.payload(self.reader)
+
+		self.assertFalse(data["is_owner"])
+		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
+
+	def test_a_guest_gets_none(self):
+		data = self.payload("Guest")
+
+		self.assertFalse(data["is_owner"])
+		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
+
+	def test_a_check_request_gets_none(self):
+		stamp = signature.mint(self.doc.name, ttl_seconds=600)
+		data = self.payload("Guest", {"exp": stamp["exp"], "sig": stamp["sig"]})
+
+		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
+
+	def test_the_readers_own_signatures_cannot_move_the_owners_slot(self):
+		"""Whatever a reader's page carries, the signed door refuses it."""
+		data = self.payload(self.reader)
+		frappe.set_user("Guest")
+		for scope in (signature.VIEW, signature.REVISION, signature.ANNOTATE, signature.COMMENT, signature.COMMENT_MINT):
+			stamp = signature.mint(self.doc.name, 60, scope)
+			with self.subTest(scope=scope):
+				with self.assertRaises(frappe.DoesNotExistError):
+					api.set_variant_default_signed(
+						self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
+					)
+		self.assertEqual(data["variant_sig"], "")
+		frappe.set_user("Administrator")
+		self.assertEqual(prototype_files.read_text(self.doc.name, "src/App.vue")["content"], SIMPLE)
+
+	def test_a_stamp_for_another_prototype_does_not_open_this_one(self):
+		stamp = signature.mint(self.other.name, 60, signature.VARIANT_DEFAULT)
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.set_variant_default_signed(
+				self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
+			)
+		frappe.set_user("Administrator")
+		self.assertEqual(prototype_files.read_text(self.doc.name, "src/App.vue")["content"], SIMPLE)
