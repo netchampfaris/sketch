@@ -9,6 +9,9 @@ export { default as Variants } from './Variants.vue'
 export { default as Chrome } from './Chrome.vue'
 export { setKeepHandler } from './state'
 export { enableMakeDefault, makeDefault } from './default'
+export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
+export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
+export { closeCanvas, openCanvas } from './state'
 
 // A demo value (a persona, a workflow phase). The first option is the default.
 export function useDemoState<T extends string>(name: string, options: readonly T[]) {

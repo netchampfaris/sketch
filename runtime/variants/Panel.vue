@@ -2,7 +2,9 @@
 // The "Show" list: search, then the groups of things to show. A floating card on the right on desktop; inside
 // the Show dropdown on a phone (`embedded`).
 import { computed, nextTick, ref, watch } from 'vue'
-import { Button, ScrollArea, TextInput, Tooltip } from 'frappe-ui'
+import { Button, ScrollArea, TabButtons, TextInput, Tooltip } from 'frappe-ui'
+import { bridge } from './bridge'
+import type { Tab } from './bridge'
 import type { PickItem } from './picker'
 
 const props = defineProps<{ items: PickItem[]; selected: string; embedded?: boolean }>()
@@ -41,6 +43,15 @@ function enter() {
   const r = rows.value[active.value < 0 ? 0 : active.value]
   if (r) emit('choose', r.value)
 }
+// Browse, and next to it Comments, or Notes for the owner while noting. The tab and the toolbar's tool follow
+// each other (the toolbar does the following). Without a tool to pick with (a guest) there is nothing to tab to.
+const tabbed = computed(() => !props.embedded && (bridge.canComment || bridge.canNote))
+const second = computed<Tab>(() => (bridge.tab === 'notes' ? 'notes' : 'comments'))
+const tabOptions = computed(() => [
+  { label: 'Browse', value: 'browse', onClick: () => (bridge.tab = 'browse') },
+  { label: second.value === 'notes' ? 'Notes' : 'Comments', value: second.value, onClick: () => (bridge.tab = second.value) },
+])
+const extra = computed(() => (bridge.tab === 'browse' ? null : (bridge.tabs[bridge.tab] ?? null)))
 // Incomplete states stand out; everything else is quiet.
 const countClass = (i: PickItem) =>
   i.value === props.selected ? 'text-ink-gray-7' : i.group === 'states' && !i.complete ? 'text-ink-gray-8' : 'text-ink-gray-5'
@@ -51,12 +62,26 @@ const countClass = (i: PickItem) =>
     :is="embedded ? 'div' : 'aside'"
     :data-canvas-panel="embedded ? undefined : ''"
     :aria-label="embedded ? undefined : 'Show on the canvas'"
-    class="flex flex-col p-2"
-    :class="embedded ? '' : 'absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2'"
+    class="flex flex-col"
+    :class="embedded ? 'p-2' : 'absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2'"
     :style="embedded ? { width: 'var(--reka-popover-trigger-width)' } : undefined"
     data-ui
   >
-    <div class="flex items-center gap-1">
+    <!-- The tabs, with the hide button at the right; without tabs the hide button sits beside the search. -->
+    <div v-if="tabbed" class="flex items-center gap-1">
+      <TabButtons :options="tabOptions" :model-value="bridge.tab === 'browse' ? 'browse' : second">
+        <template #suffix="{ button }">
+          <span v-if="button.value !== 'browse' && bridge.counts[second]" class="tabular-nums text-ink-gray-5">{{ bridge.counts[second] }}</span>
+        </template>
+      </TabButtons>
+      <Tooltip text="Hide panel">
+        <Button class="ml-auto" variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
+      </Tooltip>
+    </div>
+
+    <component :is="extra" v-if="extra" class="min-h-0 flex-1" :class="tabbed ? 'mt-2' : ''" />
+
+    <div v-show="!extra" class="flex items-center gap-1" :class="tabbed ? 'mt-2' : ''">
       <TextInput
         v-model="query"
         class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3"
@@ -69,16 +94,16 @@ const countClass = (i: PickItem) =>
       >
         <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
       </TextInput>
-      <Tooltip v-if="!embedded" text="Hide panel">
+      <Tooltip v-if="!embedded && !tabbed" text="Hide panel">
         <Button variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
       </Tooltip>
     </div>
 
-    <ScrollArea class="mt-2 min-h-0 shrink" :style="embedded ? { maxHeight: 'calc(100dvh - 7.5rem)' } : undefined">
+    <ScrollArea v-show="!extra" class="mt-2 min-h-0 shrink" :style="embedded ? { maxHeight: 'calc(100dvh - 7.5rem)' } : undefined">
       <!-- A fixed width: the scroll area sizes its content to the widest row, which would push long names out of the card. -->
-      <div :style="{ width: embedded ? 'calc(var(--reka-popover-trigger-width) - 1rem)' : '17rem' }" class="min-w-0">
+      <div :style="{ width: embedded ? 'calc(var(--reka-popover-trigger-width) - 1rem)' : '16.5rem' }" class="min-w-0">
         <p v-if="!groups.length" class="px-2 py-2 text-p-sm text-ink-gray-5">Nothing matches “{{ query.trim() }}”</p>
-        <section v-for="(g, gi) in groups" :key="g.key" :class="gi ? 'mt-1 border-t border-outline-gray-2 pt-1' : ''">
+        <section v-for="(g, gi) in groups" :key="g.key" class="flex flex-col gap-0.5" :class="gi ? 'mt-1 border-t border-outline-gray-2 pt-1' : ''">
           <button
             type="button"
             class="group flex h-7 w-full items-center gap-1 px-2 text-left text-xs font-medium text-ink-gray-5"
@@ -100,8 +125,8 @@ const countClass = (i: PickItem) =>
               :data-panel-row="indexOf(i)"
               :aria-current="i.value === selected ? 'true' : undefined"
               :title="i.sub ? `${i.label} · ${i.sub}` : i.label"
-              class="flex h-8 w-full items-center gap-1.5 rounded-[8px] px-2 text-left text-p-sm hover:bg-surface-gray-2"
-              :class="i.value === selected ? 'bg-surface-gray-3' : indexOf(i) === active ? 'bg-surface-gray-2' : ''"
+              class="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-[8px] px-2 text-left text-p-sm hover:bg-surface-gray-2"
+              :class="i.value === selected ? 'bg-surface-gray-3 hover:bg-surface-gray-3' : indexOf(i) === active ? 'bg-surface-gray-2' : ''"
               @click="emit('choose', i.value)"
             >
               <span class="min-w-0 truncate" :class="i.value === selected ? 'font-medium text-ink-gray-9' : 'text-ink-gray-8'">{{ i.label }}</span>

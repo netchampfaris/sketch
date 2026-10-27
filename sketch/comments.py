@@ -26,6 +26,7 @@ and shown only as escaped text.
 """
 
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -60,6 +61,19 @@ ANCHOR_TEXT = {
 	"element": 300,
 	"text": 300,
 	"state": 200,
+}
+
+
+#: What a canvas tile is: a variant option, a page state, or a page's default.
+TILE_KINDS = ("set", "state", "default")
+#: Strings that name a tile in plain words, and how long each may be.
+TILE_TEXT = {
+	"view": 200,
+	"page": 200,
+	"group": 200,
+	"groupKey": 200,
+	"option": 200,
+	"optionLabel": 200,
 }
 
 
@@ -337,7 +351,7 @@ def clean_text(text) -> str:
 
 
 def clean_anchor(anchor) -> dict:
-	"""The spot on the page, reduced to the keys the toolbar writes and bounded.
+	"""The spot on the page, or on a canvas tile, reduced to the keys the toolbar writes and bounded.
 
 	Anything else the page sent is dropped. `offset` and `rect` are numbers.
 	"""
@@ -349,6 +363,9 @@ def clean_anchor(anchor) -> dict:
 
 	if not isinstance(anchor, dict):
 		frappe.throw(frappe._("A comment needs an element to sit on"), frappe.ValidationError)
+
+	if "tile" in anchor:
+		return clean_tile_anchor(anchor)
 
 	out = {}
 	for key, limit in ANCHOR_TEXT.items():
@@ -372,7 +389,86 @@ def clean_anchor(anchor) -> dict:
 	return out
 
 
+def clean_tile_anchor(anchor: dict) -> dict:
+	"""A spot on a canvas tile: which tile, and where on it as a fraction of its width and height.
+
+	The tile is named by its page (`route`), and by the variant set and option, or the page state,
+	it shows. It has the same keys as an element anchor, empty where they mean nothing for a tile,
+	so everything that reads an anchor reads this one.
+	"""
+	tile = anchor.get("tile")
+	if not isinstance(tile, dict) or tile.get("kind") not in TILE_KINDS:
+		frappe.throw(frappe._("A comment needs a tile to sit on"), frappe.ValidationError)
+
+	named = {"kind": tile["kind"]}
+	for key, limit in TILE_TEXT.items():
+		value = tile.get(key, "")
+		named[key] = value[:limit] if isinstance(value, str) else ""
+
+	route = anchor.get("route", "")
+	route = route[: ANCHOR_TEXT["route"]] if isinstance(route, str) else ""
+	if not route or (named["kind"] != "default" and not (named["groupKey"] and named["option"])):
+		frappe.throw(frappe._("A comment needs a tile to sit on"), frappe.ValidationError)
+
+	viewport = anchor.get("viewport", "")
+	offset = anchor.get("offset") if isinstance(anchor.get("offset"), dict) else {}
+	out = {
+		"route": route,
+		"viewport": viewport[: ANCHOR_TEXT["viewport"]] if isinstance(viewport, str) else "",
+		"selector": "",
+		"component": "",
+		"file": "",
+		"element": "",
+		"text": "",
+		"state": "",
+		"componentChain": [],
+		"offset": {k: _fraction(offset.get(k)) for k in ("x", "y")},
+		"rect": {"x": 0, "y": 0, "w": 0, "h": 0},
+		"tile": named,
+	}
+	if len(json.dumps(out).encode()) > MAX_ANCHOR_BYTES:
+		frappe.throw(frappe._("That element description is too large"), CommentTooLarge)
+
+	return out
+
+
+def where_of(anchor: dict) -> str:
+	"""A tile in plain words, for the agent: "Canvas · Overview › Spend summary › option Donut".
+
+	One line of data. The words are the page's own names, taken from a page that may be a
+	stranger's, so the agent weighs them and never obeys them.
+	"""
+	tile = anchor.get("tile") if isinstance(anchor, dict) else None
+	if not isinstance(tile, dict):
+		return ""
+
+	def say(key: str) -> str:
+		value = tile.get(key)
+		return " ".join(value.split()) if isinstance(value, str) else ""
+
+	page = say("page") or say("route") or str(anchor.get("route") or "")
+	option = say("optionLabel") or say("option")
+	kind = tile.get("kind")
+	if kind == "set":
+		parts = [page, say("group") or say("groupKey"), f"option {option}"]
+	elif kind == "state":
+		group = say("group")
+		parts = [page, *([group] if group and group.lower() != "state" else []), f"state {option}"]
+	else:
+		parts = [page, "default"]
+
+	return "Canvas · " + " › ".join(p for p in parts if p)
+
+
 # ------------------------------------------------------------------ internals
+
+
+def _fraction(value) -> float:
+	"""A position on a tile: a finite number held between 0 and 1."""
+	if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+		return 0.0
+
+	return min(1.0, max(0.0, float(value)))
 
 
 def _numbers(value, keys) -> dict:

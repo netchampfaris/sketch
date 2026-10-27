@@ -9,11 +9,13 @@ import Frame from './Frame.vue'
 import LensMenu from './LensMenu.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
+import { bridge, findTile, spotOf, tileExists } from './bridge'
+import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
-import { cache, errorSnap, pagesModel, session } from './snapshot'
+import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
   choices,
@@ -305,6 +307,8 @@ const zoomOptions = [
 // ---- Keys, scroll lock, focus
 useEventListener(document, 'keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
+    // A tool picking tiles takes its own Escape: it closes its box, then puts the tool down.
+    if (e.defaultPrevented || bridge.tool) return
     if (pickerOpen.value || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
     if (liveId.value) liveId.value = null
     else closeCanvas(router)
@@ -322,6 +326,9 @@ let detach = () => {}
 let themeWatch: MutationObserver | null = null
 const prevOverflow = document.body.style.overflow
 onMounted(() => {
+  bridge.open = true
+  bridge.reveal = reveal
+  bridge.pointOf = pointOf
   document.body.style.overflow = 'hidden'
   if (vp.value) detach = pz.attach(vp.value)
   root.value?.focus()
@@ -335,6 +342,13 @@ onMounted(() => {
   })
 })
 onBeforeUnmount(() => {
+  bridge.open = false
+  bridge.reveal = null
+  bridge.pointOf = null
+  bridge.model = null
+  bridge.tiles = []
+  bridge.reserve = 0
+  bridge.view = ''
   alive = false
   pending?.(errorSnap('Closed'))
   detach()
@@ -351,9 +365,88 @@ function onViewportClick(e: MouseEvent) {
   const path = e.composedPath() as HTMLElement[]
   if (!path.some((n) => n.hasAttribute?.('data-tile') || n.hasAttribute?.('data-live'))) liveId.value = null
 }
-function activate(t: TileBox) {
-  liveId.value = t.id
+function activate(t: TileBox, e?: MouseEvent | KeyboardEvent) {
+  const tool = bridge.tool
+  if (!tool || !e) {
+    liveId.value = t.id
+    return
+  }
+  // Comment or Note: a click drops a pin on the tile, where the pointer is as a fraction of the tile.
+  if (pz.moved() || !bridge.pick) return
+  const spot = spotOf(t, pickValue.value)
+  if (!spot) return
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const pointer = e instanceof MouseEvent && e.detail > 0
+  const x = pointer ? e.clientX : r.left + r.width / 2
+  const y = pointer ? e.clientY : r.top + r.height / 2
+  const clamp01 = (n: number) => Math.min(1, Math.max(0, n))
+  bridge.pick({ ...spot, fx: clamp01((x - r.left) / (r.width || 1)), fy: clamp01((y - r.top) / (r.height || 1)), x, y } satisfies TileHit)
 }
+
+// ---- Comments and notes: what the toolbar asks of the canvas
+const until = (ok: () => boolean, ms = 4000) =>
+  new Promise<boolean>((resolve) => {
+    const t0 = Date.now()
+    const tick = () => (ok() ? resolve(true) : Date.now() - t0 > ms ? resolve(false) : setTimeout(tick, 50))
+    tick()
+  })
+const tileBox = (spot: TileSpot) => findTile(layout.value.tiles, spot, pickValue.value)
+function pointOf(spot: TileSpot, at: { fx: number; fy: number }) {
+  const t = tileBox(spot)
+  const el = t ? [...(root.value?.querySelectorAll<HTMLElement>('[data-tile-id]') ?? [])].find((n) => n.dataset.tileId === t.id) : null
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  return { x: r.left + at.fx * r.width, y: r.top + at.fy * r.height }
+}
+// The view a tile can be found in: its set, else the view it was pinned in, else its page.
+function viewFor(spot: TileSpot): string {
+  const pages = model.value ?? []
+  const page = pages.find((p) => p.path === spot.route)
+  if (spot.tile.kind === 'set' && page) return `set:${page.slug}/${spot.tile.groupKey}`
+  if (spot.tile.view && parsePick(spot.tile.view, pages)) return spot.tile.view
+  return `page:${spot.route}`
+}
+// Bring a tile into view and give the screen point of a spot on it. Null when the canvas no longer has the tile.
+async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
+  if (!(await until(() => !!model.value))) return null
+  if (tileExists(model.value, spot) === false) return null
+  if (!tileBox(spot)) {
+    const v = viewFor(spot)
+    if (v !== pickValue.value) router.replace({ query: { ...route.query, canvas: v } })
+    if (!(await until(() => !!tileBox(spot)))) return null
+  }
+  const t = tileBox(spot)!
+  // The tile in the middle of what the panel leaves open; a tile bigger than that is centred on the spot instead.
+  const w = fullSize.value.w - (panelShown.value ? PANEL_W : 0)
+  const h = fullSize.value.h
+  const fits = t.w * view.z <= w && t.h * view.z <= h
+  const cx = fits ? t.x + t.w / 2 : t.x + at.fx * t.w
+  const cy = fits ? t.y + t.h / 2 : t.y + at.fy * t.h
+  view.x = w / 2 - cx * view.z
+  view.y = h / 2 - cy * view.z
+  pz.flags.touched = true
+  await nextFrames(2)
+  return pointOf(spot, at)
+}
+
+watch(pickValue, (v) => (bridge.view = v), { immediate: true })
+watch(() => view.z, (z) => (bridge.zoom = z), { immediate: true })
+watch(model, (m) => (bridge.model = m), { immediate: true })
+watch(phone, (p) => (bridge.phone = p), { immediate: true })
+watch(() => layout.value.tiles, (t) => (bridge.tiles = t), { immediate: true })
+watch(
+  panelShown,
+  (open) => {
+    bridge.panelOpen = open
+    bridge.reserve = open ? PANEL_W : 0
+  },
+  { immediate: true },
+)
+// A tool in hand means clicks on tiles are for pins, not for opening a tile live.
+watch(
+  () => bridge.tool,
+  (tool) => tool && (liveId.value = null),
+)
 </script>
 
 <template>
@@ -443,10 +536,12 @@ function activate(t: TileBox) {
             :sandbox="liveId === t.id ? liveSandbox : undefined"
             :app="app"
             :win="win"
-            @activate="activate(t)"
+            @activate="(e) => activate(t, e)"
             @open-page="openPage(t)"
             @near="(n: boolean) => onNear(t.id, n)"
           />
+          <!-- Comment or note pins, drawn by the toolbar in the world's own coordinates, so they stay on their tile. -->
+          <component :is="bridge.Pins" v-if="bridge.Pins" :tiles="layout.tiles" :zoom="view.z" :view="pickValue" />
         </div>
 
         <div v-if="nothing" data-ui class="absolute inset-0 flex items-center justify-center text-center">
@@ -459,7 +554,7 @@ function activate(t: TileBox) {
       <div
         v-else-if="!phone"
         data-ui
-        class="absolute right-5 top-5 z-10 rounded-[8px] bg-surface-elevation-2 shadow-sm ring-1 ring-outline-gray-2"
+        class="absolute right-6 top-6 z-10 rounded-[8px] bg-surface-elevation-2 shadow-sm ring-1 ring-outline-gray-2"
       >
         <Tooltip text="Show panel">
           <Button variant="ghost" icon="lucide-panel-right" aria-label="Show panel" @click="setPanel(true)" />

@@ -7,6 +7,7 @@
 // renewed while the person is active; leaving Comment mode drops it. The Viewer is sandboxed and sends
 // no cookie, so every call carries the pass and nothing else.
 import { computed, ref } from 'vue'
+import type { TileSpot } from 'sketch:variants'
 import { host } from './host'
 import type { Note } from './annotate'
 
@@ -149,6 +150,8 @@ export async function setResolved(thread: string, resolved: boolean) {
 // The owner copies a comment into a note of their own; the comment stays. The row is the new note.
 export const toNote = (comment: string) => call<Note>('comment_to_note', { comment })
 
+// Where a canvas thread sits, or null for a thread on the live page.
+export const spotOfThread = (t: Thread): TileSpot | null => (t.anchor.tile ? { route: t.anchor.route, tile: t.anchor.tile } : null)
 export const threadById = (id: string | null | undefined) => (id ? threads.value.find((t) => t.id === id) : undefined)
 export const personOf = (username: string) => people.value[username] ?? {}
 

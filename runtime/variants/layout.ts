@@ -32,7 +32,9 @@ export type TileBox = {
   opt?: string
   kind: 'default' | 'state' | 'set' | 'gap'
   stateKey?: string
+  stateLabel?: string
   setKey?: string
+  setLabel?: string
   // What Make default needs to rewrite the source: the tag's name, its file and the set's options in order.
   setName?: string
   setFile?: string
@@ -77,6 +79,7 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
       opt: o.label,
       kind: 'set' as const,
       setKey: set.key,
+      setLabel: set.label,
       setName: set.name,
       setFile: set.file,
       setOptions: set.options,
@@ -92,7 +95,7 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
       if (!p.states.length) continue
       const s = p.states.find((x) => x.options.slice(1).includes(name))
       if (s) {
-        out.push({ id: `f:${p.path}`, cacheId: `${p.path}|s|${s.key}|${name}`, ...base(p), caption: p.title, opt: name, kind: 'state', stateKey: s.key, option: name })
+        out.push({ id: `f:${p.path}`, cacheId: `${p.path}|s|${s.key}|${name}`, ...base(p), caption: p.title, opt: name, kind: 'state', stateKey: s.key, stateLabel: s.label, option: name })
       } else {
         out.push({ id: `gap:${p.path}`, cacheId: '', ...base(p), caption: p.title, kind: 'gap', gapText: 'Not designed yet' })
       }
@@ -103,7 +106,7 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
   const out: Desc[] = [{ id: `${p.path}|default`, cacheId: `${p.path}|default`, ...base(p), caption: 'Default', kind: 'default' }]
   for (const s of p.states)
     for (const o of s.options.slice(1))
-      out.push({ id: `${p.path}|s|${s.key}|${o}`, cacheId: `${p.path}|s|${s.key}|${o}`, ...base(p), caption: o, kind: 'state', stateKey: s.key, option: o })
+      out.push({ id: `${p.path}|s|${s.key}|${o}`, cacheId: `${p.path}|s|${s.key}|${o}`, ...base(p), caption: o, kind: 'state', stateKey: s.key, stateLabel: s.label, option: o })
   return out
 }
 

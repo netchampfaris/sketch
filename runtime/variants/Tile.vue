@@ -5,6 +5,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useIntersectionObserver } from '@vueuse/core'
 import { Badge, Button, toast } from 'frappe-ui'
+import { bridge } from './bridge'
 import { canMakeDefault, makeDefault } from './default'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
@@ -21,7 +22,7 @@ const props = defineProps<{
   win: { w: number; h: number }
   sandbox?: Sandbox
 }>()
-const emit = defineEmits<{ activate: []; openPage: []; near: [near: boolean] }>()
+const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; openPage: []; near: [near: boolean] }>()
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -75,7 +76,7 @@ watch(
 </script>
 
 <template>
-  <div class="group/tile absolute" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
+  <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The caption sits under the tile, drawn at its on-screen size (never larger than at the fit zoom). -->
     <div
       class="absolute inset-x-0 top-full"
@@ -132,11 +133,12 @@ watch(
       data-tile
       role="button"
       tabindex="0"
-      :aria-label="`${tile.pageTitle} · ${tile.opt ?? tile.caption}${tile.isDefault ? ' (default)' : ''}, open live`"
-      class="group relative h-full w-full cursor-pointer overflow-hidden rounded-4 bg-surface-base"
+      :aria-label="`${tile.pageTitle} · ${tile.opt ?? tile.caption}${tile.isDefault ? ' (default)' : ''}, ${bridge.tool === 'comment' ? 'add a comment' : bridge.tool === 'note' ? 'add a note' : 'open live'}`"
+      class="group relative h-full w-full overflow-hidden rounded-4 bg-surface-base"
+      :class="bridge.tool ? 'cursor-crosshair' : 'cursor-pointer'"
       :style="{ contentVisibility: 'auto', containIntrinsicSize: `${tile.w}px ${tile.h}px` }"
-      @click="emit('activate')"
-      @keydown.enter.self="emit('activate')"
+      @click="emit('activate', $event)"
+      @keydown.enter.self="emit('activate', $event)"
     >
       <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live. -->
       <div
