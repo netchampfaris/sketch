@@ -1,17 +1,17 @@
 // The annotate toolbar's entry. boot.js imports this after the Prototype has mounted, and only for
-// the owner's own live tab or a signed-in reader of a public Prototype (notes only). The toolbar is a second Vue app in a body-level host, so it never
+// the owner's own live tab, a signed-in reader of a public Prototype (Comment only), and a Guest on a
+// public Prototype (a "Sign in to comment" button). The toolbar is a second Vue app in a body-level host, so it never
 // becomes part of the Prototype's vnode tree; it reads the Prototype's app from `#app` and shares
 // its router, which is what keeps `useRoute()` in the toolbar in step with the page.
 import { createApp } from 'vue'
 import Annotate from './Annotate.vue'
-import { isOurs } from './annotate'
-import { initHost, type Payload } from './host'
+import { initHost, isOwner, type Payload } from './host'
 import { restore, startSaving } from './store'
 
 export function mountAnnotate(data: Payload) {
   const root = document.getElementById('app') as (HTMLElement & { __vue_app__?: any }) | null
   const router = root?.__vue_app__?.config.globalProperties.$router
-  if (!router || !(data.annotate_sig || (data.commenter && data.comment_sig)) || document.querySelector('[data-sketch-ui="annotate"]')) return
+  if (!router || !(data.annotate_sig || data.commenter || data.sign_in) || document.querySelector('[data-sketch-ui="annotate"]')) return
 
   initHost(data, router)
   restore()
@@ -19,17 +19,12 @@ export function mountAnnotate(data: Payload) {
   const el = document.createElement('div')
   el.setAttribute('data-sketch-ui', 'annotate')
   document.body.append(el)
-  // The page's popovers and menus close on a press or focus outside them, heard on document. A
-  // press on the toolbar or focus in the comment box is not the page's: keep it from reaching there.
-  el.addEventListener('pointerdown', (e) => e.stopPropagation())
-  el.addEventListener('focusin', (e) => e.stopPropagation())
-  // A trapped menu pulls focus back when focus leaves it. Focus moving into our UI does not count as leaving.
-  window.addEventListener('focusout', (e) => { if (isOurs(e.relatedTarget as Node | null)) e.stopImmediatePropagation() }, true)
 
   const app = createApp(Annotate)
   app.use(router)
   // The toolbar is never worth breaking the Prototype for, and its errors are not the Prototype's.
   app.config.errorHandler = (err) => console.error('[sketch annotate]', err)
   app.mount(el)
-  startSaving()
+  // Only the owner has notes or tweaks to save.
+  if (isOwner()) startSaving()
 }

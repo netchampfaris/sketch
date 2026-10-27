@@ -22,7 +22,7 @@ import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
-from sketch import annotations, prototype, prototype_files, runtime_assets, signature, thumbnail, thumbnails
+from sketch import annotations, comments, prototype, prototype_files, runtime_assets, signature, thumbnail, thumbnails
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -296,20 +296,27 @@ class SketchViewerRenderer(BaseRenderer):
 		return not frappe.form_dict.get("sig")
 
 	def commenter(self) -> str:
-		"""The reader's username when they may leave notes here, else "".
+		"""The username of a signed-in person who may comment here, else "".
 
-		A signed-in reader who is not the owner, on a public Prototype, in a
-		real browser session. A Guest has nobody to sign the note, and a `check`
-		request is nobody at all. The username, never the email: the page runs
-		the owner's code, and the payload is that code's to read.
+		The owner, or a signed-in reader of a public Prototype, in a real browser
+		session. A Guest has nobody to sign the comment, and a `check` request is
+		nobody at all. It is only a name for the toolbar to show; the pass that
+		lets the person write is minted later (`sketch.api.comment_pass`).
 		"""
-		if self.is_owner or not self.doc.is_public or frappe.session.user == "Guest":
+		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
 			return ""
 
-		if frappe.form_dict.get("sig"):
+		if not comments.can_see(self.doc.name, frappe.session.user):
 			return ""
 
 		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+
+	def offers_sign_in(self) -> bool:
+		"""True when a signed-out visitor to a public Prototype is shown "Sign in to comment".
+
+		Not for a `check` request, which is a Guest too and wants no toolbar.
+		"""
+		return frappe.session.user == "Guest" and bool(self.doc.is_public) and not frappe.form_dict.get("sig")
 
 	def payload(self) -> dict:
 		"""The data slot contents (contract 4).
@@ -339,9 +346,10 @@ class SketchViewerRenderer(BaseRenderer):
 		toolbar and follow the same rule: live owner pages only, so a Guest and
 		a `check` request carry none (sketch/annotations.py).
 
-		A signed-in reader of a public Prototype gets `commenter`, every note
-		(no tweaks, no prompt) and a COMMENT signature for their own notes
-		(`commenter`, sketch.api.save_comments).
+		A signed-in person who may comment gets `commenter` (their username) and
+		`comments_open` (a count) and a ticket that can only ask for a pass. Never a
+		pass and never a comment: the toolbar mints its 15 minute pass when
+		Comment mode opens (`sketch.api.comment_pass`) and reads the threads with it.
 		"""
 		live = self.is_live()
 		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
@@ -349,14 +357,8 @@ class SketchViewerRenderer(BaseRenderer):
 		# separate scope, so the poll signature cannot write annotations and
 		# this one cannot read the revision (sketch/signature.py).
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
-		commenter = "" if live else self.commenter()
-		subject = annotations.comment_subject(self.doc.name, commenter)
-		note_mark = signature.mint(subject, LIVE_TTL_SECONDS, signature.COMMENT) if commenter else {}
-		saved = None
-		if live:
-			saved = annotations.read(self.doc.name)
-		elif commenter:
-			saved = annotations.for_reader(self.doc.name)
+		commenter = self.commenter()
+		ticket = comments.mint_ticket(self.doc.name, commenter) if commenter else {}
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -369,13 +371,15 @@ class SketchViewerRenderer(BaseRenderer):
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"exp": stamp.get("exp", ""),
 			"sig": stamp.get("sig", ""),
-			"annotations": saved,
-			"annotations_epoch": annotations.epoch(self.doc.name) if live or commenter else 0,
+			"annotations": annotations.read(self.doc.name) if live else None,
+			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
 			"annotate_exp": mark.get("exp", ""),
 			"annotate_sig": mark.get("sig", ""),
 			"commenter": commenter,
-			"comment_exp": note_mark.get("exp", ""),
-			"comment_sig": note_mark.get("sig", ""),
+			"sign_in": self.offers_sign_in(),
+			"comment_exp": ticket.get("exp", ""),
+			"comment_sig": ticket.get("sig", ""),
+			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
 			"theme": url_theme(),
 		}
 
