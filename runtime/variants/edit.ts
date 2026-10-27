@@ -33,10 +33,10 @@ export function enableVariantEdit(data: { name?: string; editor?: string; is_own
 }
 
 function announce(note: Note) {
-  if (note.restored) return void toast.success(`Restored “${note.label}”`)
-  if (!note.sequence) return void toast.success(`Deleted “${note.label}”`)
+  if (note.restored) return void toast.success(`Restored ${note.label}`)
+  if (!note.sequence) return void toast.success(`Deleted ${note.label}`)
   const sequence = note.sequence
-  toast.success(`Deleted “${note.label}”`, {
+  toast.success(`Deleted ${note.label}`, {
     duration: UNDO_MS,
     action: {
       label: 'Undo',

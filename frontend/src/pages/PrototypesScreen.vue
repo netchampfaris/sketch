@@ -308,7 +308,7 @@ onMounted(() => {
     drawn for a user nobody has invited.
   -->
   <section v-if="shared.length" class="px-3 pb-10 sm:px-5" aria-labelledby="shared-heading">
-    <h2 id="shared-heading" class="mb-4 truncate text-lg-semibold text-ink-gray-8">
+    <h2 id="shared-heading" class="mb-4 truncate text-2xl-semibold text-ink-gray-8">
       Shared with me
     </h2>
     <div class="grid gap-6 md:grid-cols-2">

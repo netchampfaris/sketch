@@ -10,7 +10,9 @@
  * dialog sets it, next to the list of people invited. It was a Switch on the
  * card, which put a control that publishes to the internet one stray click
  * away from the artwork, and cost a row to say what the Badge says. Share
- * opens from the rail and from the menu.
+ * has one home, "Share…" in the menu. Beside the Badge, a small stack of the
+ * editors says who it is shared with, and opens the same dialog. No editors,
+ * no stack.
  *
  * Rename, Files, Export as zip, History and Delete sit in the same menu,
  * because they are UI-only actions. Files reads the source the agent wrote,
@@ -21,7 +23,7 @@
  * the card.
  */
 import { computed, ref } from 'vue'
-import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
@@ -78,6 +80,22 @@ const remove = useCall<{ name: string }, { slug: string }>({
 const historyOpen = ref(false)
 const filesOpen = ref(false)
 const shareOpen = ref(false)
+
+/** The editors as the stack and its tooltip tell it: the first three faces, the rest as +n. */
+const SHOWN = 3
+const NAMED = 6
+const sharedWith = computed(() => {
+  const people = props.prototype.editors ?? []
+  const names = people.map((p) => p.full_name.split(/\s+/)[0] || p.username)
+  const listed = names.slice(0, NAMED).join(', ')
+  const rest = names.length - NAMED
+  return {
+    length: people.length,
+    shown: people.slice(0, SHOWN),
+    more: Math.max(people.length - SHOWN, 0),
+    text: `Shared with ${listed}${rest > 0 ? ` and ${rest} more` : ''}`,
+  }
+})
 
 /** True while the zip is on the wire. It disables the menu, like a write. */
 const exporting = ref(false)
@@ -181,7 +199,7 @@ const menuOptions = computed(() => [
   // Share opens the dialog that holds who is invited and whether the link is
   // public. It replaces the rows that made the prototype public or private
   // and copied its link: the dialog does both, so there is one way to each.
-  { label: 'Share', icon: 'lucide-users', onClick: () => (shareOpen.value = true) },
+  { label: 'Share…', icon: 'lucide-users', onClick: () => (shareOpen.value = true) },
   // Above Rename, because it is about the picture the row sits under, and the
   // rows below it are about the Prototype's name and history. It is one row
   // whatever the card is showing: "there is no picture yet" and "the picture
@@ -251,6 +269,27 @@ const menuOptions = computed(() => [
         :theme="prototype.is_public ? 'green' : 'gray'"
       />
       <!--
+        Status, not a second Share button: who it is shared with, up to three faces and then +n.
+        It opens the dialog the menu opens. The ring gives the pale fill an edge.
+      -->
+      <Tooltip v-if="sharedWith.length" :text="sharedWith.text">
+        <Button variant="ghost" :aria-label="sharedWith.text" @click="shareOpen = true">
+          <span class="flex items-center">
+            <span class="flex -space-x-1">
+              <Avatar
+                v-for="person in sharedWith.shown"
+                :key="person.username"
+                class="ring-1 ring-outline-gray-2"
+                size="xs"
+                :image="person.user_image"
+                :label="person.full_name"
+              />
+            </span>
+            <span v-if="sharedWith.more" class="ml-1 text-xs tabular-nums text-ink-gray-5">+{{ sharedWith.more }}</span>
+          </span>
+        </Button>
+      </Tooltip>
+      <!--
         Open sits on the action rail beside the menu, not over the preview. A
         button floating on the artwork needed a shadow to stay legible, and it
         appeared on hover only, so it was invisible until the pointer arrived
@@ -269,9 +308,6 @@ const menuOptions = computed(() => [
           variant="ghost"
           @click="openViewer"
         />
-      </Tooltip>
-      <Tooltip text="Share">
-        <Button aria-label="Share" icon="lucide-users" variant="ghost" @click="shareOpen = true" />
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
