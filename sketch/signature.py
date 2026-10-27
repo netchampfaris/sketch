@@ -44,9 +44,14 @@ DEFAULT_TTL = 60
 #:   What it can do is put rows in front of the owner's agent, which is why the
 #:   save is size- and shape-checked and the MCP tool tells the agent to treat
 #:   the rows as requests to check, never as orders.
+#: - COMMENT writes one signed-in reader's own notes on somebody else's public
+#:   Prototype (`sketch.api.save_comments`). It is minted over the hash id and
+#:   the reader's username together (`sketch.annotations.comment_subject`), so
+#:   it speaks for that one reader on that one Prototype and nothing else.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
+COMMENT = "comment"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

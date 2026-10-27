@@ -295,6 +295,22 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return not frappe.form_dict.get("sig")
 
+	def commenter(self) -> str:
+		"""The reader's username when they may leave notes here, else "".
+
+		A signed-in reader who is not the owner, on a public Prototype, in a
+		real browser session. A Guest has nobody to sign the note, and a `check`
+		request is nobody at all. The username, never the email: the page runs
+		the owner's code, and the payload is that code's to read.
+		"""
+		if self.is_owner or not self.doc.is_public or frappe.session.user == "Guest":
+			return ""
+
+		if frappe.form_dict.get("sig"):
+			return ""
+
+		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+
 	def payload(self) -> dict:
 		"""The data slot contents (contract 4).
 
@@ -322,6 +338,10 @@ class SketchViewerRenderer(BaseRenderer):
 		`annotations`, `annotations_epoch`, `annotate_exp` and `annotate_sig` feed the owner's
 		toolbar and follow the same rule: live owner pages only, so a Guest and
 		a `check` request carry none (sketch/annotations.py).
+
+		A signed-in reader of a public Prototype gets `commenter`, every note
+		(no tweaks, no prompt) and a COMMENT signature for their own notes
+		(`commenter`, sketch.api.save_comments).
 		"""
 		live = self.is_live()
 		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
@@ -329,6 +349,14 @@ class SketchViewerRenderer(BaseRenderer):
 		# separate scope, so the poll signature cannot write annotations and
 		# this one cannot read the revision (sketch/signature.py).
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
+		commenter = "" if live else self.commenter()
+		subject = annotations.comment_subject(self.doc.name, commenter)
+		note_mark = signature.mint(subject, LIVE_TTL_SECONDS, signature.COMMENT) if commenter else {}
+		saved = None
+		if live:
+			saved = annotations.read(self.doc.name)
+		elif commenter:
+			saved = annotations.for_reader(self.doc.name)
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -341,10 +369,13 @@ class SketchViewerRenderer(BaseRenderer):
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"exp": stamp.get("exp", ""),
 			"sig": stamp.get("sig", ""),
-			"annotations": annotations.read(self.doc.name) if live else None,
-			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
+			"annotations": saved,
+			"annotations_epoch": annotations.epoch(self.doc.name) if live or commenter else 0,
 			"annotate_exp": mark.get("exp", ""),
 			"annotate_sig": mark.get("sig", ""),
+			"commenter": commenter,
+			"comment_exp": note_mark.get("exp", ""),
+			"comment_sig": note_mark.get("sig", ""),
 			"theme": url_theme(),
 		}
 

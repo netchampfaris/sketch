@@ -611,6 +611,33 @@ def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", ep
 	return {"updated": saved["updated"]}
 
 
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def save_comments(
+	name: str, username: str = "", exp: str = "", sig: str = "", data: str = "", epoch: str = ""
+) -> dict:
+	"""Save one signed-in reader's own notes on somebody else's public Prototype.
+
+	The same door as `save_annotations`, with a COMMENT signature minted over the
+	hash id and the reader's username together, so it writes as that reader on
+	that Prototype and nowhere else. The server stamps the author on every row
+	and keeps everybody else's rows (`sketch.annotations.save_comments`).
+
+	The Prototype must still be public: an owner who makes it private closes
+	this door at once, not when the page's signature runs out. Either refusal is
+	the same 404 a bad signature gets.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	subject = annotations.comment_subject(name, username)
+	if not username or not signature.verify(subject, exp, sig, signature.COMMENT):
+		raise frappe.DoesNotExistError
+
+	if not frappe.db.get_value("Sketch Prototype", name, "is_public"):
+		raise frappe.DoesNotExistError
+
+	saved = annotations.save_comments(name, username, data, frappe.utils.cint(epoch))
+	return {"updated": saved["updated"]}
+
+
 @frappe.whitelist(allow_guest=True)
 def list_prototype_files(slug: str, username: str = "") -> list[dict]:
 	"""Every file in one Prototype's tree, as {"path", "size"}, sorted by path.

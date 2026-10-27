@@ -4,11 +4,13 @@
 // authorised by the signature the payload carries, not by a session (sketch.api.save_annotations).
 import { ref, watch } from 'vue'
 import { toast } from 'frappe-ui'
-import { anchorPref, buildPrompt, isAnchor, isNote, notes, readRows, type Note } from './annotate'
-import { host, type Saved } from './host'
+import { anchorPref, buildPrompt, isAnchor, isMine, isNote, notes, readRows, type Note } from './annotate'
+import { host, isReader, type Saved } from './host'
 import { buildTweakPrompt, isChanged, restoreTweaks, tweaks } from './tweak'
 
 const SAVE_URL = '/api/method/sketch.api.save_annotations'
+// A reader saves only their own notes, through a door signed for them (sketch.api.save_comments).
+const COMMENTS_URL = '/api/method/sketch.api.save_comments'
 const DEBOUNCE_MS = 800
 // The server refuses a prompt over 64 KB; the rows are the source of truth, the prompt a convenience.
 const PROMPT_MAX = 60000
@@ -17,14 +19,19 @@ export type SaveState = 'saved' | 'saving' | 'error'
 export const saveState = ref<SaveState>('saved')
 
 function snapshot(): Saved {
+  if (isReader()) return { notes: notes.value.filter(isMine) }
   return { notes: notes.value, tweaks: tweaks.value.filter(isChanged), anchor: anchorPref.value ?? undefined }
 }
 
 // Start from what the server holds. Called once, before the toolbar mounts.
 let last = ''
+// The readers' notes this page loaded with. The owner's save names them, so the server can tell a
+// note the owner deleted from one a reader added since (sketch/annotations.py, _merge_owner).
+let known: string[] = []
 export function restore() {
   const s = host.saved
   notes.value = readRows<Note>(s?.notes, isNote)
+  known = notes.value.filter((n) => n.author).map((n) => n.id)
   tweaks.value = restoreTweaks(s?.tweaks)
   anchorPref.value = isAnchor(s?.anchor) ? s.anchor : null
   last = JSON.stringify(snapshot())
@@ -32,6 +39,7 @@ export function restore() {
 
 // What the agent reads: the same text Copy prompt would put on the clipboard.
 function promptOf(): string {
+  if (isReader()) return ''
   try {
     const parts = [notes.value.length ? buildPrompt(notes.value) : '', tweaks.value.some(isChanged) ? buildTweakPrompt() : '']
     return parts.filter(Boolean).join('\n\n').slice(0, PROMPT_MAX)
@@ -44,7 +52,8 @@ let timer = 0
 function post(body: string, keepalive = false) {
   // A form body is a "simple" request, so the sandboxed page needs no CORS preflight.
   const form = new URLSearchParams({ name: host.name, exp: host.exp, sig: host.sig, data: body, epoch: String(host.epoch) })
-  return fetch(SAVE_URL, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store', keepalive })
+  if (isReader()) form.set('username', host.me)
+  return fetch(isReader() ? COMMENTS_URL : SAVE_URL, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store', keepalive })
 }
 
 async function flush(keepalive = false) {
@@ -57,7 +66,7 @@ async function flush(keepalive = false) {
     return
   }
   try {
-    const res = await post(JSON.stringify({ ...snap, prompt: promptOf() }), keepalive)
+    const res = await post(JSON.stringify(isReader() ? snap : { ...snap, prompt: promptOf(), known }), keepalive)
     // The agent cleared since this page loaded: start again from what the server holds.
     if (res.status === 409) return location.reload()
     if (!res.ok) throw new Error(String(res.status))

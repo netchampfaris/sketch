@@ -578,13 +578,16 @@ async function run() {
   startAnnotate(data)
 }
 
-// The comment and tweak toolbar, for the owner's own live tab only. A Guest, a `check` request and
+// The comment and tweak toolbar, for the owner's own live tab, and its comment half for a
+// signed-in reader of a public Prototype (`commenter`). A Guest, a `check` request and
 // a framed gallery card never download it: it is a separate module, loaded after the Prototype
 // has mounted, so it cannot slow or break the first paint. A Prototype never imports it, and the
 // import map names it for this file alone. A toolbar that fails to load is never the Prototype's
 // error, so the failure is a warning and nothing more.
 async function startAnnotate(data) {
-  if (!data.is_owner || !data.live || framed || !data.annotate_sig) return
+  const owner = data.is_owner && data.live && data.annotate_sig
+  const reader = !data.is_owner && data.commenter && data.comment_sig
+  if (framed || !(owner || reader)) return
   try {
     const { mountAnnotate } = await import('sketch:annotate')
     mountAnnotate(data)
