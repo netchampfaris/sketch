@@ -6,7 +6,7 @@ import AuthorAvatar from './AuthorAvatar.vue'
 
 defineProps<{ thread: Thread; selected: boolean; place?: string }>()
 const emit = defineEmits<{ choose: [el: HTMLElement] }>()
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+const replies = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`
 </script>
 
 <template>
@@ -26,7 +26,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 			</span>
 			<span class="flex items-center gap-2">
 				<span class="min-w-0 flex-1 truncate text-p-sm text-ink-gray-6">{{ firstLine(thread.text) }}</span>
-				<span class="flex h-5 w-10 shrink-0 items-center justify-end gap-0.5 text-p-sm tabular-nums text-ink-gray-5" :aria-label="plural(thread.replies.length, 'reply')">
+				<span class="flex h-5 w-10 shrink-0 items-center justify-end gap-0.5 text-p-sm tabular-nums text-ink-gray-5" :aria-label="replies(thread.replies.length)">
 					<template v-if="thread.replies.length">
 						<span class="lucide-message-circle size-3" aria-hidden="true" />{{ thread.replies.length }}
 					</template>

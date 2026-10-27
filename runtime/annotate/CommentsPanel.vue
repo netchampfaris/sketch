@@ -23,7 +23,7 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }
 			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search comments by text or name" autocomplete="off">
 				<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
 				<template #suffix>
-					<Button v-if="query" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
+					<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 				</template>
 			</TextInput>
 			<Tooltip v-if="!embedded" text="Hide panel">
