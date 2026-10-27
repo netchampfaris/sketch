@@ -298,8 +298,10 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 		if not (prompt or "").startswith("Made \u201c"):
 			frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
 
+		# The version's own words name the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
+		said = re.match(r"Made [\u201c\"](.*)[\u201d\"] the default for ", prompt)
 		result = editor_variants.restore_files(
-			doc, sequence, f"Undid making \u201c{label_of(option)}\u201d the default for {name}"
+			doc, sequence, f"Undid making \u201c{said.group(1) if said else label_of(option)}\u201d the default for {name}"
 		)
 		return {"file": file, "name": name, "option": option, **result}
 

@@ -61,7 +61,7 @@ def note(name: str, path: str, action: str, by: str | None = None) -> None:
 	if not path:
 		return
 
-	changes = pending(name)
+	changes = pending(name, everyone=True)
 	_fold(changes, path, action, by)
 	_set_pending(name, changes)
 
@@ -73,7 +73,7 @@ def note_write(name: str, paths: list[str], existed: set[str], by: str | None = 
 	modification. Every other path is an addition.
 	"""
 	existed = existed or set()
-	changes = pending(name)
+	changes = pending(name, everyone=True)
 	for path in paths or []:
 		if path:
 			_fold(changes, path, MODIFIED if path in existed else ADDED, by)

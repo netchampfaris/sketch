@@ -11,6 +11,16 @@ import { choices, currentOf, fromQuery, hookRouter, humanise, mirrorSets, pageKe
 
 type Forward = { attrs: Record<string, unknown>; slots: Record<string, (...a: any[]) => VNodeChild> }
 
+// How many copies of a wrapped component hold one set open. The set leaves the page with the last of them.
+const holders = new Map<VSet, number>()
+function release(set: VSet) {
+  const left = (holders.get(set) ?? 1) - 1
+  if (left > 0) return void holders.set(set, left)
+  holders.delete(set)
+  const at = sets.indexOf(set)
+  if (at >= 0) sets.splice(at, 1)
+}
+
 // The inside of an extra: loads the module on first render. A throw here belongs to the extra's boundary.
 const Inner = defineComponent({
   props: { value: { type: String, required: true }, forward: { type: Object as PropType<Forward | null>, default: null } },
@@ -58,9 +68,11 @@ export default defineComponent({
     const path = pageKeyOf()
     let key = slugOf(props.name)
     let label = props.name
-    if ((sb ? sb.reg.sets : sets).some((s) => s.path === path && s.key === key)) {
-      // A wrapped component used twice is not a mistake in the page.
-      if (!props.wrapper) console.warn(`[sketch variants] Two sets on this page are named "${props.name}". Names must be unique.`)
+    // A wrapped component drawn many times (a row in a list) is one set: every copy follows the one choice.
+    const twin = (sb ? sb.reg.sets : sets).find((s) => s.path === path && s.key === key)
+    const shared = props.wrapper && !!twin
+    if (twin && !shared) {
+      console.warn(`[sketch variants] Two sets on this page are named "${props.name}". Names must be unique.`)
       key += '-2'
       label += ' 2'
     }
@@ -77,7 +89,7 @@ export default defineComponent({
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
       return out
     }
-    const set: VSet = { key, label, name: props.name, file, path, options, elements }
+    const set: VSet = twin && shared ? twin : { key, label, name: props.name, file, path, options, elements }
     const id = setId(set)
     const draw = (cur: string | undefined) => {
       if (cur === undefined) return undefined
@@ -88,7 +100,7 @@ export default defineComponent({
     // Keyed by the option: slot vnodes are compiled with static props that Vue assumes are unchanged, so
     // two options that render the same component would otherwise be patched in place, not swapped.
     if (sb) {
-      sb.reg.sets.push(set)
+      if (!shared) sb.reg.sets.push(set)
       return () => {
         const v = sb.variants[id]
         const o = options()
@@ -98,13 +110,22 @@ export default defineComponent({
     }
 
     hookRouter(router)
+    if (shared) {
+      holders.set(set, (holders.get(set) ?? 1) + 1)
+      onBeforeUnmount(() => release(set))
+      return () => {
+        const cur = currentOf(set)!
+        return h(Fragment, { key: cur }, draw(cur))
+      }
+    }
+    holders.set(set, 1)
     // A link that names an option wins over what was picked earlier.
     const opt = fromQuery(route, 'v', key)
     if (opt && options().some((o) => o.value === opt)) choices[id] = opt
     sets.push(set)
     watch(() => currentOf(set), () => mirrorSets(router), { flush: 'post' })
     mirrorSets(router)
-    onBeforeUnmount(() => sets.splice(sets.indexOf(set), 1))
+    onBeforeUnmount(() => release(set))
 
     return () => {
       const cur = currentOf(set)!
