@@ -589,6 +589,52 @@ def undo_variant_default_signed(
 
 
 @frappe.whitelist(methods=["POST"])
+def keep_variant(slug: str, file: str, name: str, option: str) -> dict:
+	"""Keep `option` as the only option of the set `name`: the owner's other options and every variant an editor added go.
+
+	`resolve_owned` is the permission check. See `variant_default.keep_only`.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.keep_only(doc, file, name, option)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def keep_variant_signed(
+	name: str, exp: str = "", sig: str = "", file: str = "", set_name: str = "", option: str = ""
+) -> dict:
+	"""`keep_variant` for the Viewer, behind the owner-only VARIANT_DEFAULT signature.
+
+	An editor's signature (VARIANT_EDIT) does not open it.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
+		raise frappe.DoesNotExistError
+
+	doc = frappe.get_doc("Sketch Prototype", name)
+	return variant_default.keep_only(doc, file, set_name, option)
+
+
+@frappe.whitelist(methods=["POST"])
+def undo_keep_variant(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
+	"""Bring back what version `sequence` removed. Refused when any of it changed since."""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.undo_keep(doc, file, sequence, name, option)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def undo_keep_variant_signed(
+	name: str, exp: str = "", sig: str = "", file: str = "", sequence: str = "", set_name: str = "", option: str = ""
+) -> dict:
+	"""`undo_keep_variant` for the Viewer, behind the same VARIANT_DEFAULT signature."""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
+		raise frappe.DoesNotExistError
+
+	doc = frappe.get_doc("Sketch Prototype", name)
+	return variant_default.undo_keep(doc, file, sequence, set_name, option)
+
+
+@frappe.whitelist(methods=["POST"])
 def delete_versions(slug: str, sequence: int, dry_run: int = 0) -> dict:
 	"""Delete one version and every older one, to free history space.
 

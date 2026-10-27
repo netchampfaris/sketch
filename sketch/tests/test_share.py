@@ -730,6 +730,138 @@ class TestDeleteAndDefault(ShareCase):
 				self.assertFalse(editor_variants.is_extra(bad))
 
 
+class TestKeepOnly(ShareCase):
+	def owner_page(self):
+		return self.page_data_for(self.owner)
+
+	def keep_as_page(self, option, sig=None, exp=None, name="KPI strip", file="src/pages/Home.vue"):
+		page = self.owner_page()
+		with set_user("Guest"):
+			return api.keep_variant_signed(
+				self.doc.name,
+				exp=str(page["variant_exp"]) if exp is None else exp,
+				sig=page["variant_sig"] if sig is None else sig,
+				file=file,
+				set_name=name,
+				option=option,
+			)
+
+	def test_keep_only_cuts_the_other_slots_and_every_editor_variant(self):
+		self.add_variant()
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
+
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "again.vue", "content": COMPACT}]))
+		done = self.keep_as_page("tall")
+		tree = self.tree()
+		self.assertEqual(done["label"], "Tall")
+		self.assertIn("<template #tall><p>Tall</p></template>", tree["src/pages/Home.vue"])
+		self.assertNotIn("#wide", tree["src/pages/Home.vue"])
+		self.assertIn("<Variants name=\"KPI strip\">\n    <template #tall>", tree["src/pages/Home.vue"])
+		self.assertEqual([p for p in tree if p.startswith("src/variants/")], [])
+		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Kept \u201cTall\u201d as the only option of KPI strip")
+
+	def test_keep_only_a_wrapped_component_removes_its_variants_and_leaves_the_file(self):
+		self.add_variant(WRAP, "dense.vue")
+		done = self.keep_as_page("original", name="Kpi strip", file="src/components/KpiStrip.vue")
+		self.assertEqual(done["label"], "Original")
+		self.assertEqual(self.tree()["src/components/KpiStrip.vue"], FILES["src/components/KpiStrip.vue"])
+		self.assertNotIn(self.folder + "dense.vue", self.tree())
+
+	def test_only_the_owners_signature_keeps_only_this(self):
+		self.add_variant()
+		before = self.tree()
+		page = self.owner_page()
+		stamp = signature.mint(self.doc.name, 600, signature.VARIANT_EDIT)
+		editor = self.edit_credential(self.ed)
+		for who, args in {
+			"an editor's own signature": {"exp": editor["exp"], "sig": editor["sig"]},
+			"the edit scope for the page": {"exp": str(stamp["exp"]), "sig": stamp["sig"]},
+			"a bad signature": {"exp": str(page["variant_exp"]), "sig": "0" * len(page["variant_sig"])},
+			"no signature": {"exp": "", "sig": ""},
+		}.items():
+			with self.subTest(who), self.assertRaises(frappe.DoesNotExistError):
+				self.keep_as_page("tall", **args)
+
+		self.assertEqual(self.editor_page_signature(), "")
+		for user in (self.ed, self.reader):
+			with set_user(user):
+				with self.assertRaises(frappe.DoesNotExistError):
+					api.keep_variant(self.doc.slug, "src/pages/Home.vue", "KPI strip", "tall")
+
+		self.assertEqual(self.tree(), before)
+
+	def editor_page_signature(self):
+		return self.page_data_for(self.ed)["variant_sig"]
+
+	def test_keep_only_works_on_the_owners_own_options_and_not_on_a_set_with_one(self):
+		self.add_variant()
+		with self.assertRaises(frappe.ValidationError):
+			self.keep_as_page("@d2tshed/compact")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.keep_as_page("missing")
+
+		self.keep_as_page("wide")
+		with self.assertRaises(frappe.ValidationError):
+			self.keep_as_page("wide")
+
+	def test_undo_restores_the_slots_and_the_editors_variants_exactly(self):
+		self.add_variant()
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
+
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "second.vue", "content": COMPACT}]))
+		self.ok(self.agent(self.ed, "commit", prompt="Add another"))
+		before = self.tree()
+		done = self.keep_as_page("tall")
+		self.assertNotEqual(self.tree(), before)
+		page = self.owner_page()
+		with set_user("Guest"):
+			api.undo_keep_variant_signed(
+				self.doc.name,
+				exp=str(page["variant_exp"]),
+				sig=page["variant_sig"],
+				file="src/pages/Home.vue",
+				sequence=str(done["sequence"]),
+				set_name="KPI strip",
+				option="tall",
+			)
+
+		self.assertEqual(self.tree(), before)
+		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cTall\u201d in KPI strip")
+
+	def test_undo_is_refused_when_the_page_changed_since_and_to_anyone_but_the_owner(self):
+		self.add_variant()
+		done = self.keep_as_page("tall")
+		args = {"file": "src/pages/Home.vue", "sequence": str(done["sequence"]), "set_name": "KPI strip", "option": "tall"}
+		editor = self.edit_credential(self.ed)
+		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
+			api.undo_keep_variant_signed(self.doc.name, exp=editor["exp"], sig=editor["sig"], **args)
+
+		prototype_files.write_files(self.doc.name, [{"path": "src/pages/Home.vue", "content": HOME.replace("Tall", "Taller")}])
+		page = self.owner_page()
+		with set_user("Guest"), self.assertRaises(frappe.ValidationError):
+			api.undo_keep_variant_signed(self.doc.name, exp=str(page["variant_exp"]), sig=page["variant_sig"], **args)
+
+		self.assertNotIn(self.folder + "compact.vue", self.tree())
+
+	def test_undo_keep_refuses_a_version_that_kept_nothing(self):
+		self.add_variant()
+		done = self.delete_as(self.owner, "@d2tshed/compact")
+		page = self.owner_page()
+		with set_user("Guest"), self.assertRaises(frappe.ValidationError):
+			api.undo_keep_variant_signed(
+				self.doc.name,
+				exp=str(page["variant_exp"]),
+				sig=page["variant_sig"],
+				file="src/pages/Home.vue",
+				sequence=str(done["sequence"]),
+				set_name="KPI strip",
+				option="wide",
+			)
+
+
 class TestFork(ShareCase):
 	def test_a_fork_does_not_carry_what_other_people_added(self):
 		self.add_variant()

@@ -107,6 +107,33 @@ def leaders(name: str, host_file: str, set_name: str, keep: str | None = None) -
 	return found
 
 
+def targeting(name: str, host_file: str, set_name: str) -> list[str]:
+	"""Every variant file, an editor's or an adopted one, that is an option of this set.
+
+	A file whose `<variant>` tag cannot be read is left out: nothing says which set it is for.
+	"""
+	probe = {
+		"set": set_name,
+		"component": host_file if _is_component_host(name, host_file, set_name) else "",
+		"name": "",
+	}
+	found = []
+	for row in prototype_files.list_files(name):
+		path = row["path"]
+		if not path.endswith(".vue") or not (sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)):
+			continue
+
+		try:
+			meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
+		except frappe.ValidationError:
+			continue
+
+		if meta and targets_same(meta, probe):
+			found.append(path)
+
+	return found
+
+
 def clear_defaults(name: str, host_file: str, set_name: str, keep: str | None = None) -> bool:
 	"""Stop every adopted variant of this set from leading it. True when one did."""
 	found = leaders(name, host_file, set_name, keep)

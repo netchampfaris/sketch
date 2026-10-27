@@ -6,7 +6,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useIntersectionObserver } from '@vueuse/core'
 import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
 import { bridge } from './bridge'
-import { canMakeDefault, makeDefault, makeFailure } from './default'
+import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { canDelete, deleteFailure, deleteVariant } from './edit'
 import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
@@ -82,7 +82,28 @@ async function deleteIt() {
     toast.error(deleteFailure(e as Error))
   }
 }
-const menu = computed(() => [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }])
+
+// Keep only this: the owner's page only, on one of the owner's own options of a set that has others (their own, or a
+// teammate's). It cuts the rest from the source, so it sits above Delete variant, and the page that comes back shows
+// "Kept …" with Undo (default.ts).
+const keepable = computed(() => {
+  const t = props.tile
+  return t.kind === 'set' && !t.author && !!t.option && !!t.setFile && !!t.setName && (t.setOptions?.length ?? 0) > 1 && canKeepOnly({ file: t.setFile }) && !bridge.tool
+})
+async function keepIt() {
+  if (!keepable.value || saving.value) return
+  saving.value = true
+  try {
+    await keepOnly({ name: props.tile.setName!, file: props.tile.setFile! }, props.tile.option!, props.tile.opt ?? props.tile.caption)
+  } catch (e) {
+    saving.value = false
+    toast.error(keepFailure(e as Error))
+  }
+}
+const menu = computed(() => [
+  ...(keepable.value ? [{ label: 'Keep only this', icon: 'lucide-check', onClick: keepIt }] : []),
+  ...(deletable.value ? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }] : []),
+])
 
 const margin = computed(() => (isSet.value ? MARGIN : 0))
 const clip = computed(() => ({ left: margin.value + 'px', top: margin.value + 'px', width: rect.value.w + 'px', height: rect.value.h + 'px' }))
@@ -128,7 +149,7 @@ watch(
             <span :class="saving ? 'sr-only' : ''">Make default</span>
           </Button>
           <Button :class="stacked ? '-ml-0.5' : ''" variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
-          <Dropdown v-if="deletable" :options="menu" placement="bottom-end">
+          <Dropdown v-if="menu.length" :options="menu" placement="bottom-end">
             <Button variant="ghost" size="sm" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
           </Dropdown>
         </div>
