@@ -15,6 +15,7 @@ slot is swapped with the text from the first slot up to it, so the whitespace
 that separated slots keeps its place.
 """
 
+import json
 import re
 
 import frappe
@@ -363,13 +364,20 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	The set's other slots are cut from the source. Every variant an invited editor
 	added to the set, and every one the owner adopted from them, is deleted with its
 	registry row. One version records all of it, so `undo_keep` can put it back.
+
+	`option` may be an invited editor's variant or an adopted one: an editor's is
+	adopted first (moved into the owner's files, in the same version), then kept, and
+	every slot of the owner's goes. The `<Variants>` wrapper stays, with the kept
+	option as its only one, so an editor can add to it again.
+
 	A wrapped component's only own option is `original`; its extras are all that goes.
+	Keeping an extra of a wrapped component leaves `original` where it is, since that is
+	the component's own file: the kept option leads it.
+
+	Returns `removed`, how many options went.
 	"""
 	if not isinstance(file, str) or not file.endswith(".vue"):
 		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
-	if editor_variants.is_extra(option):
-		frappe.throw(frappe._("Keep only works on your own options."), frappe.ValidationError)
 
 	absolute = prototype_files.safe_join(doc.name, file)
 	versions.lock(doc.name)
@@ -379,9 +387,11 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	except FileNotFoundError:
 		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
 
+	extra = editor_variants.is_extra(option)
 	sets = find_sets(source, name)
 	label = label_of(option)
 	changed = source
+	dropped = 0
 	if sets:
 		if len(sets) > 1:
 			frappe.throw(
@@ -392,15 +402,37 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 			)
 
 		slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
-		if [s["key"] for s in slots].count(option) != 1:
-			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+		if extra:
+			# The owner's own slots all go: the kept option is an extra.
+			gone = slots
+		else:
+			if [s["key"] for s in slots].count(option) != 1:
+				frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
 
-		changed = drop_slots(source, [s for s in slots if s["key"] != option])
-	elif option != "original":
+			gone = [s for s in slots if s["key"] != option]
+
+		changed = drop_slots(source, gone)
+		dropped = len(gone)
+	elif not extra and option != "original":
 		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
 
 	extras = editor_variants.targeting(doc.name, file, name)
-	if changed == source and not extras:
+	found = None
+	kept_path = None
+	if extra:
+		kept_path = editor_variants.path_of(option)
+		if kept_path not in extras:
+			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+		if sharing.is_editor_path(kept_path):
+			found = editor_variants.adoptable(doc, file, name, option)
+			label = found["meta"]["name"]
+		else:
+			label = _name_of(doc.name, kept_path, option)
+
+	others = [path for path in extras if path != kept_path]
+	leads = bool(extra and found is None and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
+	if changed == source and not others and not found and not leads:
 		frappe.throw(frappe._("{0} is already the only option.").format(label), frappe.ValidationError)
 
 	if versions.pending(doc.name):
@@ -410,19 +442,42 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
 		versions.note(doc.name, file, versions.MODIFIED)
 
-	if extras:
-		registry = editor_variants.read_registry(doc.name)
-		for path in extras:
-			prototype_files.delete_file(doc.name, path)
-			versions.note(doc.name, path, versions.DELETED)
-			registry.pop(path, None)
+	if found:
+		kept_path = editor_variants.move_in(doc, file, name, found)
 
-		if registry != editor_variants.read_registry(doc.name):
-			editor_variants.write_registry(doc.name, registry)
-			versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+	registry = editor_variants.read_registry(doc.name)
+	before = json.dumps(registry, sort_keys=True)
+	for path in others:
+		prototype_files.delete_file(doc.name, path)
+		versions.note(doc.name, path, versions.DELETED)
+		registry.pop(path, None)
+
+	if kept_path and kept_path in registry:
+		registry[kept_path]["default"] = True
+
+	if json.dumps(registry, sort_keys=True) != before:
+		editor_variants.write_registry(doc.name, registry)
+		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 
 	version = versions.commit(doc, f"Kept \u201c{label}\u201d as the only option of {name}", source="App")
-	return {"file": file, "name": name, "option": option, "label": label, "sequence": version.sequence if version else None}
+	return {
+		"file": file,
+		"name": name,
+		"option": editor_variants.option_of(kept_path) if kept_path else option,
+		"label": label,
+		"removed": dropped + len(others),
+		"sequence": version.sequence if version else None,
+	}
+
+
+def _name_of(name: str, path: str, option: str) -> str:
+	"""The `<variant name>` of an adopted file, or the end of its option value."""
+	try:
+		meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
+	except frappe.ValidationError:
+		meta = None
+
+	return (meta or {}).get("name") or option.rsplit("/", 1)[-1]
 
 
 def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
@@ -436,9 +491,12 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 	if not (prompt or "").startswith("Kept \u201c"):
 		frappe.throw(frappe._("That version did not keep one option."), frappe.ValidationError)
 
+	# The version's own words name the option the way the owner saw it: "KPI strip", not "adopted/kpi-strip".
+	said = re.match(r"Kept \u201c(.*)\u201d as the only option of ", prompt)
+	label = said.group(1) if said else label_of(option)
 	return {
 		"file": file,
 		"name": name,
 		"option": option,
-		**editor_variants.restore_files(doc, sequence, f"Undid keeping only \u201c{label_of(option)}\u201d in {name}"),
+		**editor_variants.restore_files(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
 	}

@@ -43,6 +43,8 @@ export interface Prototype {
    * absent when that capture failed, so a reader falls back to `light`.
    */
   thumbnail: PrototypeThumbnail | null
+  /** Who it is shared with, oldest invite first. Empty on a shared card: that is the owner's to know. */
+  editors?: SharePerson[]
 }
 
 /** A person as the Share dialog and the shared cards draw them. */

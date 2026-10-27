@@ -88,8 +88,8 @@ const menuOptions = computed(() => [
     <div class="flex h-7 items-center gap-2">
       <Avatar :image="prototype.owner.user_image" :label="prototype.owner.full_name" size="xs" />
       <span class="min-w-0 truncate text-xs text-ink-gray-5">
-        <span :title="`@${prototype.owner.username}`">{{ prototype.owner.full_name }}</span>
-        &middot; Updated {{ prototype.updated }}
+        <span :title="prototype.owner.full_name">{{ prototype.owner.username }}</span>
+        &middot; {{ prototype.description }} &middot; Updated {{ prototype.updated }}
       </span>
     </div>
 

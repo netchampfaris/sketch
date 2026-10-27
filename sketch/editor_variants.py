@@ -163,8 +163,8 @@ def _is_component_host(name: str, file: str, set_name: str) -> bool:
 # --------------------------------------------------------------------- adopt
 
 
-def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
-	"""Make an editor's variant the default of its set, as the owner's own file."""
+def adoptable(doc, host_file: str, set_name: str, option: str) -> dict:
+	"""What adopting `option` would move, after every check. Writes nothing."""
 	source_path = path_of(option)
 	if not sharing.is_editor_path(source_path):
 		frappe.throw(frappe._("“{0}” is already the owner's.").format(option), frappe.ValidationError)
@@ -184,24 +184,39 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	if author not in sharing.authors([source_path]):
 		frappe.throw(frappe._("The author of that variant is not a Sketch user."), frappe.ValidationError)
 
-	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the default was changed", source="App")
+	return {"path": source_path, "source": source, "meta": meta, "author": author}
 
-	stem = source_path.rsplit("/", 1)[1][: -len(".vue")]
+
+def move_in(doc, host_file: str, set_name: str, found: dict) -> str:
+	"""Move an adoptable variant into the owner's tree as the set's default. Returns its new path.
+
+	The caller commits. Everything it changes is noted for that version.
+	"""
+	stem = found["path"].rsplit("/", 1)[1][: -len(".vue")]
 	destination = _free_path(doc.name, f"{sharing.ADOPTED_DIR}{stem}.vue")
 	clear_defaults(doc.name, host_file, set_name)
 	registry = read_registry(doc.name)
-	registry[destination] = {"author": author, "default": True}
+	registry[destination] = {"author": found["author"], "default": True}
 
-	prototype_files.write_files(doc.name, [{"path": destination, "content": source}])
-	prototype_files.delete_file(doc.name, source_path)
+	prototype_files.write_files(doc.name, [{"path": destination, "content": found["source"]}])
+	prototype_files.delete_file(doc.name, found["path"])
 	write_registry(doc.name, registry)
 	versions.note(doc.name, destination, versions.ADDED)
-	versions.note(doc.name, source_path, versions.DELETED)
+	versions.note(doc.name, found["path"], versions.DELETED)
 	versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+	return destination
+
+
+def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
+	"""Make an editor's variant the default of its set, as the owner's own file."""
+	found = adoptable(doc, host_file, set_name, option)
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the default was changed", source="App")
+
+	destination = move_in(doc, host_file, set_name, found)
 	version = versions.commit(
 		doc,
-		f"Made “{meta['name']}” the default for {set_name}",
+		f"Made “{found['meta']['name']}” the default for {set_name}",
 		source="App",
 	)
 	return {

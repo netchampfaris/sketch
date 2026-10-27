@@ -10,6 +10,7 @@ import LensMenu from './LensMenu.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, spotOf, tileExists } from './bridge'
+import { placeToasts } from './default'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
@@ -21,6 +22,7 @@ import {
   choices,
   closeCanvas,
   idOf,
+  isChoice,
   mirrorSets,
   mirrorStates,
   nav,
@@ -166,7 +168,7 @@ async function discover() {
       title: titleOfRoute(r),
       states: snap.reg.states.filter((s) => s.path === r.path).map((s) => ({ key: s.key, label: s.label, options: s.options })),
       sets: snap.reg.sets
-        .filter((s) => s.path === r.path)
+        .filter((s) => s.path === r.path && isChoice(s.options))
         .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null })),
     })
     // Page order for sets: top to bottom, then left to right.
@@ -344,6 +346,7 @@ onBeforeUnmount(() => {
   bridge.model = null
   bridge.tiles = []
   bridge.reserve = 0
+  document.documentElement.style.removeProperty('--sketch-panel-w')
   bridge.view = ''
   alive = false
   pending?.(errorSnap('Closed'))
@@ -435,6 +438,10 @@ watch(
   (open) => {
     bridge.panelOpen = open
     bridge.reserve = open ? PANEL_W : 0
+    // Toasts stand left of the panel (default.ts): it is 12px off the right edge and PANEL_W - 24 wide.
+    placeToasts()
+    if (open) document.documentElement.style.setProperty('--sketch-panel-w', `${PANEL_W - 12}px`)
+    else document.documentElement.style.removeProperty('--sketch-panel-w')
   },
   { immediate: true },
 )

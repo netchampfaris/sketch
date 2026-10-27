@@ -51,6 +51,10 @@ export function pageKeyOf(): string {
 // True when a state or set belongs on the page `route` shows: app-wide, or one of its matched records.
 export const onPage = (route: any, path: string) => path === '' || route.matched.some((m: any) => m.path === path)
 
+// A set with one option left (after Keep only this) keeps its wrapper, so editors can add again, but there is
+// nothing to pick: the Demo card and Browse leave it out until it has two or more.
+export const isChoice = (options: readonly unknown[]) => options.length >= 2
+
 // Mounted sets, listed while mounted. Choices outlive the page: `path::key` -> option value.
 export const sets = shallowReactive<VSet[]>([])
 export const choices = reactive<Record<string, string>>({})

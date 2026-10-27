@@ -211,6 +211,18 @@ class TestSharedWithMe(ShareCase):
 			with set_user(user):
 				self.assertEqual(api.shared_prototypes(), [])
 
+	def test_the_gallery_card_says_who_it_is_shared_with_and_a_shared_card_does_not(self):
+		with set_user(self.owner):
+			self.assertEqual(api.list_prototypes()[0]["editors"], [])
+
+		self.invite()
+		with set_user(self.owner):
+			row = api.list_prototypes()[0]
+		self.assertEqual([e["username"] for e in row["editors"]], ["d2tshed"])
+		self.assertEqual(sorted(row["editors"][0]), ["full_name", "user_image", "username"], "no email goes out")
+		with set_user(self.ed):
+			self.assertEqual(api.shared_prototypes()[0]["editors"], [])
+
 	def test_the_list_is_empty_for_a_user_nobody_invited(self):
 		with set_user(self.reader):
 			self.assertEqual(api.shared_prototypes(), [])
@@ -794,17 +806,85 @@ class TestKeepOnly(ShareCase):
 	def editor_page_signature(self):
 		return self.page_data_for(self.ed)["variant_sig"]
 
-	def test_keep_only_works_on_the_owners_own_options_and_not_on_a_set_with_one(self):
+	def test_keep_only_refuses_an_option_the_set_does_not_have_and_a_set_with_one(self):
 		self.add_variant()
 		with self.assertRaises(frappe.ValidationError):
-			self.keep_as_page("@d2tshed/compact")
+			self.keep_as_page("missing")
 
 		with self.assertRaises(frappe.ValidationError):
-			self.keep_as_page("missing")
+			self.keep_as_page("@d2tshed/gone")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.keep_as_page("adopted/gone")
 
 		self.keep_as_page("wide")
 		with self.assertRaises(frappe.ValidationError):
 			self.keep_as_page("wide")
+
+	def test_keep_only_says_how_many_options_went(self):
+		self.add_variant()
+		done = self.keep_as_page("tall")
+		self.assertEqual(done["removed"], 2, "wide and the editor's Compact")
+
+	def test_keep_only_on_an_editors_option_adopts_it_then_keeps_it(self):
+		self.add_variant()
+		done = self.keep_as_page("@d2tshed/compact")
+		tree = self.tree()
+		self.assertEqual(done["label"], "Compact")
+		self.assertEqual(done["option"], "adopted/compact")
+		self.assertEqual(done["removed"], 2, "wide and tall")
+		self.assertEqual(tree["src/variants/adopted/compact.vue"], COMPACT)
+		self.assertEqual(
+			json.loads(tree["src/variants/adopted.json"]),
+			{"src/variants/adopted/compact.vue": {"author": "d2tshed", "default": True}},
+		)
+		self.assertEqual([p for p in tree if p.startswith(self.folder)], [])
+		# One version holds the adoption and the cut: the history has no half step.
+		history = versions.history(self.doc.name)
+		self.assertEqual(history[0]["prompt"], "Kept \u201cCompact\u201d as the only option of KPI strip")
+		self.assertNotIn("Made", history[1]["prompt"])
+
+	def test_a_set_left_with_one_option_keeps_its_wrapper_and_editors_can_add_again(self):
+		self.add_variant()
+		self.keep_as_page("@d2tshed/compact")
+		home = self.tree()["src/pages/Home.vue"]
+		self.assertIn('<Variants name="KPI strip">', home)
+		self.assertNotIn("<template #", home, "no slot of the owner's is left")
+
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "second.vue", "content": COMPACT}]))
+		found = editor_variants.targeting(self.doc.name, "src/pages/Home.vue", "KPI strip")
+		self.assertEqual(sorted(found), [self.folder + "second.vue", "src/variants/adopted/compact.vue"])
+
+	def test_keep_only_on_an_adopted_option_removes_the_rest(self):
+		self.add_variant()
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
+
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "again.vue", "content": COMPACT}]))
+		done = self.keep_as_page("adopted/compact")
+		tree = self.tree()
+		self.assertEqual(done["removed"], 3, "wide, tall and the editor's second")
+		self.assertEqual(done["label"], "Compact")
+		self.assertEqual([p for p in tree if p.startswith("src/variants/")], ["src/variants/adopted.json", "src/variants/adopted/compact.vue"])
+		self.assertNotIn("<template #", tree["src/pages/Home.vue"])
+
+	def test_keep_only_on_an_editors_option_of_a_wrapped_component_leaves_the_component(self):
+		self.add_variant(WRAP, "dense.vue")
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "more.vue", "content": WRAP}]))
+		done = self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
+		tree = self.tree()
+		self.assertEqual(done["removed"], 1, "the other variant")
+		self.assertEqual(tree["src/components/KpiStrip.vue"], FILES["src/components/KpiStrip.vue"])
+		self.assertEqual([p for p in tree if p.startswith("src/variants/") and p.endswith(".vue")], ["src/variants/adopted/dense.vue"])
+		self.assertTrue(json.loads(tree["src/variants/adopted.json"])["src/variants/adopted/dense.vue"]["default"])
+
+	def test_keep_only_on_another_sets_variant_is_refused(self):
+		self.add_variant()
+		before = self.tree()
+		with self.assertRaises(frappe.ValidationError):
+			self.keep_as_page("@d2tshed/compact", name="Another set")
+
+		self.assertEqual(self.tree(), before)
 
 	def test_undo_restores_the_slots_and_the_editors_variants_exactly(self):
 		self.add_variant()
@@ -830,6 +910,28 @@ class TestKeepOnly(ShareCase):
 
 		self.assertEqual(self.tree(), before)
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cTall\u201d in KPI strip")
+
+	def test_undo_after_keeping_an_editors_option_restores_every_file_exactly(self):
+		self.add_variant()
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "second.vue", "content": COMPACT}]))
+		self.ok(self.agent(self.ed, "commit", prompt="Add another"))
+		before = self.tree()
+		done = self.keep_as_page("@d2tshed/compact")
+		self.assertNotEqual(self.tree(), before)
+		page = self.owner_page()
+		with set_user("Guest"):
+			api.undo_keep_variant_signed(
+				self.doc.name,
+				exp=str(page["variant_exp"]),
+				sig=page["variant_sig"],
+				file="src/pages/Home.vue",
+				sequence=str(done["sequence"]),
+				set_name="KPI strip",
+				option=done["option"],
+			)
+
+		self.assertEqual(self.tree(), before)
+		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cCompact\u201d in KPI strip")
 
 	def test_undo_is_refused_when_the_page_changed_since_and_to_anyone_but_the_owner(self):
 		self.add_variant()
