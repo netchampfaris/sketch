@@ -13,5 +13,5 @@ const person = computed(() => personOf(props.username))
 </script>
 
 <template>
-	<Avatar :image="person.image || undefined" :label="username" :theme="theme" :size="size ?? 'sm'" />
+	<Avatar :image="person.image || undefined" :label="person.name || username" :theme="theme" :size="size ?? 'sm'" />
 </template>

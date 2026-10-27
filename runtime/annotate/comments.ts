@@ -10,7 +10,8 @@ import { computed, ref } from 'vue'
 import { host } from './host'
 import type { Note } from './annotate'
 
-export type Reply = { id: string; author: string; text: string; ts: number; edited: boolean }
+// `author` is the username; `name` the full name the server sends with it (the username when there is none).
+export type Reply = { id: string; author: string; name: string; text: string; ts: number; edited: boolean }
 // Where a thread sits: a note's anchor without the words.
 export type Anchor = Omit<Note, 'id' | 'note' | 'createdAt' | 'sent'>
 export type Thread = Reply & { resolved: boolean; anchor: Anchor; replies: Reply[] }
@@ -40,11 +41,11 @@ export const sorted = computed(() => {
   const open = threads.value.filter((t) => !t.resolved).sort(byNewest)
   return showResolved.value ? [...open, ...threads.value.filter((t) => t.resolved).sort(byNewest)] : open
 })
-// Search matches the words of any comment in a thread, or an @username that took part.
+// Search matches the words of any comment in a thread, or the name or username of anyone who took part.
 export const matching = computed(() => {
-  const q = query.value.trim().toLowerCase()
+  const q = query.value.trim().toLowerCase().replace(/^@/, '')
   if (!q) return sorted.value
-  return sorted.value.filter((t) => [t, ...t.replies].some((c) => c.text.toLowerCase().includes(q) || `@${c.author}`.toLowerCase().includes(q)))
+  return sorted.value.filter((t) => [t, ...t.replies].some((c) => [c.text, c.author, c.name].some((w) => w.toLowerCase().includes(q))))
 })
 export const byteLength = (s: string) => new TextEncoder().encode(s).length
 

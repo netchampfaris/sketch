@@ -56,7 +56,7 @@ function click(t: Thread, e: MouseEvent) {
 	const p = pos.value[t.id]
 	emit('open', t, p?.x ?? e.clientX, p?.y ?? e.clientY)
 }
-const label = (t: Thread) => `Comment from @${t.author}${t.replies.length ? `, ${t.replies.length} ${t.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${t.text.slice(0, 80)}`
+const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.replies.length} ${t.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${t.text.slice(0, 80)}`
 </script>
 
 <template>

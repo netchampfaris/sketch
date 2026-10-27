@@ -40,10 +40,10 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 		:class="embedded ? 'min-h-0' : 'pointer-events-auto w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2'"
 	>
 		<div class="flex items-center gap-1">
-			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search comments by text or @user" autocomplete="off">
+			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search comments by text or name" autocomplete="off">
 				<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
 				<template #suffix>
-					<Button v-if="query" class="-mr-1" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
+					<Button v-if="query" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 				</template>
 			</TextInput>
 			<Tooltip v-if="!embedded" text="Hide panel">
@@ -83,13 +83,13 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 				<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
 				<template v-else-if="status === 'ready'">
-					<section v-for="g in groups" :key="g.route" :aria-label="groups.length > 1 ? g.name : undefined">
+					<section v-for="g in groups" :key="g.route" class="flex flex-col gap-0.5" :aria-label="groups.length > 1 ? g.name : undefined">
 						<p v-if="groups.length > 1" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }} · <span class="tabular-nums">{{ g.threads.length }}</span></p>
 						<button
 							v-for="t in g.threads"
 							:key="t.id"
 							type="button"
-							:title="`@${t.author}: ${firstLine(t.text)}`"
+							:title="`${t.name}: ${firstLine(t.text)}`"
 							:aria-current="openThread === t.id ? 'true' : undefined"
 							class="flex w-full items-start gap-2 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-gray-2"
 							:class="[openThread === t.id && 'bg-surface-gray-3', t.resolved && 'opacity-60']"
@@ -98,7 +98,7 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 							<span class="flex shrink-0"><AuthorAvatar :username="t.author" size="sm" /></span>
 							<span class="min-w-0 flex-1">
 								<span class="flex items-baseline gap-2">
-									<span class="min-w-0 flex-1 truncate text-p-sm font-medium text-ink-gray-8">@{{ t.author }}</span>
+									<span class="min-w-0 flex-1 truncate text-p-sm font-medium text-ink-gray-8">{{ t.name }}</span>
 									<span class="w-10 shrink-0 text-right text-p-sm tabular-nums text-ink-gray-5">{{ ago(t.ts) }}</span>
 								</span>
 								<span class="flex items-center gap-2">

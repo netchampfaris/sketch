@@ -214,54 +214,53 @@ function onKey(e: KeyboardEvent) {
 		:style="pos"
 		@keydown="onKey"
 	>
-		<!-- A thread: the few things you can do to it, as quiet icons. -->
-		<div v-if="thread" class="-mr-1 -mt-1 flex items-center justify-end gap-0.5">
+		<!-- A thread: its title on the left, the few things you can do to it as quiet icons on the right. -->
+		<div v-if="thread" class="flex h-6 items-center gap-0.5">
+			<p class="min-w-0 flex-1 truncate text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
 			<Tooltip v-if="canResolve" :text="thread.resolved ? 'Reopen' : 'Resolve'" :hover-delay="600">
-				<Button
-					:variant="thread.resolved ? 'subtle' : 'ghost'"
-					:theme="thread.resolved ? 'green' : 'gray'"
-					icon="lucide-check"
-					:aria-label="thread.resolved ? 'Reopen' : 'Resolve'"
-					:disabled="busy"
-					@click="toggleResolved"
-				/>
+				<Button size="xs" variant="ghost" icon="lucide-check" :aria-label="thread.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
 			</Tooltip>
 			<Dropdown v-if="threadMenu.length" :options="threadMenu" align="end">
-				<Button variant="ghost" icon="lucide-ellipsis" aria-label="Thread menu" />
+				<Button size="xs" variant="ghost" icon="lucide-ellipsis" aria-label="Thread menu" />
 			</Dropdown>
 			<Tooltip text="Close" :hover-delay="600">
-				<Button variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+				<Button size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 			</Tooltip>
 		</div>
 		<!-- A new comment has no header; on touch, with no Escape, it keeps a way out. -->
-		<div v-else class="-mr-1 -mt-1 mb-1 hidden items-center justify-end [@media(hover:none)]:flex">
-			<Button variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+		<div v-else class="mb-1 hidden h-6 items-center justify-end [@media(hover:none)]:flex">
+			<Button size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 		</div>
 
 		<template v-if="thread">
-			<div class="mt-1 min-h-0 flex-1 space-y-3 overflow-y-auto">
-				<div v-for="c in comments" :key="c.id" class="group flex gap-2">
-					<span class="flex h-5 shrink-0 items-center"><AuthorAvatar :username="c.author" size="sm" /></span>
-					<div class="min-w-0 flex-1">
-						<p class="flex h-5 items-center gap-1 text-base">
-							<span class="min-w-0 truncate font-medium text-ink-gray-8">@{{ c.author }}</span>
+			<!-- Every icon button sits inside this box with room to spare: it scrolls, so anything past its edge would be cut. -->
+			<div class="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto">
+				<div v-for="c in comments" :key="c.id" class="group">
+					<!-- One row, one centre line: avatar, name, time and the menu. -->
+					<div class="flex h-6 items-center gap-2">
+						<AuthorAvatar :username="c.author" size="sm" />
+						<p class="flex min-w-0 flex-1 items-center gap-1 text-base">
+							<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ c.name || c.author }}</span>
 							<span class="shrink-0 text-ink-gray-5" aria-hidden="true">·</span>
 							<span class="shrink-0 text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
 							<span v-if="c.edited" class="shrink-0 text-ink-gray-4">(edited)</span>
-							<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" :options="commentMenu(c)" align="end">
-								<Button
-									class="-my-0.5 -mr-1 ml-auto shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-									variant="ghost"
-									size="xs"
-									icon="lucide-ellipsis"
-									aria-label="Comment actions"
-								/>
-							</Dropdown>
 						</p>
+						<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" :options="commentMenu(c)" align="end">
+							<Button
+								class="shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+								variant="ghost"
+								size="xs"
+								icon="lucide-ellipsis"
+								aria-label="Comment actions"
+							/>
+						</Dropdown>
+					</div>
 
+					<!-- The words start under the name, not under the avatar. -->
+					<div class="ml-7 mt-1">
 						<template v-if="editing?.id === c.id">
 							<div data-editing>
-								<Textarea v-model="editing.text" :rows="3" class="mt-1 w-full resize-none text-base" />
+								<Textarea v-model="editing.text" :rows="3" class="w-full resize-none text-base" />
 							</div>
 							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
 							<div class="mt-2 flex items-center gap-2">
