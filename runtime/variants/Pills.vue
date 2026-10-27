@@ -5,7 +5,7 @@ import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
 import { Button, Dropdown, Tooltip, toast } from 'frappe-ui'
-import { canMakeDefault, credential, makeDefault } from './default'
+import { canMakeDefault, credential, makeDefault, makeFailure } from './default'
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
@@ -72,15 +72,17 @@ onClickOutside(stack, () => close(), { ignore: ['.menu-content'] })
 const { height } = useElementSize(stack, { width: 0, height: 0 }, { box: 'border-box' })
 // On a phone the stack sits above the page's MobileNav bar, when it has one, so the annotate button and the toasts rise with it.
 const navH = ref(0)
+// With a bar the stack sits 4.75rem (76px) from the bottom, as the original did; a taller bar lifts it further.
+const lift = computed(() => (navH.value ? Math.max(navH.value + 6, 64) : 0))
 function measureNav() {
   const bar = window.matchMedia('(max-width: 767px)').matches ? document.querySelector<HTMLElement>('[data-slot="mobile-nav"]') : null
-  navH.value = bar?.offsetHeight ?? 0
+  navH.value = bar ? Math.floor(bar.getBoundingClientRect().height) : 0
 }
 measureNav()
 useEventListener(window, 'resize', measureNav)
 watch(() => route.path, () => nextTick(measureNav), { flush: 'post' })
 watch(
-  [height, count, navH],
+  [height, count, lift],
   ([h, n, bar]) => (n && h ? document.documentElement.style.setProperty('--sketch-variants-h', `${h + bar}px`) : document.documentElement.style.removeProperty('--sketch-variants-h')),
   { immediate: true },
 )
@@ -131,9 +133,10 @@ function openHere() {
 const off = (s: VSet) => currentOf(s) !== s.options()[0]?.value
 const isKept = (s: VSet) => kept[setId(s)] === currentOf(s)
 // The owner's rows carry two more actions (only the owner's page has the credential; a commenter's toolbar has a Keep
-// handler too, but a note is the owner's to write). The column is there for all of them, so it never moves under the
-// pointer when a pick makes one of them appear.
+// handler too, but a note is the owner's to write).
 const actions = computed(() => Boolean(credential.value))
+// The column is only there while a row is off its default or kept; otherwise the card is as narrow as a commenter's.
+const actionsShown = computed(() => actions.value && setRows.value.some((s) => off(s) || isKept(s)))
 // Make default: the pick becomes the first slot in the source. The page reloads once it is saved.
 const saving = ref<string | null>(null)
 const held = ref(0)
@@ -146,7 +149,7 @@ async function makeIt(s: VSet, e: MouseEvent) {
     await makeDefault(s, option)
   } catch (err) {
     saving.value = null
-    toast.error(`Couldn't change the default. ${(err as Error).message}`)
+    toast.error(makeFailure(err as Error))
   }
 }
 const keep = (s: VSet) => {
@@ -177,16 +180,19 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
         <Dropdown :options="menuOf(s as VSet)">
           <Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as VSet)}`">
             <span class="flex items-center gap-1.5">
-              <span class="whitespace-nowrap text-p-sm text-ink-gray-8 max-md:max-w-[9rem] max-md:truncate">{{ labelOf(s as VSet) }}</span>
+              <span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as VSet)">{{ labelOf(s as VSet) }}</span>
               <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
             </span>
           </Button>
           <template #item-prefix="{ item }">
             <span class="size-4 shrink-0" :class="item.selected ? 'lucide-check' : ''" aria-hidden="true" />
           </template>
+          <template #item-label="{ item }">
+            <span class="block max-w-[16rem] truncate" :title="item.label">{{ item.label }}</span>
+          </template>
         </Dropdown>
       </div>
-      <template v-if="actions">
+      <template v-if="actionsShown">
         <!-- On a phone the actions sit on their own line under the dropdown, and only a row that has something to do shows one. -->
         <span
           v-if="!isState(s)"
@@ -203,7 +209,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
             :tabindex="off(s as VSet) ? undefined : -1"
             :aria-label="`Make ${labelOf(s as VSet)} the default for ${s.label}`"
             @click="makeIt(s as VSet, $event)"
-          ><span :class="saving === setId(s as VSet) ? 'sr-only' : ''">Make default</span></Button>
+          ><span class="text-p-sm" :class="saving === setId(s as VSet) ? 'sr-only' : ''">Make default</span></Button>
           <span v-if="keepHandler && isKept(s as VSet)" class="flex items-center gap-1 text-p-sm text-ink-gray-5">
             <span class="lucide-check size-4" aria-hidden="true" />Kept
           </span>
@@ -215,7 +221,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
             :tabindex="off(s as VSet) || hovered === setId(s as VSet) ? undefined : -1"
             :aria-label="`Keep ${labelOf(s as VSet)} for ${s.label}`"
             @click="keep(s as VSet)"
-          >Keep</Button>
+          ><span class="text-p-sm">Keep</span></Button>
         </span>
         <span v-else class="max-md:hidden" />
       </template>
@@ -232,7 +238,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
     ref="stack"
     data-sketch-ui="variants"
     class="pointer-events-none fixed inset-x-3 z-50 flex flex-col items-end gap-2"
-    :style="{ bottom: `calc(0.75rem + ${navH}px)` }"
+    :style="{ bottom: `calc(0.75rem + ${lift}px)` }"
   >
     <div
       v-if="open"
@@ -241,7 +247,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
     >
       <div
         class="grid grid-cols-[auto_minmax(0,max-content)_auto] items-center gap-x-2"
-        :class="actions ? 'md:grid-cols-[auto_minmax(0,max-content)_auto_auto]' : ''"
+        :class="actionsShown ? 'md:grid-cols-[auto_minmax(0,max-content)_auto_auto]' : ''"
       >
         <Row v-for="s in appRows" :key="'a' + s.key" :s="s" role />
         <Row v-for="s in pageStateRows" :key="'s' + s.key" :s="s" />

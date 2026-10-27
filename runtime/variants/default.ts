@@ -20,12 +20,18 @@ const GONE = "Can't undo anymore: the page changed since. Ask your agent instead
 type Credential = { name: string; exp: string; sig: string }
 export const credential = shallowRef<Credential | null>(null)
 
+// What a failed Make default tells the owner. A refused fetch is a TypeError with the browser's own words.
+export const makeFailure = (e: Error) =>
+  e instanceof TypeError ? "Couldn't make it the default. Check your connection and try again." : `Couldn't change the default. ${e.message}`
+
 type Undo = { option: string; label: string; sequence: number }
 type Note = {
   file: string
   set: string
   option: string
   label: string
+  // Set when this is the Undo coming back, so the toast says it is not a new change.
+  restored?: boolean
   undo?: Undo
   // The file as the page loaded it after the write, to tell a later change from none.
   hash?: string
@@ -72,7 +78,7 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
 }
 
 function announce(note: Note, files?: Record<string, string>) {
-  const message = `${note.label} is now the default for ${note.set}`
+  const message = note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
   const back = note.undo
   if (!back) return void toast.success(message)
   const until = note.until ?? Date.now() + UNDO_MS
@@ -89,7 +95,7 @@ function announce(note: Note, files?: Record<string, string>) {
       onClick: () => {
         done()
         post('undo_variant_default_signed', { file: note.file, sequence: String(back.sequence), set_name: note.set, option: note.option })
-          .then(() => reload({ file: note.file, set: note.set, option: back.option, label: back.label }))
+          .then(() => reload({ file: note.file, set: note.set, option: back.option, label: back.label, restored: true }))
           .catch((e: Error) => toast.error(`Couldn't undo: ${e.message}`))
       },
     },
