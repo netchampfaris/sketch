@@ -359,6 +359,9 @@ class SketchViewerRenderer(BaseRenderer):
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
 		commenter = self.commenter()
 		ticket = comments.mint_ticket(self.doc.name, commenter) if commenter else {}
+		# Make default writes the source, so it has a scope of its own: neither
+		# the poll nor the toolbar signature can reorder a slot.
+		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
 		return {
 			"files": prototype_files.read_tree(self.doc.name),
 			"name": self.doc.name,
@@ -380,6 +383,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"comment_exp": ticket.get("exp", ""),
 			"comment_sig": ticket.get("sig", ""),
 			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
+			"variant_exp": variant.get("exp", ""),
+			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
 		}
 

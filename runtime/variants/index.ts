@@ -1,5 +1,5 @@
-// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `setKeepHandler` is internal,
-// for annotate, and is deliberately left out of the skill.
+// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `setKeepHandler`, `enableMakeDefault` and
+// `makeDefault` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { mountPill } from './mount'
@@ -7,6 +7,7 @@ import { fromQuery, mirrorStates, slugOf, stateValues, states } from './state'
 
 export { default as Variants } from './Variants.vue'
 export { setKeepHandler } from './state'
+export { enableMakeDefault, makeDefault } from './default'
 
 // A global demo value (a persona, a workflow phase). The first option is the default.
 export function useDemoState<T extends string>(name: string, options: readonly T[]) {

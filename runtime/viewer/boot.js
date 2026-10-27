@@ -576,6 +576,7 @@ async function run() {
 
   report('ok')
   startAnnotate(data)
+  startMakeDefault(data)
 }
 
 // The annotate toolbar: Note, Tweak and Comment for the owner's own live tab, Comment alone for a
@@ -592,6 +593,18 @@ async function startAnnotate(data) {
     mountAnnotate(data)
   } catch (e) {
     console.warn('[sketch] the annotate toolbar did not load:', e)
+  }
+}
+
+// Make default in the variants pill: the same pages as the toolbar, with a credential of its own.
+// `sketch:variants` is the module the Prototype imported, so this reaches the same state.
+async function startMakeDefault(data) {
+  if (!data.is_owner || !data.live || framed || !data.variant_sig) return
+  try {
+    const { enableMakeDefault } = await import('sketch:variants')
+    enableMakeDefault(data)
+  } catch (e) {
+    console.warn('[sketch] Make default did not load:', e)
   }
 }
 

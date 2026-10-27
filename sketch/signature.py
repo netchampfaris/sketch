@@ -55,11 +55,16 @@ DEFAULT_TTL = 60
 #:   server as Guest), so a call that only a session cookie could make is not
 #:   possible from the toolbar. This stands in for the cookie until the toolbar
 #:   moves out of the Prototype's page.
+#: - VARIANT_DEFAULT moves one slot of a `<Variants>` set to the front of its
+#:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
+#:   minted into the owner's live page only, and what it can do is reorder
+#:   slots in a `.vue` file the owner already owns, which Undo reverses.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
 COMMENT = "comment"
 COMMENT_MINT = "comment-mint"
+VARIANT_DEFAULT = "variant_default"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:
