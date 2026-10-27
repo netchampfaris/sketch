@@ -69,9 +69,12 @@ export function setUnread(list: { id: string; route: string; unread: number; men
   Object.assign(badges.threads, next)
 }
 
-// The Demo pill's dot: this page has an option nobody here has looked at, or a thread nobody has opened.
-export const pageHasNew = (path: string, optionsOnPage: readonly string[]) =>
-  !badges.opened[path] && (freshIn(optionsOnPage) > 0 || Object.values(badges.threads).some((t) => t.route.split('?')[0] === path))
+// The Demo pill's dot: this page has an option nobody here has looked at. Unread threads are not counted: the pill leads
+// to options, and a thread's dot sits on the Comment tool, which leads to the threads.
+export const pageHasNew = (path: string, optionsOnPage: readonly string[]) => !badges.opened[path] && freshIn(optionsOnPage) > 0
+
+// A thread on this page (or on any page, with no path) has something this person has not read.
+export const hasUnreadThreads = (path?: string) => Object.values(badges.threads).some((t) => !path || t.route.split('?')[0] === path)
 
 async function flush() {
   if (!cred || !(pending.variants.size || pending.threads.size)) return

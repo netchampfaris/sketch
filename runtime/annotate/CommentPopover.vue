@@ -137,7 +137,8 @@ async function run(fn: () => Promise<void>) {
 }
 
 const tooLong = (s: string) => byteLength(s) > MAX_BYTES
-const ready = (s: string) => !!s.trim() && !tooLong(s)
+// A lone "@" (a mention just begun) is not words yet.
+const ready = (s: string) => !!s.replace(/@/g, '').trim() && !tooLong(s)
 
 // A new thread.
 const canStart = computed(() => ready(props.modelValue))

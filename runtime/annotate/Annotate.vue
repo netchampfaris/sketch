@@ -11,7 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
-import { bridge, closeCanvas, openCanvas, setKeepHandler, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
+import { bridge, closeCanvas, hasUnreadThreads, openCanvas, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
 import { openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { isGuest, isOwner } from './host'
 import { saveState } from './store'
@@ -346,31 +346,6 @@ async function openNoteFromList(n: Note, row?: HTMLElement) {
 	await leaveCanvas()
 	await edit(n)
 }
-
-// Keep on a Variants set is a normal note, anchored on the set's first element.
-setKeepHandler((el, note) => {
-	const r = el.getBoundingClientRect()
-	const c = componentOf(el)
-	const info = infoOf(el)
-	addNote(
-		{
-			route: key.value,
-			viewport: `${window.innerWidth}x${window.innerHeight}`,
-			selector: info.selector,
-			component: c.component,
-			componentChain: c.chain,
-			file: c.file,
-			element: info.element,
-			text: info.text,
-			state: info.state || undefined,
-			note,
-			offset: { x: 0.5, y: 0.5 },
-			rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
-		},
-		[el],
-	)
-})
-onBeforeUnmount(() => setKeepHandler(null))
 
 function remove() {
 	if (draft.value?.editing) removeNote(draft.value.editing)
@@ -816,6 +791,13 @@ const { width: gw } = useElementSize(ghost, { width: 0, height: 0 }, { box: 'bor
 watch([bw, gw], ([w, g]) => (widest.value = Math.max(widest.value, w, g)))
 const phone = computed(() => vw.value < 640)
 watch(phone, () => (widest.value = bw.value))
+// On a phone the open toolbar and the Demo pill both live at the bottom edge: the pill rides above the toolbar while it is open.
+watch(
+	[() => enabled.value && phone.value && !canvasOpen.value && anchor.value.startsWith('bottom') && !!bh.value, bh, navH],
+	([on]) => (bridge.toolbarLift = on ? LIVE_INSET + navH.value + bh.value + 8 : 0),
+	{ immediate: true },
+)
+onBeforeUnmount(() => (bridge.toolbarLift = 0))
 // On the canvas the bar is as wide as its own widest mode (the twin below, without Close and the count), never the live page's.
 const slotW = computed(() => (canvasOpen.value ? Math.max(bw.value, gw.value) : Math.max(bw.value, widest.value)))
 function place(a: Anchor) {
@@ -894,6 +876,11 @@ function barClick(e: MouseEvent) {
 	e.stopPropagation()
 	e.preventDefault()
 }
+
+// Unread threads on this page (any page, on the canvas): the dot on the Comment tool and on the closed launcher, the doors
+// to them. While Comment is the tool in use the rows carry their own dots.
+const unread = computed(() => hasUnreadThreads(canvasOpen.value ? undefined : route.path))
+const unreadDot = computed(() => unread.value && !(active.value && mode.value === 'comment'))
 
 // ---- Toolbar actions: the count and copy belong to the tool in use ---------------------
 const tweakCount = computed(() => tweakApi.value?.count.value ?? 0)
@@ -1106,12 +1093,14 @@ function revealTweak(id: string) {
 			:tabindex="enabled ? -1 : 0"
 			:style="triggerStyle"
 			class="fixed z-[60] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
-			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount ? 'opacity-60' : 'opacity-20']"
+			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount || unread ? 'opacity-60' : 'opacity-20']"
 			@click="openFromTrigger"
 		>
 			<span :class="owner ? 'lucide-mouse-pointer-click' : 'lucide-message-circle'" class="size-4" aria-hidden="true" />
 			<!-- Tweaks stay applied with the toolbar closed; the dot says the page isn't as built. -->
-			<span v-if="tweakCount" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-violet-7 ring-2 ring-surface-base" aria-hidden="true" />
+			<span v-if="tweakCount" class="absolute -right-1 size-2.5 rounded-full bg-surface-violet-7 ring-2 ring-surface-base" :class="unread ? '-bottom-1' : '-top-1'" aria-hidden="true" />
+			<!-- Unread comments: the dot on the door to them. -->
+			<span v-if="unread" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-blue-6 ring-2 ring-surface-base" role="img" aria-label="Unread comments" />
 		</button>
 	</Tooltip>
 
@@ -1373,9 +1362,12 @@ function revealTweak(id: string) {
 		<div v-if="owner" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
 			<TabButtons :options="tabOptions" model-value="note">
 				<template #suffix="{ button }">
-					<template v-if="button.value === 'comment' && openCount">
-						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
-						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ Math.max(openCount, 10) }}</span>
+					<template v-if="button.value === 'comment'">
+						<template v-if="openCount">
+							<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+							<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ Math.max(openCount, 10) }}</span>
+						</template>
+						<span v-if="unread" class="size-1.5 shrink-0 rounded-full" :class="phone && !openCount ? '' : 'ml-1.5'" />
 					</template>
 				</template>
 			</TabButtons>
@@ -1410,10 +1402,13 @@ function revealTweak(id: string) {
 					<div class="inline-flex" @pointerover="onTabHover">
 						<TabButtons :options="tabOptions" :model-value="canvasOpen && !active ? undefined : mode">
 							<template #suffix="{ button }">
-								<template v-if="button.value === 'comment' && openCount">
-						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
-						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ openCount }}</span>
-					</template>
+								<template v-if="button.value === 'comment'">
+									<template v-if="openCount">
+										<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+										<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ openCount }}</span>
+									</template>
+									<span v-if="unreadDot" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" :class="phone && !openCount ? '' : 'ml-1.5'" role="img" aria-label="Unread comments" />
+								</template>
 							</template>
 						</TabButtons>
 					</div>
@@ -1421,7 +1416,7 @@ function revealTweak(id: string) {
 				<!-- A reader has one tool. -->
 				<Tooltip v-else :text="active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
 					<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-message-circle" @click="pick('comment')">
-						Comment<span v-if="openCount" class="ml-2 tabular-nums text-ink-gray-5">{{ openCount }}</span>
+						Comment<span v-if="openCount" class="ml-2 tabular-nums text-ink-gray-5">{{ openCount }}</span><span v-if="unreadDot" class="ml-1.5 size-1.5 shrink-0 rounded-full bg-surface-blue-6" role="img" aria-label="Unread comments" />
 					</Button>
 				</Tooltip>
 

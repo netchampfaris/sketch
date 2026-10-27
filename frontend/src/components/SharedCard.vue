@@ -59,7 +59,7 @@ const menuOptions = computed(() => [
 </script>
 
 <template>
-  <article class="min-w-0">
+  <article class="flex min-w-0 flex-col">
     <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
 
     <div class="mt-3 flex h-7 items-center gap-2">
@@ -88,7 +88,7 @@ const menuOptions = computed(() => [
 
     <NewLine :news="prototype.new" :href="prototype.viewer_path" />
 
-    <div class="flex h-7 items-center gap-2">
+    <div class="mt-auto flex h-7 items-center gap-2">
       <Avatar :image="prototype.owner.user_image" :label="prototype.owner.full_name" size="xs" />
       <span class="min-w-0 truncate text-xs text-ink-gray-5">
         <span :title="prototype.owner.full_name">{{ prototype.owner.username }}</span>

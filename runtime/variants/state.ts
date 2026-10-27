@@ -63,15 +63,6 @@ export const currentOf = (s: VSet) => {
   const c = choices[setId(s)]
   return o.some((x) => x.value === c) ? c : o[0]?.value
 }
-// Sets the owner has pressed Keep on, until reload.
-export const kept = reactive<Record<string, string>>({})
-
-// Annotate registers this; without it (a Guest, or annotate failed to load) Keep never renders.
-export const keepHandler = shallowRef<((el: Element, text: string) => void) | null>(null)
-export const setKeepHandler = (fn: ((el: Element, text: string) => void) | null) => {
-  keepHandler.value = fn
-}
-
 // Demo states, listed while a caller is mounted. Values are kept per page for the session.
 export const states = reactive<Record<string, DState>>({})
 export const stateValues = reactive<Record<string, string>>({})

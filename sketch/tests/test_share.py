@@ -868,15 +868,78 @@ class TestKeepOnly(ShareCase):
 		self.assertEqual([p for p in tree if p.startswith("src/variants/")], ["src/variants/adopted.json", "src/variants/adopted/compact.vue"])
 		self.assertNotIn("<template #", tree["src/pages/Home.vue"])
 
-	def test_keep_only_on_an_editors_option_of_a_wrapped_component_leaves_the_component(self):
+	def test_keep_only_on_an_editors_option_of_a_wrapped_component_replaces_the_component(self):
 		self.add_variant(WRAP, "dense.vue")
 		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "more.vue", "content": WRAP}]))
 		done = self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
 		tree = self.tree()
-		self.assertEqual(done["removed"], 1, "the other variant")
+		self.assertEqual(done["removed"], 2, "the component's own version and the other variant")
+		self.assertEqual(done["label"], "Dense")
+		self.assertEqual(done["option"], "original")
+		self.assertTrue(done["replaced"], "no set is left, so the toast names the component")
+		self.assertEqual(tree["src/components/KpiStrip.vue"], "<template><p>Dense</p></template>\n")
+		self.assertEqual([p for p in tree if p.startswith("src/variants/")], [], "no variant, no registry, so no set")
+		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Kept \u201cDense\u201d as the only option of Kpi strip")
+
+	def test_keeping_a_wrapped_components_option_leaves_one_other_to_report_when_it_was_alone(self):
+		self.add_variant(WRAP, "dense.vue")
+		done = self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
+		self.assertEqual(done["removed"], 1, "the owner's original")
+
+	def test_a_replacement_that_reads_as_the_component_still_removes_the_variant(self):
+		self.add_variant('<variant component="src/components/KpiStrip.vue" name="Dense" />\n' + FILES["src/components/KpiStrip.vue"], "same.vue")
+		done = self.keep_as_page("@d2tshed/same", name="Kpi strip", file="src/components/KpiStrip.vue")
+		tree = self.tree()
+		self.assertEqual(done["removed"], 1)
 		self.assertEqual(tree["src/components/KpiStrip.vue"], FILES["src/components/KpiStrip.vue"])
-		self.assertEqual([p for p in tree if p.startswith("src/variants/") and p.endswith(".vue")], ["src/variants/adopted/dense.vue"])
-		self.assertTrue(json.loads(tree["src/variants/adopted.json"])["src/variants/adopted/dense.vue"]["default"])
+		self.assertEqual([p for p in tree if p.startswith("src/variants/")], [])
+
+	def test_the_replacement_keeps_its_relative_imports_pointing_at_the_same_files(self):
+		wrap = (
+			'<variant component="src/components/KpiStrip.vue" name="Dense" />\n'
+			'<script setup>\nimport Tile from "../../components/Tile.vue"\nimport { x } from \'./local.ts\'\n'
+			'import Alias from "@/components/Alias.vue"\n</script>\n<template><Tile /></template>\n'
+		)
+		self.add_variant(wrap, "dense.vue")
+		self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
+		component = self.tree()["src/components/KpiStrip.vue"]
+		self.assertNotIn("<variant", component)
+		self.assertIn('import Tile from "./Tile.vue"', component)
+		self.assertIn("import { x } from '../variants/@d2tshed/local.ts'", component)
+		self.assertIn('import Alias from "@/components/Alias.vue"', component)
+
+	def test_keep_only_on_an_adopted_option_of_a_wrapped_component_replaces_it_too(self):
+		self.add_variant(WRAP, "dense.vue")
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/components/KpiStrip.vue", "Kpi strip", "@d2tshed/dense")
+
+		done = self.keep_as_page("adopted/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
+		tree = self.tree()
+		self.assertEqual(done["removed"], 1)
+		self.assertEqual(tree["src/components/KpiStrip.vue"], "<template><p>Dense</p></template>\n")
+		self.assertEqual([p for p in tree if p.startswith("src/variants/")], [])
+
+	def test_undo_after_replacing_a_wrapped_component_restores_every_file_exactly(self):
+		self.add_variant(WRAP, "dense.vue")
+		self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + "more.vue", "content": WRAP}]))
+		self.ok(self.agent(self.ed, "commit", prompt="Add another"))
+		before = self.tree()
+		done = self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
+		self.assertNotEqual(self.tree(), before)
+		page = self.owner_page()
+		with set_user("Guest"):
+			api.undo_keep_variant_signed(
+				self.doc.name,
+				exp=str(page["variant_exp"]),
+				sig=page["variant_sig"],
+				file="src/components/KpiStrip.vue",
+				sequence=str(done["sequence"]),
+				set_name="Kpi strip",
+				option=done["option"],
+			)
+
+		self.assertEqual(self.tree(), before)
+		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cDense\u201d in Kpi strip")
 
 	def test_keep_only_on_another_sets_variant_is_refused(self):
 		self.add_variant()

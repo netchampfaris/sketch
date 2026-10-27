@@ -4,9 +4,10 @@
 // page was given can be picked (comments.ts `mentionable`); the words box holds "@Full Name" and `encode` turns it into
 // the stored form when the comment is sent.
 import { computed, nextTick, ref } from 'vue'
-import { Avatar, Popover } from 'frappe-ui'
+import { Popover } from 'frappe-ui'
 import type { Mentionable } from './comments'
-import { labelOf, match, openMention, remember } from './mentions'
+import AuthorAvatar from './AuthorAvatar.vue'
+import { hasTwin, labelOf, match, openMention, remember } from './mentions'
 
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [text: string] }>()
@@ -15,6 +16,8 @@ const root = ref<HTMLElement | null>(null)
 const open = ref(false)
 const query = ref('')
 const index = ref(0)
+// The list is as wide as the box it answers.
+const width = ref(0)
 let start = -1
 // Escape closes the list for this "@word"; it stays closed until the words change.
 let dismissed = -1
@@ -31,6 +34,7 @@ function sync(e?: Event) {
   if (!found || found.start === dismissed) return void (open.value = false)
   if (!open.value || found.query !== query.value) index.value = 0
   start = found.start
+  width.value = ta.getBoundingClientRect().width
   query.value = found.query
   open.value = true
 }
@@ -80,7 +84,8 @@ function onKey(e: KeyboardEvent) {
     </template>
     <div
       data-annotate-ui
-      class="w-60 overflow-hidden rounded-[12px] bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2"
+      class="max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[12px] bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2"
+      :style="{ width: `${width}px` }"
       @mousedown.prevent
     >
       <ul role="listbox" aria-label="People to mention" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
@@ -95,9 +100,10 @@ function onKey(e: KeyboardEvent) {
             @mouseenter="index = i"
             @click="pick(p)"
           >
-            <Avatar class="shrink-0" size="xs" :image="p.image || undefined" :label="p.name" />
+            <AuthorAvatar class="shrink-0" :username="p.username" size="xs" />
             <span class="min-w-0 truncate text-ink-gray-8" :title="p.name">{{ p.name }}</span>
-            <span class="ml-auto min-w-0 max-w-[40%] shrink-0 truncate text-ink-gray-5" :title="`@${p.username}`">@{{ p.username }}</span>
+            <!-- A username only tells two people of one name apart. -->
+            <span v-if="hasTwin(p)" class="ml-auto min-w-0 max-w-[40%] shrink-0 truncate text-ink-gray-5" :title="`@${p.username}`">@{{ p.username }}</span>
           </button>
         </li>
         <li v-if="!people.length" role="presentation" class="px-2 py-1.5 text-p-sm text-ink-gray-5">No one by that name</li>
