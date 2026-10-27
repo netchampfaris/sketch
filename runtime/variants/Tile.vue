@@ -84,12 +84,12 @@ async function deleteIt() {
   }
 }
 
-// Keep only this: the owner's page only, on one of the owner's own options of a set that has others (their own, or a
-// teammate's). It cuts the rest from the source, so it sits above Delete variant, and the page that comes back shows
+// Keep only this: the owner's page only, on any option of a set that has others, a teammate's too (the server adopts
+// it first). It cuts the rest from the source, so it sits above Delete variant, and the page that comes back shows
 // "Kept …" with Undo (default.ts).
 const keepable = computed(() => {
   const t = props.tile
-  return t.kind === 'set' && !t.author && !!t.option && !!t.setFile && !!t.setName && (t.setOptions?.length ?? 0) > 1 && canKeepOnly({ file: t.setFile }) && !bridge.tool
+  return t.kind === 'set' && !!t.option && !!t.setFile && !!t.setName && (t.setOptions?.length ?? 0) > 1 && canKeepOnly({ file: t.setFile }) && !bridge.tool
 })
 async function keepIt() {
   if (!keepable.value || saving.value) return
@@ -120,9 +120,9 @@ watch(
 <template>
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The caption sits under the tile. It is laid out at 1x and scaled to its on-screen size (never larger than at the
-         fit zoom), so the row wraps by what the eye sees. Number, name and Default badge on one line; the live tile adds
-         Make default (owner) and Open page at the right end. On a stacked tile the badge and the buttons go under the
-         name, so the name never truncates away (there is room for one button a line). -->
+         fit zoom), so the row wraps by what the eye sees. Number, name, Default badge and Made by on one line, in that
+         order: the author truncates first. The live tile adds Make default (owner) and Open page at the right end. On a
+         stacked tile the buttons go under the name, so the name never truncates away (there is room for one button a line). -->
     <div
       class="absolute left-0 top-full origin-top-left text-p-sm"
       :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
@@ -131,14 +131,13 @@ watch(
         <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="stacked ? 'w-full' : ''">
           <span v-if="tile.n" class="tabular-nums text-ink-gray-4">{{ tile.n }}</span>
           <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
+          <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
           <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
           <span v-if="tile.author" class="flex min-w-0 shrink-[3] items-center gap-1 text-ink-gray-4" :title="`Made by ${personName(tile.author)}`">
-            <Avatar class="shrink-0" size="xs" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
+            <Avatar class="shrink-0 ring-1 ring-outline-gray-2" size="xs" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
             <span class="truncate">Made by {{ shortName(tile.author) }}</span>
           </span>
-          <Badge v-if="tile.isDefault && !stacked" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         </div>
-        <Badge v-if="tile.isDefault && stacked" label="Default" theme="gray" variant="subtle" size="sm" />
         <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="stacked ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
           <Button
             v-if="canDefault && !bridge.tool"
@@ -150,9 +149,9 @@ watch(
           >
             <span :class="saving ? 'sr-only' : ''">Make default</span>
           </Button>
-          <Button :class="stacked ? '-ml-0.5' : ''" variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
+          <Button :class="stacked ? '-ml-0.5' : ''" variant="ghost" size="xs" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
           <Dropdown v-if="menu.length" :options="menu" placement="bottom-end">
-            <Button variant="ghost" size="sm" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
+            <Button variant="ghost" size="xs" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
           </Dropdown>
         </div>
       </div>

@@ -34,6 +34,8 @@ type Note = {
   restored?: boolean
   // The change was Keep only this, not Make default: the toast and the Undo call differ.
   kept?: boolean
+  // How many other options Keep only this removed.
+  removed?: number
   undo?: Undo
   // The file as the page loaded it after the write, to tell a later change from none.
   hash?: string
@@ -42,14 +44,15 @@ type Note = {
 type Flash = { error: string }
 
 // Toasts sit above the pill stack and the annotate launcher in the corner, not over them. The
-// stack publishes its height in --sketch-variants-h.
+// stack publishes its height in --sketch-variants-h. While the canvas's side panel is open it
+// publishes the room it takes from the right edge in --sketch-panel-w, and toasts stand left of it.
 let placed = false
 export function placeToasts() {
   if (placed) return
   placed = true
   const style = document.createElement('style')
   style.textContent =
-    '[data-sonner-toaster]{--offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;--mobile-offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;}'
+    '[data-sonner-toaster]{--offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;--mobile-offset-bottom:calc(var(--sketch-variants-h,0px) + 72px)!important;--offset-right:max(24px,calc(var(--sketch-panel-w,0px) + 16px))!important;}'
   document.head.append(style)
 }
 
@@ -82,9 +85,11 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
   }
 }
 
+const others = (n = 0) => (n ? `, removed ${n} other${n === 1 ? '' : 's'}` : '')
+
 function announce(note: Note, files?: Record<string, string>) {
   const message = note.kept
-    ? note.restored ? 'Options restored' : `Kept ${note.label}`
+    ? note.restored ? 'Options restored' : `Kept ${note.label}${others(note.removed)}`
     : note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
   const back = note.undo
   if (!back) return void toast.success(message)
@@ -172,10 +177,20 @@ export async function makeDefault(set: Defaultable, option: string) {
 export const canKeepOnly = (set: { file?: string }) => Boolean(credential.value && set.file)
 
 // Cuts every other option of the set (a teammate's variants too) and saves a version. Resolves never on success, because
-// the page reloads and shows "Kept …" with Undo. Rejects with a message fit for a toast.
+// the page reloads and shows "Kept …" with Undo. Rejects with a message fit for a toast. A teammate's option is
+// adopted first: the server answers with the option's new name.
 export async function keepOnly(set: { name: string; file: string }, option: string, label: string) {
   const done = await post('keep_variant_signed', { file: set.file, set_name: set.name, option })
-  reload({ file: set.file, set: set.name, option, label, kept: true, undo: done?.sequence ? { option, label, sequence: done.sequence } : undefined })
+  const kept = done?.option ?? option
+  reload({
+    file: set.file,
+    set: set.name,
+    option: kept,
+    label,
+    kept: true,
+    removed: done?.removed,
+    undo: done?.sequence ? { option: kept, label, sequence: done.sequence } : undefined,
+  })
 }
 
 export const keepFailure = (e: Error) =>
