@@ -18,9 +18,10 @@ const emit = defineEmits<{ 'update:modelValue': [text: string]; save: []; cancel
 
 const root = ref<HTMLElement | null>(null)
 const height = ref(220)
-const W = 320
+// The comment box's shell: the same width, edge and corners, so switching modes never swaps one for another.
+const W = 300
 const GAP = 12
-const EDGE = 8
+const EDGE = 12
 
 // Right and below the point; flips above or left when it would run off the viewport.
 const pos = computed(() => {
@@ -67,17 +68,17 @@ function onKey(e: KeyboardEvent) {
 		data-annotate-ui
 		role="dialog"
 		aria-label="Note"
-		class="pointer-events-auto fixed z-[60] w-80 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-3 shadow-xl"
+		class="pointer-events-auto fixed z-[60] w-[min(18.75rem,calc(100vw-1.5rem))] rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
 		:style="pos"
 		@keydown="onKey"
 	>
-		<div class="flex items-center gap-2">
-			<p class="flex min-w-0 flex-1 items-baseline gap-2 text-base">
-				<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ component }}</span>
+		<div class="flex h-6 items-center gap-0.5">
+			<p class="flex min-w-0 flex-1 items-baseline gap-2 text-p-sm font-normal text-ink-gray-6">
+				<span class="min-w-0 truncate">{{ component }}</span>
 				<span v-if="extra" class="shrink-0 tabular-nums text-ink-gray-5">+{{ extra }} more</span>
 			</p>
 			<!-- Escape cancels; on touch, a way out. -->
-			<Button v-if="!editing" class="-my-1 -mr-1 hidden shrink-0 [@media(hover:none)]:inline-flex" variant="ghost" icon="lucide-x" aria-label="Cancel" @click="emit('cancel')" />
+			<Button v-if="!editing" class="-mr-[5px] hidden shrink-0 [@media(hover:none)]:inline-flex" size="xs" variant="ghost" icon="lucide-x" aria-label="Cancel" @click="emit('cancel')" />
 		</div>
 		<ComposerInput
 			v-if="!editing"

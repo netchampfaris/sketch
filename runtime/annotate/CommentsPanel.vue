@@ -3,7 +3,7 @@
 // desktop, drawn like the canvas Show panel; inside a bottom sheet on a phone (`embedded`).
 import { computed } from 'vue'
 import { Button, ScrollArea, Skeleton, TextInput, Tooltip } from 'frappe-ui'
-import { ago, firstLine, load, matching, openCount, openThread, pageName, query, resolvedCount, showResolved, status, threads, type Thread } from './comments'
+import { ago, firstLine, load, matching, openThread, pageName, query, resolvedCount, showResolved, status, threads, type Thread } from './comments'
 import AuthorAvatar from './AuthorAvatar.vue'
 
 const props = defineProps<{ embedded?: boolean; route: string }>()
@@ -16,7 +16,7 @@ const empty = computed(() => {
 	if (searching.value) return 'search'
 	return threads.value.length ? 'resolved' : 'first'
 })
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+const replies = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`
 
 // This page's threads first, then each other page's; within a page the list's own order (newest unresolved first).
 // A header names the page only when threads sit on more than one.
@@ -43,7 +43,7 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search comments by text or name" autocomplete="off">
 				<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
 				<template #suffix>
-					<Button v-if="query" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
+					<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 				</template>
 			</TextInput>
 			<Tooltip v-if="!embedded" text="Hide panel">
@@ -51,10 +51,11 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			</Tooltip>
 		</div>
 
-		<!-- How many, always; resolved threads stay out of the way until asked for. -->
-		<div class="mt-1 flex h-7 items-center gap-1 px-2">
-			<span class="text-xs font-medium text-ink-gray-5">{{ plural(openCount, 'open thread') }}</span>
-			<Button v-if="resolvedCount || showResolved" class="ml-auto !text-xs !font-medium" size="sm" :variant="showResolved ? 'subtle' : 'ghost'" :label="showResolved ? `Hide resolved` : `Show resolved (${resolvedCount})`" :aria-pressed="showResolved" @click="showResolved = !showResolved" />
+		<!-- Resolved threads stay out of the way until asked for. The count is the toolbar button's. -->
+		<div v-if="resolvedCount || showResolved" class="mt-1 flex h-7 items-center px-2">
+			<Button class="-mr-2 ml-auto !text-xs !font-medium" size="sm" :variant="showResolved ? 'subtle' : 'ghost'" :aria-pressed="showResolved" @click="showResolved = !showResolved">
+				{{ showResolved ? 'Hide resolved' : 'Show resolved' }}<span v-if="!showResolved" class="ml-1 tabular-nums text-ink-gray-5">{{ resolvedCount }}</span>
+			</Button>
 		</div>
 
 		<ScrollArea class="mt-1 min-h-0 shrink" :style="embedded ? { maxHeight: 'calc(100dvh - 15rem)' } : { maxHeight: 'var(--comments-list-max, 60vh)' }">
@@ -79,12 +80,12 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 					<p class="text-p-sm font-medium text-ink-gray-8">No comments yet</p>
 					<p class="mt-0.5 text-p-sm text-ink-gray-5">{{ touch ? 'Tap' : 'Click' }} anything on the page to start a thread.</p>
 				</div>
-				<p v-else-if="empty === 'search'" class="px-2 py-2 text-p-sm text-ink-gray-5">No comments match</p>
+				<p v-else-if="empty === 'search'" class="break-words px-2 py-2 text-p-sm text-ink-gray-5">No comments match “{{ query.trim() }}”</p>
 				<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
 				<template v-else-if="status === 'ready'">
 					<section v-for="g in groups" :key="g.route" class="flex flex-col gap-0.5" :aria-label="groups.length > 1 ? g.name : undefined">
-						<p v-if="groups.length > 1" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }} · <span class="tabular-nums">{{ g.threads.length }}</span></p>
+						<p v-if="groups.length > 1" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }}</p>
 						<button
 							v-for="t in g.threads"
 							:key="t.id"
@@ -103,7 +104,7 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 								</span>
 								<span class="flex items-center gap-2">
 									<span class="min-w-0 flex-1 truncate text-p-sm text-ink-gray-6">{{ firstLine(t.text) }}</span>
-									<span class="flex h-5 w-10 shrink-0 items-center justify-end gap-0.5 text-p-sm tabular-nums text-ink-gray-5" :aria-label="plural(t.replies.length, 'reply')">
+									<span class="flex h-5 w-10 shrink-0 items-center justify-end gap-0.5 text-p-sm tabular-nums text-ink-gray-5" :aria-label="replies(t.replies.length)">
 										<template v-if="t.replies.length">
 											<span class="lucide-message-circle size-3" aria-hidden="true" />{{ t.replies.length }}
 										</template>

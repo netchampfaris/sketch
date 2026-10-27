@@ -9,6 +9,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
+import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
 import { setKeepHandler } from 'sketch:variants'
 import { openCount, openThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
@@ -624,12 +625,14 @@ const INSET = 16
 const anchor = ref<Anchor>(readAnchor())
 // Until the toolbar has been moved once, the trigger keeps to the bottom-right corner.
 const moved = ref(storedAnchor() !== null)
+// On a phone, everything at the bottom edge rides above the Prototype's own bottom bar.
+const navH = useMobileNavHeight(key)
 // The faint trigger sits where the toolbar last snapped: 12px in from a corner, centred on a centre anchor.
 const triggerStyle = computed(() => {
 	const [v, h] = (moved.value ? anchor.value : 'bottom-right').split('-')
-	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: '12px' }
-	// Above the Variants pill when there is one: the pill sets --sketch-variants-h, and the -8px fallback cancels the +8px.
-	if (v === 'bottom' && h === 'right') s.bottom = 'calc(12px + var(--sketch-variants-h, -8px) + 8px)'
+	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: `${12 + navH.value}px` }
+	// Above the Variants pill when there is one: the pill sets --sketch-variants-h (its own height plus the bar's), and the -8px fallback cancels the +8px.
+	if (v === 'bottom' && h === 'right') s.bottom = `calc(12px + max(var(--sketch-variants-h, -8px) + 8px, ${navH.value}px))`
 	if (h === 'left') s.left = '12px'
 	else if (h === 'right') s.right = '12px'
 	else s.left = 'calc(50% - 16px)'
@@ -640,9 +643,9 @@ const { width: bw, height: bh } = useElementSize(bar, { width: 0, height: 0 }, {
 const ready = computed(() => bw.value > 0 && bh.value > 0)
 
 // Resizing the window re-places the toolbar: every position is derived from the anchor.
-// The tabs stay under the pointer when the mode changes, so the bar is placed as if it were as wide as it has been:
-// what follows the tabs comes and goes on the right.
-// The owner's widest toolbar is measured up front (the unseen twin below), so even the first switch holds still.
+// The tabs stay under the pointer when the mode changes, and the bar stays centred: the owner's bar is always as wide as
+// the widest mode's (the unseen twin below measures it up front, so even the first switch holds still). What follows the
+// tabs comes and goes on the right, and Close stays at the far end.
 const widest = ref(0)
 const ghost = ref<HTMLElement | null>(null)
 const { width: gw } = useElementSize(ghost, { width: 0, height: 0 }, { box: 'border-box' })
@@ -653,7 +656,7 @@ const slotW = computed(() => Math.max(bw.value, widest.value))
 function place(a: Anchor) {
 	const [v, h] = a.split('-')
 	const left = h === 'left' ? INSET : h === 'right' ? vw.value - slotW.value - INSET : (vw.value - slotW.value) / 2
-	const top = v === 'top' ? INSET : vh.value - bh.value - INSET
+	const top = v === 'top' ? INSET : vh.value - bh.value - INSET - navH.value
 	return { left: clamp(left, 0, Math.max(0, vw.value - bw.value)), top: clamp(top, 0, Math.max(0, vh.value - bh.value)) }
 }
 const dragPos = ref<{ left: number; top: number } | null>(null)
@@ -733,10 +736,16 @@ const countLabel = computed(() => (mode.value === 'tweak' ? plural(tweakCount.va
 // Under 640px the tabs are icons: the three labels would not fit. Each keeps its name for assistive tech.
 const tab = (label: string, value: Mode, icon: string, name = label) =>
 	phone.value ? { label: name, value, icon, onClick: () => use(value) } : { label, value, iconLeft: icon, onClick: () => use(value) }
+// With a count beside it the Comment icon is no longer a square: it sizes to its content, the tab's own padding around both,
+// and its name moves to screen-reader text beside the count.
+const commentTab = () =>
+	phone.value && openCount.value
+		? { label: '', name: `Comment, ${openCount.value} open`, value: 'comment' as Mode, iconLeft: 'lucide-message-circle', onClick: () => use('comment') }
+		: tab('Comment', 'comment', 'lucide-message-circle', openCount.value ? `Comment, ${openCount.value} open` : 'Comment')
 const tabOptions = computed(() => [
 	tab('Note', 'note', 'lucide-sticky-note'),
 	tab('Tweak', 'tweak', 'lucide-paintbrush'),
-	tab('Comment', 'comment', 'lucide-message-circle', openCount.value ? `Comment, ${openCount.value} open` : 'Comment'),
+	commentTab(),
 ])
 const tabHover = ref<Mode>('note')
 function onTabHover(e: PointerEvent) {
@@ -763,13 +772,23 @@ const panelShown = computed(() => (phone.value ? sheetOpen.value : panelOpen.val
 // The card starts below a typical page header (its action buttons sit top right), so it never covers them and the page never moves.
 // It also keeps clear of the toolbar when the toolbar is parked on the right edge.
 const PANEL_TOP = 72
-const panelBox = computed(() => {
-	const b = barBox.value
+const panelTop = computed(() => {
 	const right = anchor.value.endsWith('right')
-	const top = Math.max(PANEL_TOP, anchor.value.startsWith('top') && right ? b.bottom + 8 : 0)
-	const bottom = anchor.value.startsWith('bottom') && right ? vh.value - b.top + 8 : 12
-	return { top: `${top}px`, '--comments-list-max': `${Math.max(120, vh.value - top - bottom - 96)}px` }
+	return Math.max(PANEL_TOP, anchor.value.startsWith('top') && right ? barBox.value.bottom + 8 : 0)
 })
+const panelBox = computed(() => {
+	const right = anchor.value.endsWith('right')
+	const bottom = anchor.value.startsWith('bottom') && right ? vh.value - barBox.value.top + 8 : 12
+	return { top: `${panelTop.value}px`, '--comments-list-max': `${Math.max(120, vh.value - panelTop.value - bottom - 96)}px` }
+})
+// Where the card really is, so a comment box can keep off it.
+const panelEl = ref<HTMLElement | null>(null)
+const { width: panelW, height: panelH } = useElementSize(panelEl, { width: 288, height: 0 }, { box: 'border-box' })
+const panelRect = computed(() =>
+	showPanel.value && !phone.value && panelOpen.value && panelH.value
+		? { left: vw.value - 12 - panelW.value, right: vw.value - 12, top: panelTop.value, bottom: panelTop.value + panelH.value }
+		: null,
+)
 
 // Notes: copies what hasn't gone out yet, or everything when it all has; then marks it sent.
 async function copy() {
@@ -1019,6 +1038,7 @@ function revealTweak(id: string) {
 				:anchor="newAnchor"
 				:thread="thread"
 				:avoid="ready ? barBox : null"
+				:panel="panelRect"
 				@created="onCreated"
 				@gone="close"
 				@noted="onNoted"
@@ -1033,7 +1053,7 @@ function revealTweak(id: string) {
 			leave-active-class="transition-opacity duration-100"
 			leave-to-class="opacity-0"
 		>
-			<div v-if="showPanel && !phone && panelOpen" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
+			<div v-if="showPanel && !phone && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
 				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
 			</div>
 		</Transition>
@@ -1160,14 +1180,18 @@ function revealTweak(id: string) {
 		</Transition>
 
 		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured. -->
-		<div v-if="owner && !phone" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
+		<div v-if="owner" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
 			<TabButtons :options="tabOptions" model-value="note">
 				<template #suffix="{ button }">
-					<span v-if="button.value === 'comment' && openCount" class="tabular-nums text-ink-gray-5">{{ openCount }}</span>
+					<template v-if="button.value === 'comment' && openCount">
+						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ openCount }}</span>
+					</template>
 				</template>
 			</TabButtons>
 			<Button variant="ghost" label="12 notes" />
-			<Button variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
+			<Button v-if="phone" variant="ghost" icon="lucide-copy" aria-label="Copy prompt" />
+			<Button v-else variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
 			<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
 		</div>
 
@@ -1183,7 +1207,7 @@ function revealTweak(id: string) {
 				aria-label="Annotate"
 				class="pointer-events-auto fixed z-[60] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
 				:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
-				:style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
+				:style="{ left: `${pos.left}px`, top: `${pos.top}px`, minWidth: owner ? `${widest}px` : undefined }"
 				@pointerdown="barDown"
 				@pointermove="barMove"
 				@pointerup="barUp"
@@ -1196,7 +1220,10 @@ function revealTweak(id: string) {
 					<div class="inline-flex" @pointerover="onTabHover">
 						<TabButtons :options="tabOptions" :model-value="mode">
 							<template #suffix="{ button }">
-								<span v-if="button.value === 'comment' && openCount" class="tabular-nums text-ink-gray-5">{{ openCount }}</span>
+								<template v-if="button.value === 'comment' && openCount">
+						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ openCount }}</span>
+					</template>
 							</template>
 						</TabButtons>
 					</div>
@@ -1231,7 +1258,7 @@ function revealTweak(id: string) {
 				</template>
 
 				<Tooltip v-if="!guest" text="Hide toolbar" :hover-delay="600">
-					<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
+					<Button class="ml-auto" variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
 				</Tooltip>
 			</div>
 		</Transition>
