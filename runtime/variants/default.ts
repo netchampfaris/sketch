@@ -32,6 +32,8 @@ type Note = {
   label: string
   // Set when this is the Undo coming back, so the toast says it is not a new change.
   restored?: boolean
+  // The change was Keep only this, not Make default: the toast and the Undo call differ.
+  kept?: boolean
   undo?: Undo
   // The file as the page loaded it after the write, to tell a later change from none.
   hash?: string
@@ -81,7 +83,9 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
 }
 
 function announce(note: Note, files?: Record<string, string>) {
-  const message = note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
+  const message = note.kept
+    ? note.restored ? 'Options restored' : `Kept ${note.label}`
+    : note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
   const back = note.undo
   if (!back) return void toast.success(message)
   const until = note.until ?? Date.now() + UNDO_MS
@@ -97,8 +101,13 @@ function announce(note: Note, files?: Record<string, string>) {
       label: 'Undo',
       onClick: () => {
         done()
-        post('undo_variant_default_signed', { file: note.file, sequence: String(back.sequence), set_name: note.set, option: note.option })
-          .then(() => reload({ file: note.file, set: note.set, option: back.option, label: back.label, restored: true }))
+        post(note.kept ? 'undo_keep_variant_signed' : 'undo_variant_default_signed', {
+          file: note.file,
+          sequence: String(back.sequence),
+          set_name: note.set,
+          option: note.option,
+        })
+          .then(() => reload({ file: note.file, set: note.set, option: back.option, label: back.label, restored: true, kept: note.kept }))
           .catch((e: Error) => toast.error(`Couldn't undo: ${e.message}`))
       },
     },
@@ -158,3 +167,16 @@ export async function makeDefault(set: Defaultable, option: string) {
     undo: previous && done?.sequence ? { option: previous.value, label: previous.label, sequence: done.sequence } : undefined,
   })
 }
+
+// True when the owner can keep one option of `set` and remove the rest: their page, and a set the source names.
+export const canKeepOnly = (set: { file?: string }) => Boolean(credential.value && set.file)
+
+// Cuts every other option of the set (a teammate's variants too) and saves a version. Resolves never on success, because
+// the page reloads and shows "Kept …" with Undo. Rejects with a message fit for a toast.
+export async function keepOnly(set: { name: string; file: string }, option: string, label: string) {
+  const done = await post('keep_variant_signed', { file: set.file, set_name: set.name, option })
+  reload({ file: set.file, set: set.name, option, label, kept: true, undo: done?.sequence ? { option, label, sequence: done.sequence } : undefined })
+}
+
+export const keepFailure = (e: Error) =>
+  e instanceof TypeError ? "Couldn't keep it. Check your connection and try again." : `Couldn't keep only this. ${e.message}`

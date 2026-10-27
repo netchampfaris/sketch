@@ -19,7 +19,7 @@ import re
 
 import frappe
 
-from sketch import editor_variants, prototype_files, snapshots, versions
+from sketch import editor_variants, prototype_files, sharing, snapshots, versions
 
 #: HTML elements with no closing tag, so they never open a depth.
 VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
@@ -335,3 +335,110 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	versions.note(doc.name, file, versions.MODIFIED)
 	version = versions.commit(doc, f"Undid making \u201c{label_of(option)}\u201d the default for {name}", source="App")
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
+
+
+# ---------------------------------------------------------------- keep only this
+
+
+def drop_slots(source: str, slots: list[dict]) -> str:
+	"""`source` without these slots, and without the line break and indent that led each one."""
+	for slot in sorted(slots, key=lambda s: s["start"], reverse=True):
+		start = slot["start"]
+		while start > 0 and source[start - 1] in " \t":
+			start -= 1
+
+		if start > 0 and source[start - 1] == "\n":
+			start -= 1
+			if start > 0 and source[start - 1] == "\r":
+				start -= 1
+
+		source = source[:start] + source[slot["end"] :]
+
+	return source
+
+
+def keep_only(doc, file: str, name: str, option: str) -> dict:
+	"""Keep `option` as the only option of the set `name` in `file`. The caller has checked ownership.
+
+	The set's other slots are cut from the source. Every variant an invited editor
+	added to the set, and every one the owner adopted from them, is deleted with its
+	registry row. One version records all of it, so `undo_keep` can put it back.
+	A wrapped component's only own option is `original`; its extras are all that goes.
+	"""
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+	if editor_variants.is_extra(option):
+		frappe.throw(frappe._("Keep only works on your own options."), frappe.ValidationError)
+
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	try:
+		with open(absolute, encoding="utf-8", newline="") as handle:
+			source = handle.read()
+	except FileNotFoundError:
+		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
+
+	sets = find_sets(source, name)
+	label = label_of(option)
+	changed = source
+	if sets:
+		if len(sets) > 1:
+			frappe.throw(
+				frappe._('<Variants name="{0}"> appears {1} times in this file. Names must be unique.').format(
+					name, len(sets)
+				),
+				frappe.ValidationError,
+			)
+
+		slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
+		if [s["key"] for s in slots].count(option) != 1:
+			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+		changed = drop_slots(source, [s for s in slots if s["key"] != option])
+	elif option != "original":
+		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+	extras = editor_variants.targeting(doc.name, file, name)
+	if changed == source and not extras:
+		frappe.throw(frappe._("{0} is already the only option.").format(label), frappe.ValidationError)
+
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the other options were removed", source="App")
+
+	if changed != source:
+		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
+		versions.note(doc.name, file, versions.MODIFIED)
+
+	if extras:
+		registry = editor_variants.read_registry(doc.name)
+		for path in extras:
+			prototype_files.delete_file(doc.name, path)
+			versions.note(doc.name, path, versions.DELETED)
+			registry.pop(path, None)
+
+		if registry != editor_variants.read_registry(doc.name):
+			editor_variants.write_registry(doc.name, registry)
+			versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+
+	version = versions.commit(doc, f"Kept \u201c{label}\u201d as the only option of {name}", source="App")
+	return {"file": file, "name": name, "option": option, "label": label, "sequence": version.sequence if version else None}
+
+
+def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
+	"""Bring back everything version `sequence` removed. Refused when any of it changed since."""
+	try:
+		sequence = int(sequence)
+	except (TypeError, ValueError):
+		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+
+	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
+	if not (prompt or "").startswith("Kept \u201c"):
+		frappe.throw(frappe._("That version did not keep one option."), frappe.ValidationError)
+
+	return {
+		"file": file,
+		"name": name,
+		"option": option,
+		**editor_variants.restore_files(doc, sequence, f"Undid keeping only \u201c{label_of(option)}\u201d in {name}"),
+	}
