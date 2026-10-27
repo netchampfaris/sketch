@@ -9,7 +9,8 @@ import { clearHover, usePinTracking } from './pinTracking'
 const props = defineProps<{ route: string; selected?: string }>()
 const emit = defineEmits<{ open: [note: Note, x: number, y: number] }>()
 
-const visible = computed(() => notes.value.filter((n) => n.route === props.route))
+// Notes on canvas tiles have their pins on the canvas (TilePins.vue).
+const visible = computed(() => notes.value.filter((n) => n.route === props.route && !n.tile))
 type Pos = { x: number; y: number; found: boolean }
 const pos = ref<Record<string, Pos>>({})
 // A pin appears once it has a position, so it pops in instead of flashing at 0,0.

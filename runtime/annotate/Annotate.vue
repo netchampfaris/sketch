@@ -6,20 +6,24 @@
 // instead of using it. The toolbar also hosts the tweak tool (its own files), which registers
 // itself in `tweakApi`. A signed-in reader sees Comment only; a Guest sees "Sign in to comment".
 // Mounted by index.ts into its own app, so it never becomes part of the Prototype's vnode tree.
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, defineComponent, h, markRaw, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
-import { setKeepHandler } from 'sketch:variants'
-import { openCount, openThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { bridge, closeCanvas, openCanvas, setKeepHandler, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
+import { openCount, openThread, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { isGuest, isOwner } from './host'
 import { saveState } from './store'
 import CommentPins from './CommentPins.vue'
 import CommentPopover from './CommentPopover.vue'
+import CanvasComments from './CanvasComments.vue'
+import CanvasNotes from './CanvasNotes.vue'
 import CommentsPanel from './CommentsPanel.vue'
 import NotePopover from './NotePopover.vue'
 import Pins from './Pins.vue'
+import TilePins from './TilePins.vue'
 import TweakLayer from './TweakLayer.vue'
+import { canvasUi, handlers, tileAnchor } from './tiles'
 import {
 	ANCHORS,
 	active,
@@ -43,6 +47,7 @@ import {
 	listen,
 	markSent,
 	mode,
+	noteNumber,
 	notes,
 	parentOf,
 	pinPoint,
@@ -83,11 +88,17 @@ if (!owner) mode.value = 'comment'
 if (guest) setEnabled(true)
 // Phone only: the comments list as a bottom sheet.
 const sheetOpen = ref(false)
+// The canvas is open over the page: its tiles take the pins, and its own panel (or on a phone the sheet) takes the list.
+const canvasOpen = computed(() => bridge.open)
+const sheetMode = computed(() => (canvasOpen.value ? bridge.phone : vw.value < 640))
 
 // Picking machinery (hover, box, measuring) runs for the two tools that pin things to the page.
-// A phone's comments sheet covers the page, so nothing is picked while it is open.
+// A phone's comments sheet covers the page, so nothing is picked while it is open. Over the canvas a click picks a
+// tile instead of an element (the canvas hands it over), so the page behind is never picked.
 const pins = computed(() => mode.value === 'note' || mode.value === 'comment')
-const picking = computed(() => enabled.value && active.value && pins.value && !guest && !sheetOpen.value)
+const picking = computed(() => enabled.value && active.value && pins.value && !guest && !sheetOpen.value && !canvasOpen.value)
+const tilePicking = computed(() => enabled.value && active.value && pins.value && !guest && canvasOpen.value && !sheetOpen.value)
+watch([tilePicking, mode], () => (bridge.tool = tilePicking.value ? (mode.value === 'note' ? 'note' : 'comment') : ''), { immediate: true })
 
 // ---- Popover ---------------------------------------------------------------------------
 type Draft = {
@@ -98,6 +109,8 @@ type Draft = {
 	infos: ElInfo[]
 	comp?: ComponentInfo
 	box?: BoxInfo
+	// A click on a canvas tile: which tile, and where on it.
+	tile?: TileHit
 	editing?: string // id of the note, or in Comment mode the thread, being edited
 	component: string
 	extra: number
@@ -174,18 +187,35 @@ function anchorOf(d: Draft): PinAnchor {
 	}
 }
 
+// A click on a canvas tile opens the same box a click on an element does, with the tile as its anchor.
+function onTilePick(hit: TileHit) {
+	const d = draft.value
+	if (d && (d.editing || text.value.trim())) return
+	const fresh = !d
+	draft.value = { x: hit.x, y: hit.y, els: [], infos: [], tile: hit, component: tileLabel(hit.tile), extra: 0 }
+	if (fresh) {
+		text.value = ''
+		draftKey.value++
+	}
+}
+
 function save() {
 	const d = draft.value
 	const t = text.value.trim()
 	if (!d || !t) return
 	if (d.editing) updateNote(d.editing, t)
+	else if (d.tile) addNote({ ...tileAnchor(d.tile, d.tile), note: t })
 	else addNote({ ...anchorOf(d), note: t }, d.els)
 	close()
 }
 
 // ---- Comments: the thread open beside its pin ---------------------------------------------
 const thread = computed(() => threadById(draft.value?.editing))
-const newAnchor = computed(() => (draft.value && !draft.value.editing && draft.value.comp ? anchorOf(draft.value) : undefined))
+const newAnchor = computed(() => {
+	const d = draft.value
+	if (!d || d.editing) return undefined
+	return d.tile ? tileAnchor(d.tile, d.tile) : d.comp ? anchorOf(d) : undefined
+})
 
 function openThreadAt(t: Thread, x: number, y: number) {
 	const els = [0, ...(t.anchor.extras ?? []).map((_, i) => i + 1)]
@@ -211,11 +241,42 @@ watch(thread, (t, was) => {
 })
 watch(
 	() => draft.value?.editing,
-	(id) => (openThread.value = mode.value === 'comment' ? (id ?? null) : null),
+	(id) => {
+		openThread.value = mode.value === 'comment' ? (id ?? null) : null
+		canvasUi.noteId = mode.value === 'note' ? (id ?? '') : ''
+	},
 )
+
+// ---- The canvas: reaching a tile's thread or note from a list, from the live page or the canvas
+const until = async (ok: () => boolean, ms = 4000) => {
+	for (const t0 = Date.now(); !ok(); await sleep(50)) if (Date.now() - t0 > ms || unmounted) return false
+	return true
+}
+async function leaveCanvas() {
+	if (!canvasOpen.value) return
+	closeCanvas(router)
+	await until(() => !bridge.open)
+}
+const GONE = { set: 'This option no longer exists', state: 'This state no longer exists', default: 'This page no longer exists' }
+// Show something pinned to a tile: open the canvas if it is not, bring the tile into view, then open the box at
+// its pin. A tile that has gone says so, and the box opens beside the row instead, so the thread can still be read and resolved.
+async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
+	if (!canvasOpen.value) {
+		openCanvas(router, spot.tile.view || `page:${spot.route}`)
+		if (!(await until(() => bridge.open && !!bridge.model && !!bridge.reveal))) return
+	}
+	const point = tileExists(bridge.model, spot) === false ? null : await bridge.reveal?.(spot, { fx: at.x, fy: at.y })
+	if (point) return show(point.x, point.y)
+	toast.info(GONE[spot.tile.kind])
+	const r = row?.getBoundingClientRect()
+	show(r ? r.left : vw.value / 2, r ? r.top + r.height / 2 : vh.value / 2)
+}
 // Reaching a thread from the list: its page first, then the pin, then the thread.
-async function openFromList(t: Thread) {
+async function openFromList(t: Thread, row?: HTMLElement) {
 	sheetOpen.value = false
+	const spot = spotOfThread(t)
+	if (spot) return openOnCanvas(spot, t.anchor.offset, (x, y) => openThreadAt(t, x, y), row)
+	await leaveCanvas()
 	if (routeKey(route) !== t.anchor.route) await router.push(t.anchor.route).catch(() => {})
 	let el: Element | null = null
 	for (let i = 0; i < 30 && !unmounted; i++) {
@@ -228,6 +289,30 @@ async function openFromList(t: Thread) {
 	const r = el?.getBoundingClientRect()
 	const a = t.anchor
 	openThreadAt(t, r ? r.left + a.offset.x * r.width : a.rect.x + a.offset.x * a.rect.w, r ? r.top + a.offset.y * r.height : a.rect.y + a.offset.y * a.rect.h)
+}
+
+// The canvas draws the pins and the panel's extra tabs from components registered here, since the two bundles share
+// no imports. The pins call back into `handlers`; the tabs are the lists with this toolbar's actions wired in.
+const commentsTab = markRaw(defineComponent({ setup: () => () => h(CanvasComments, { route: key.value, onChoose: openFromList }) }))
+const notesTab = markRaw(defineComponent({ setup: () => () => h(CanvasNotes, { selected: canvasUi.noteId, onChoose: openNoteFromList }) }))
+bridge.canComment = !guest
+bridge.canNote = owner
+bridge.pick = onTilePick
+bridge.Pins = markRaw(TilePins)
+bridge.tabs = guest ? {} : { comments: commentsTab, ...(owner ? { notes: notesTab } : {}) }
+handlers.thread = openThreadAt
+handlers.note = openEdit
+onBeforeUnmount(() => {
+	Object.assign(bridge, { canComment: false, canNote: false, tool: '', pick: null, Pins: null, tabs: {}, tab: 'browse' })
+	handlers.thread = handlers.note = null
+})
+watch([openCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
+
+// A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
+async function openNoteFromList(n: Note, row?: HTMLElement) {
+	if (n.tile) return openOnCanvas({ route: n.route, tile: n.tile }, n.offset, (x, y) => openEdit(n, x, y), row)
+	await leaveCanvas()
+	await edit(n)
 }
 
 // Keep on a Variants set is a normal note, anchored on the set's first element.
@@ -493,6 +578,44 @@ watch(mode, () => {
 	listOpen.value = false
 	close()
 })
+// The panel's tab and the tool follow each other. Comment mode is the Comments tab, Note mode the Notes tab, and
+// anything else Browse; picking a tab picks the tool, and Escape or the Browse tab puts the tool down.
+watch(
+	[canvasOpen, enabled, active, mode],
+	() => {
+		if (!canvasOpen.value) return
+		const tab = enabled.value && active.value && !guest ? (mode.value === 'note' ? 'notes' : mode.value === 'comment' ? 'comments' : 'browse') : 'browse'
+		if (bridge.tab !== tab) bridge.tab = tab
+	},
+	{ immediate: true },
+)
+watch(
+	() => bridge.tab,
+	(tab) => {
+		if (!canvasOpen.value || guest) return
+		if (tab === 'browse') {
+			if (active.value && pins.value) active.value = false
+		} else if (tab === 'comments' || (tab === 'notes' && owner)) {
+			const m: Mode = tab === 'notes' ? 'note' : 'comment'
+			if (!(enabled.value && active.value && mode.value === m)) {
+				setEnabled(true)
+				use(m)
+			}
+		}
+	},
+)
+// Tweaks are for the live page: the canvas has none.
+watch(
+	canvasOpen,
+	(open) => {
+		close()
+		if (open && mode.value === 'tweak') {
+			active.value = false
+			mode.value = 'note'
+		}
+	},
+	{ immediate: true },
+)
 // Comment mode is the only time comments are read, kept fresh, or held under a pass.
 watch(
 	() => !guest && enabled.value && mode.value === 'comment',
@@ -583,7 +706,7 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 	}
 	if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
 	const k = e.key.toLowerCase()
-	const tool: Mode | null = guest ? null : k === 'c' ? 'comment' : owner && k === 'n' ? 'note' : owner && k === 't' ? 'tweak' : null
+	const tool: Mode | null = guest ? null : k === 'c' ? 'comment' : owner && k === 'n' ? 'note' : owner && k === 't' && !canvasOpen.value ? 'tweak' : null
 	if (tool && !e.repeat && !typing(e.target)) {
 		if (!enabled.value) {
 			setEnabled(true)
@@ -625,13 +748,15 @@ const anchor = ref<Anchor>(readAnchor())
 // Until the toolbar has been moved once, the trigger keeps to the bottom-right corner.
 const moved = ref(storedAnchor() !== null)
 // The faint trigger sits where the toolbar last snapped: 12px in from a corner, centred on a centre anchor.
+// The canvas's panel covers the right edge: the toolbar and its trigger sit in the room left of it.
+const reserve = computed(() => (canvasOpen.value ? bridge.reserve : 0))
 const triggerStyle = computed(() => {
 	const [v, h] = (moved.value ? anchor.value : 'bottom-right').split('-')
 	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: '12px' }
 	// Above the Variants pill when there is one: the pill sets --sketch-variants-h, and the -8px fallback cancels the +8px.
 	if (v === 'bottom' && h === 'right') s.bottom = 'calc(12px + var(--sketch-variants-h, -8px) + 8px)'
 	if (h === 'left') s.left = '12px'
-	else if (h === 'right') s.right = '12px'
+	else if (h === 'right') s.right = `${12 + reserve.value}px`
 	else s.left = 'calc(50% - 16px)'
 	return s
 })
@@ -652,7 +777,8 @@ watch(phone, () => (widest.value = bw.value))
 const slotW = computed(() => Math.max(bw.value, widest.value))
 function place(a: Anchor) {
 	const [v, h] = a.split('-')
-	const left = h === 'left' ? INSET : h === 'right' ? vw.value - slotW.value - INSET : (vw.value - slotW.value) / 2
+	const room = vw.value - reserve.value
+	const left = h === 'left' ? INSET : h === 'right' ? room - slotW.value - INSET : (room - slotW.value) / 2
 	const top = v === 'top' ? INSET : vh.value - bh.value - INSET
 	return { left: clamp(left, 0, Math.max(0, vw.value - bw.value)), top: clamp(top, 0, Math.max(0, vh.value - bh.value)) }
 }
@@ -665,6 +791,12 @@ const barBox = computed(() => ({ left: pos.value.left, top: pos.value.top, right
 const snapping = ref(false)
 const barDragging = ref(false)
 let snapTimer = 0
+// The panel opening or closing slides the toolbar to its new place.
+watch(reserve, () => {
+	clearTimeout(snapTimer)
+	snapping.value = true
+	snapTimer = window.setTimeout(() => (snapping.value = false), 200)
+})
 let grab: { x: number; y: number; left: number; top: number } | null = null
 let swallowBarClick = false
 function barDown(e: PointerEvent) {
@@ -733,11 +865,14 @@ const countLabel = computed(() => (mode.value === 'tweak' ? plural(tweakCount.va
 // Under 640px the tabs are icons: the three labels would not fit. Each keeps its name for assistive tech.
 const tab = (label: string, value: Mode, icon: string, name = label) =>
 	phone.value ? { label: name, value, icon, onClick: () => use(value) } : { label, value, iconLeft: icon, onClick: () => use(value) }
-const tabOptions = computed(() => [
-	tab('Note', 'note', 'lucide-sticky-note'),
-	tab('Tweak', 'tweak', 'lucide-paintbrush'),
-	tab('Comment', 'comment', 'lucide-message-circle', openCount.value ? `Comment, ${openCount.value} open` : 'Comment'),
-])
+// The canvas has no Tweak: tokens change on the live page.
+const tabOptions = computed(() =>
+	[
+		tab('Note', 'note', 'lucide-sticky-note'),
+		tab('Tweak', 'tweak', 'lucide-paintbrush'),
+		tab('Comment', 'comment', 'lucide-message-circle', openCount.value ? `Comment, ${openCount.value} open` : 'Comment'),
+	].filter((o) => !(canvasOpen.value && o.value === 'tweak')),
+)
 const tabHover = ref<Mode>('note')
 function onTabHover(e: PointerEvent) {
 	const v = (e.target as Element).closest('[data-value]')?.getAttribute('data-value')
@@ -758,8 +893,8 @@ function openFromTrigger() {
 // The comments panel: a floating card on the right, collapsed from its own button; on a phone a bottom sheet.
 const panelOpen = ref(true)
 const showPanel = computed(() => enabled.value && mode.value === 'comment' && !guest)
-const togglePanel = () => (phone.value ? (sheetOpen.value = !sheetOpen.value) : (panelOpen.value = !panelOpen.value))
-const panelShown = computed(() => (phone.value ? sheetOpen.value : panelOpen.value))
+const togglePanel = () => (sheetMode.value ? (sheetOpen.value = !sheetOpen.value) : (panelOpen.value = !panelOpen.value))
+const panelShown = computed(() => (sheetMode.value ? sheetOpen.value : panelOpen.value))
 // The card starts below a typical page header (its action buttons sit top right), so it never covers them and the page never moves.
 // It also keeps clear of the toolbar when the toolbar is parked on the right edge.
 const PANEL_TOP = 72
@@ -816,7 +951,15 @@ const groupBy = <T extends { route: string }>(items: T[]) => {
 	for (const n of items) m.set(n.route, [...(m.get(n.route) ?? []), n])
 	return [...m]
 }
-const groups = computed(() => groupBy(notes.value))
+// A note on a tile is listed under the tile, in words; the others under their page.
+const groups = computed(() => {
+	const m = new Map<string, Note[]>()
+	for (const n of notes.value) {
+		const k = n.tile ? whereOf({ route: n.route, tile: n.tile }) : n.route
+		m.set(k, [...(m.get(k) ?? []), n])
+	}
+	return [...m]
+})
 const tweakGroups = computed(() => groupBy(tweakItems.value))
 // The list has nothing left to show at zero, and a hovered tweak row must not leave its highlight behind.
 watch(count, (n) => !n && (listOpen.value = false))
@@ -850,6 +993,7 @@ useEventListener(
 
 // A note on another page needs its route first, then a moment for the page to render.
 async function reveal(n: Note, behavior: ScrollBehavior): Promise<Element | null> {
+	await leaveCanvas()
 	if (routeKey(route) !== n.route) await router.push(n.route).catch(() => {})
 	for (let i = 0; i < 30 && !unmounted; i++) {
 		const el = resolveNote(n)
@@ -863,6 +1007,7 @@ async function reveal(n: Note, behavior: ScrollBehavior): Promise<Element | null
 }
 
 async function jump(n: Note) {
+	if (n.tile) return openNoteFromList(n)
 	const el = await reveal(n, 'smooth')
 	if (!el) return
 	flashEl.value = el
@@ -872,6 +1017,7 @@ async function jump(n: Note) {
 
 async function edit(n: Note) {
 	listOpen.value = false
+	if (n.tile) return openNoteFromList(n)
 	await reveal(n, 'auto')
 	const p = pinPoint(n)
 	openEdit(n, p.x, p.y)
@@ -913,8 +1059,8 @@ function revealTweak(id: string) {
 	<TweakLayer v-if="owner" />
 
 	<template v-if="enabled">
-		<Pins v-if="mode === 'note'" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
-		<CommentPins v-if="mode === 'comment' && !guest && !(phone && sheetOpen)" :route="key" @open="openThreadAt" />
+		<Pins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
+		<CommentPins v-if="mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
@@ -1033,11 +1179,11 @@ function revealTweak(id: string) {
 			leave-active-class="transition-opacity duration-100"
 			leave-to-class="opacity-0"
 		>
-			<div v-if="showPanel && !phone && panelOpen" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
+			<div v-if="showPanel && !sheetMode && !canvasOpen && panelOpen" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
 				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
 			</div>
 		</Transition>
-		<BottomSheet v-if="showPanel && phone" v-model:open="sheetOpen" title="Comments">
+		<BottomSheet v-if="showPanel && sheetMode" v-model:open="sheetOpen" title="Comments">
 			<CommentsPanel embedded :route="key" @choose="openFromList" />
 		</BottomSheet>
 
@@ -1060,7 +1206,7 @@ function revealTweak(id: string) {
 						<template v-for="[r, list] in groups" :key="r">
 							<p v-if="groups.length > 1" class="px-2 pt-2 pb-1 text-sm text-ink-gray-5">{{ r }}</p>
 							<div
-								v-for="(n, i) in list"
+								v-for="n in list"
 								:key="n.id"
 								data-annotate-ui
 								role="button"
@@ -1073,7 +1219,7 @@ function revealTweak(id: string) {
 								<span
 									class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
 									:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
-								>{{ i + 1 }}</span>
+								>{{ noteNumber(n) }}</span>
 								<div class="min-w-0 flex-1">
 									<p class="flex items-baseline gap-2">
 										<span class="truncate text-base font-medium text-ink-gray-8">{{ n.component || n.element.split(/[.\s]/)[0] }}</span>
@@ -1208,7 +1354,7 @@ function revealTweak(id: string) {
 					</Button>
 				</Tooltip>
 
-				<Tooltip v-if="mode === 'comment' && !guest" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600">
+				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || bridge.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600">
 					<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
 				</Tooltip>
 

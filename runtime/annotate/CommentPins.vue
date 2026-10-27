@@ -13,7 +13,8 @@ const props = defineProps<{ route: string }>()
 const emit = defineEmits<{ open: [thread: Thread, x: number, y: number] }>()
 
 // Pins follow the panel's filter, so a search narrows the page as well.
-const visible = computed(() => matching.value.filter((t) => t.anchor.route === props.route))
+// Threads on canvas tiles have their pins on the canvas (TilePins.vue).
+const visible = computed(() => matching.value.filter((t) => t.anchor.route === props.route && !t.anchor.tile))
 type Pos = { x: number; y: number; found: boolean }
 const pos = ref<Record<string, Pos>>({})
 const last: Record<string, { x: number; y: number }> = {}

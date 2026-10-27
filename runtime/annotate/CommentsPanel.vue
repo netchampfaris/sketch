@@ -1,33 +1,13 @@
 <script setup lang="ts">
-// The comments list: search, the count and "Show resolved", then one row per thread, grouped by page. A floating card on the right on
-// desktop, drawn like the canvas Show panel; inside a bottom sheet on a phone (`embedded`).
-import { computed } from 'vue'
-import { Button, ScrollArea, Skeleton, TextInput, Tooltip } from 'frappe-ui'
-import { ago, firstLine, load, matching, openCount, openThread, pageName, query, resolvedCount, showResolved, status, threads, type Thread } from './comments'
-import AuthorAvatar from './AuthorAvatar.vue'
+// The live page's comments panel: search, then the list. A floating card on the right on desktop, drawn like the
+// canvas panel; inside a bottom sheet on a phone (`embedded`). The canvas does not mount this: its panel has a
+// Comments tab that draws the same list (CommentsList.vue).
+import { Button, TextInput, Tooltip } from 'frappe-ui'
+import { query, type Thread } from './comments'
+import CommentsList from './CommentsList.vue'
 
-const props = defineProps<{ embedded?: boolean; route: string }>()
-const emit = defineEmits<{ choose: [thread: Thread]; hide: [] }>()
-
-const searching = computed(() => !!query.value.trim())
-// Nothing to list, and why: nobody has commented, everything is resolved, or the search found nothing.
-const empty = computed(() => {
-	if (status.value !== 'ready' || matching.value.length) return null
-	if (searching.value) return 'search'
-	return threads.value.length ? 'resolved' : 'first'
-})
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-
-// This page's threads first, then each other page's; within a page the list's own order (newest unresolved first).
-// A header names the page only when threads sit on more than one.
-const groups = computed(() => {
-	const by = new Map<string, Thread[]>()
-	for (const t of matching.value) by.set(t.anchor.route, [...(by.get(t.anchor.route) ?? []), t])
-	const routes = [...by.keys()].sort((a, b) => Number(b === props.route) - Number(a === props.route))
-	return routes.map((r) => ({ route: r, name: r === props.route ? 'This page' : pageName(r), threads: by.get(r)! }))
-})
-// A phone has no hover or Escape; the words say what a finger does.
-const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches
+defineProps<{ embedded?: boolean; route: string }>()
+const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }>()
 </script>
 
 <template>
@@ -51,69 +31,12 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			</Tooltip>
 		</div>
 
-		<!-- How many, always; resolved threads stay out of the way until asked for. -->
-		<div class="mt-1 flex h-7 items-center gap-1 px-2">
-			<span class="text-xs font-medium text-ink-gray-5">{{ plural(openCount, 'open thread') }}</span>
-			<Button v-if="resolvedCount || showResolved" class="ml-auto !text-xs !font-medium" size="sm" :variant="showResolved ? 'subtle' : 'ghost'" :label="showResolved ? `Hide resolved` : `Show resolved (${resolvedCount})`" :aria-pressed="showResolved" @click="showResolved = !showResolved" />
-		</div>
-
-		<ScrollArea class="mt-1 min-h-0 shrink" :style="embedded ? { maxHeight: 'calc(100dvh - 15rem)' } : { maxHeight: 'var(--comments-list-max, 60vh)' }">
-			<!-- A fixed width: the scroll area sizes its content to the widest row, which would push long names out of the card.
-				In the sheet the toolbar floats over the bottom, so the last row scrolls clear of it. -->
-			<div :style="{ width: embedded ? 'calc(100vw - 1rem)' : '17rem' }" class="min-w-0" :class="embedded && 'pb-20'">
-				<!-- Loading: one quiet row. -->
-				<div v-if="status === 'loading' || status === 'idle'" class="flex items-start gap-2 px-2 py-1.5" role="status" aria-label="Loading comments">
-					<Skeleton class="size-5 shrink-0 rounded-full" />
-					<div class="min-w-0 flex-1 space-y-1.5 pt-0.5">
-						<Skeleton class="h-3 w-24 rounded-[4px]" />
-						<Skeleton class="h-3 w-40 rounded-[4px]" />
-					</div>
-				</div>
-
-				<p v-else-if="status === 'error'" class="flex items-center gap-1 px-2 py-2 text-p-sm text-ink-red-3" role="alert">
-					Couldn't load comments ·
-					<Button variant="ghost" size="sm" label="Retry" @click="load()" />
-				</p>
-
-				<div v-else-if="empty === 'first'" class="px-2 py-3">
-					<p class="text-p-sm font-medium text-ink-gray-8">No comments yet</p>
-					<p class="mt-0.5 text-p-sm text-ink-gray-5">{{ touch ? 'Tap' : 'Click' }} anything on the page to start a thread.</p>
-				</div>
-				<p v-else-if="empty === 'search'" class="px-2 py-2 text-p-sm text-ink-gray-5">No comments match</p>
-				<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
-
-				<template v-else-if="status === 'ready'">
-					<section v-for="g in groups" :key="g.route" class="flex flex-col gap-0.5" :aria-label="groups.length > 1 ? g.name : undefined">
-						<p v-if="groups.length > 1" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }} · <span class="tabular-nums">{{ g.threads.length }}</span></p>
-						<button
-							v-for="t in g.threads"
-							:key="t.id"
-							type="button"
-							:title="`${t.name}: ${firstLine(t.text)}`"
-							:aria-current="openThread === t.id ? 'true' : undefined"
-							class="flex w-full items-start gap-2 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-gray-2"
-							:class="[openThread === t.id && 'bg-surface-gray-3', t.resolved && 'opacity-60']"
-							@click="emit('choose', t)"
-						>
-							<span class="flex shrink-0"><AuthorAvatar :username="t.author" size="sm" /></span>
-							<span class="min-w-0 flex-1">
-								<span class="flex items-baseline gap-2">
-									<span class="min-w-0 flex-1 truncate text-p-sm font-medium text-ink-gray-8">{{ t.name }}</span>
-									<span class="w-10 shrink-0 text-right text-p-sm tabular-nums text-ink-gray-5">{{ ago(t.ts) }}</span>
-								</span>
-								<span class="flex items-center gap-2">
-									<span class="min-w-0 flex-1 truncate text-p-sm text-ink-gray-6">{{ firstLine(t.text) }}</span>
-									<span class="flex h-5 w-10 shrink-0 items-center justify-end gap-0.5 text-p-sm tabular-nums text-ink-gray-5" :aria-label="plural(t.replies.length, 'reply')">
-										<template v-if="t.replies.length">
-											<span class="lucide-message-circle size-3" aria-hidden="true" />{{ t.replies.length }}
-										</template>
-									</span>
-								</span>
-							</span>
-						</button>
-					</section>
-				</template>
-			</div>
-		</ScrollArea>
+		<CommentsList
+			:route="route"
+			:embedded="embedded"
+			:width="embedded ? 'calc(100vw - 1rem)' : '17rem'"
+			:max="embedded ? 'calc(100dvh - 15rem)' : 'var(--comments-list-max, 60vh)'"
+			@choose="(t, el) => emit('choose', t, el)"
+		/>
 	</component>
 </template>

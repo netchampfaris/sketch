@@ -3,6 +3,7 @@
 // Saved state is restored by store.ts once the Prototype's payload is known; nothing here reads
 // the Prototype's files or storage directly.
 import { ref, shallowRef, type Ref } from 'vue'
+import { whereOf, type TileRef } from 'sketch:variants'
 import { host, subject } from './host'
 import type { TweakItem } from './tweak'
 
@@ -42,8 +43,12 @@ export type Note = {
   sent?: boolean
   offset: { x: number; y: number }
   rect: { x: number; y: number; w: number; h: number }
+  // A note or comment on a canvas tile: `route` is its page, and the element fields are empty. `offset` is
+  // where on the tile, as a fraction of its width and height.
+  tile?: TileRef
   createdAt: number
 }
+export const isTileNote = (n: { tile?: unknown }) => !!n.tile
 
 // The server's copy of a list may come from an older build or a hand edit, or be written by the
 // Prototype's own code: drop what is unusable instead of breaking the page.
@@ -104,6 +109,9 @@ export function setEnabled(on: boolean) {
 
 // Live elements of notes made this page session: pins trust these before any selector.
 const live = new Map<string, WeakRef<Element>>()
+// A note's number on its pin, in the list and in the prompt: its place among the notes of its page, or among
+// the notes on tiles. Never stored: deleting a note renumbers the rest.
+export const noteNumber = (n: Note) => notes.value.filter((x) => (n.tile ? !!x.tile : !x.tile && x.route === n.route)).findIndex((x) => x.id === n.id) + 1
 export function addNote(n: Omit<Note, 'id' | 'createdAt'>, els: Element[] = []) {
   const id = newId()
   els.forEach((el, i) => live.set(`${id}:${i}`, new WeakRef(el)))
@@ -332,11 +340,11 @@ export function infoOf(el: Element): ElInfo {
   return { selector: selectorOf(el), component: componentOf(el).component, element: summaryOf(el), text: textOf(el), state: stateOf(el) }
 }
 
-// The route a note belongs to: the full path without the ?v= cache-buster (and any old ?annotate).
+// The route a note belongs to: the full path without the ?v= cache-buster, the open canvas (and any old ?annotate).
 export function routeKey(route: { path: string; query: Record<string, any> }): string {
   const q = new URLSearchParams()
   for (const [k, v] of Object.entries(route.query)) {
-    if (k === 'annotate' || k === 'v') continue
+    if (k === 'annotate' || k === 'v' || k === 'canvas') continue
     for (const x of Array.isArray(v) ? v : [v]) if (x != null) q.append(k, String(x))
   }
   const s = q.toString()
@@ -519,13 +527,14 @@ export function elementLine(element: string, text: string): string {
 
 export function buildPrompt(list: Note[]): string {
   const out = [`Feedback on ${subject()} (${list.length} ${list.length === 1 ? 'note' : 'notes'})`]
+  const live = list.filter((n) => !n.tile)
   const routes: string[] = []
-  for (const n of list) if (!routes.includes(n.route)) routes.push(n.route)
+  for (const n of live) if (!routes.includes(n.route)) routes.push(n.route)
   for (const r of routes) {
-    const group = list.filter((n) => n.route === r)
+    const group = live.filter((n) => n.route === r)
     out.push('', `## ${r} (${group[0].viewport.replace('x', '×')})`, '')
     // Same numbers as the pins and the list: position among all notes of this page, sent or not.
-    const onPage = notes.value.filter((x) => x.route === r)
+    const onPage = notes.value.filter((x) => x.route === r && !x.tile)
     group.forEach((n) => {
       const i = Math.max(0, onPage.findIndex((x) => x.id === n.id))
       const extras = n.extras ?? []
@@ -559,6 +568,25 @@ export function buildPrompt(list: Note[]): string {
       if (n.componentChain.length > 1) out.push(`   Path: ${n.componentChain.join(' > ')}`)
       out.push(`   Note: ${n.note.trim().replace(/\n/g, '\n         ')}`)
     })
+  }
+
+  // Canvas notes: each names its tile in words, so the agent knows which page, state or option it is about.
+  const tiles = list.filter((n) => n.tile)
+  if (tiles.length) {
+    out.push('', 'Canvas notes are about one tile of the canvas: a page, one option of a Variants set, or one state of a page. Change that option or state.')
+    const wheres: string[] = []
+    const whereFor = (n: Note) => whereOf({ route: n.route, tile: n.tile! })
+    for (const n of tiles) if (!wheres.includes(whereFor(n))) wheres.push(whereFor(n))
+    const all = notes.value.filter((x) => x.tile)
+    for (const w of wheres) {
+      const group = tiles.filter((n) => whereFor(n) === w)
+      out.push('', `## ${w}${group[0].viewport ? ` (${group[0].viewport.replace('x', '×')})` : ''}`, '')
+      group.forEach((n) => {
+        const i = Math.max(0, all.findIndex((x) => x.id === n.id))
+        out.push(`${i + 1}. Pinned ${Math.round(n.offset.x * 100)}% across, ${Math.round(n.offset.y * 100)}% down the tile`)
+        out.push(`   Note: ${n.note.trim().replace(/\n/g, '\n         ')}`)
+      })
+    }
   }
   return out.join('\n')
 }
