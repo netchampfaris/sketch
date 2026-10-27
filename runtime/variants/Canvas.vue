@@ -443,6 +443,7 @@ function activate(t: TileBox) {
             :sandbox="liveId === t.id ? liveSandbox : undefined"
             :app="app"
             :win="win"
+            :narrow="t.w * view.z < 280"
             @activate="activate(t)"
             @open-page="openPage(t)"
             @near="(n: boolean) => onNear(t.id, n)"
