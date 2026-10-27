@@ -11,6 +11,7 @@ import type {
   Prototype,
   PublicPrototype,
   Recipe,
+  SharedPrototype,
   SketchSession,
 } from './types'
 
@@ -26,6 +27,16 @@ export const session = useCall<SketchSession>({
 
 export const prototypes = useCall<Prototype[]>({
   url: method('list_prototypes'),
+  immediate: false,
+  initialData: [],
+})
+
+/**
+ * Prototypes other people invited this user to. Empty for most users, and the
+ * gallery draws nothing for it then.
+ */
+export const sharedPrototypes = useCall<SharedPrototype[]>({
+  url: method('shared_prototypes'),
   immediate: false,
   initialData: [],
 })

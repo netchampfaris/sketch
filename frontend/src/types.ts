@@ -45,6 +45,29 @@ export interface Prototype {
   thumbnail: PrototypeThumbnail | null
 }
 
+/** A person as the Share dialog and the shared cards draw them. */
+export interface SharePerson {
+  username: string
+  full_name: string
+  /** `User.user_image`, or "" for a user who has none. */
+  user_image: string
+}
+
+/** What the Share dialog draws. `sketch.api.share_info`, `invite_editor` and `remove_editor`. */
+export interface ShareState {
+  is_public: boolean
+  /** The address of the Viewer. It opens for the owner and the people invited, and for anyone when public. */
+  public_url: string
+  owner: SharePerson
+  /** In the order they were invited. */
+  editors: SharePerson[]
+}
+
+/** A Prototype somebody invited you to edit. `sketch.api.shared_prototypes`. */
+export interface SharedPrototype extends Prototype {
+  owner: SharePerson
+}
+
 /**
  * One card on /feed: a public Prototype, and who wrote it.
  *
@@ -105,6 +128,8 @@ export interface PrototypeVersion {
   sequence: number
   /** The user prompt, stored verbatim. */
   prompt: string
+  /** The invited editor whose agent made this version. Null for the owner's own. */
+  author?: { username: string; full_name: string } | null
   summary: string
   changes: PrototypeFileChange[]
   files_added: number

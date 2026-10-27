@@ -1,3 +1,9 @@
 /* frappe-ui/style.css already includes the @tailwind base/components/utilities
    directives (1.0.0-beta line), so they must not be repeated here. */
 @import 'frappe-ui/style.css';
+
+/* An open dialog turns pointer events off for everything outside it, toasts
+   included. A toast that carries an Undo has to stay clickable. */
+[data-sonner-toast] {
+  pointer-events: auto;
+}

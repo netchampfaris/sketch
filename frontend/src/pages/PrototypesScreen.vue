@@ -12,14 +12,21 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Button, PageHeader, Skeleton, useCall } from 'frappe-ui'
 import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
+import SharedCard from '../components/SharedCard.vue'
 import { usePoll } from '../poll'
-import { method, prototypes, session } from '../store'
-import type { Prototype } from '../types'
+import { method, prototypes, session, sharedPrototypes } from '../store'
+import type { Prototype, SharedPrototype } from '../types'
 
 const showPicker = ref(false)
 
 const items = computed(() => prototypes.data ?? [])
 const count = computed(() => items.value.length)
+
+/**
+ * Prototypes somebody invited this user to. The section draws only while there
+ * is one, so most users never see it.
+ */
+const shared = computed(() => sharedPrototypes.data ?? [])
 
 /**
  * True until the first list lands. It latches, and it is not a computed over
@@ -117,11 +124,26 @@ const probe = useCall<Prototype[]>({
  * the baseline, and never be committed.
  */
 let signature = ''
+let sharedSignature = ''
+
+/** The poll's reader for the shared list, the same way `probe` reads the owned one. */
+const probeShared = useCall<SharedPrototype[]>({
+  url: method('shared_prototypes'),
+  immediate: false,
+})
 
 watch(
   () => prototypes.data,
   (rows) => {
     signature = JSON.stringify(rows ?? [])
+  },
+  { immediate: true },
+)
+
+watch(
+  () => sharedPrototypes.data,
+  (rows) => {
+    sharedSignature = JSON.stringify(rows ?? [])
   },
   { immediate: true },
 )
@@ -152,6 +174,11 @@ usePoll(
     // The second request costs one extra list only when something actually
     // moved, and it keeps the store the single writer of `prototypes.data`.
     if (JSON.stringify(rows) !== signature) await prototypes.reload()
+    // An invitation arrives while this screen is open, the same way a prototype does.
+    const invited = await probeShared.reload()
+    if (!alive()) return
+    if (!probeShared.error && invited && JSON.stringify(invited) !== sharedSignature)
+      await sharedPrototypes.reload()
     return true
   },
   { interval: POLL_MS },
@@ -159,6 +186,7 @@ usePoll(
 
 onMounted(() => {
   if (!prototypes.isFinished) prototypes.reload()
+  sharedPrototypes.reload()
 })
 </script>
 
@@ -273,6 +301,20 @@ onMounted(() => {
       />
     </div>
   </div>
+
+  <!--
+    One heading, no border and no count: the grid under it is made of cards
+    already, and a count here would only restate what the eye sees. Nothing is
+    drawn for a user nobody has invited.
+  -->
+  <section v-if="shared.length" class="px-3 pb-10 sm:px-5" aria-labelledby="shared-heading">
+    <h2 id="shared-heading" class="mb-4 truncate text-lg-semibold text-ink-gray-8">
+      Shared with me
+    </h2>
+    <div class="grid gap-6 md:grid-cols-2">
+      <SharedCard v-for="item in shared" :key="item.name" :prototype="item" />
+    </div>
+  </section>
 
   <NewPrototypeDialog v-model:open="showPicker" @created="prototypes.reload()" />
 </template>
