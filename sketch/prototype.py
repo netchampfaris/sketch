@@ -10,6 +10,8 @@ import re
 import frappe
 from frappe.utils import get_url
 
+from sketch import sharing
+
 RUNTIMES_PATH = ("public", "runtimes")
 SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
@@ -175,10 +177,51 @@ def resolve_readable(slug: str, username: str = ""):
 		return resolve_owned(slug)
 
 	doc = resolve_public(username, slug)
-	if not doc or not (doc.is_public or doc.owner == frappe.session.user):
+	if not doc or not sharing.can_view(doc.name, frappe.session.user):
 		raise frappe.DoesNotExistError(frappe._("No prototype with slug {0}").format(slug))
 
 	return doc
+
+
+def resolve_agent(ref: str):
+	"""Look a Prototype up for an agent: one it owns, or one it is invited to.
+
+	A plain slug means the caller's own. A Prototype shared with them is
+	`<owner username>/<slug>`, which is the slug `list_prototypes` prints for it,
+	because two people can hold the same slug. A plain slug that is not theirs
+	reaches the one shared Prototype with that slug, when there is exactly one.
+
+	Raises frappe.DoesNotExistError for anything else. The caller reads the role
+	from `sharing.role_of`.
+	"""
+	ref = (ref or "").strip()
+	user = frappe.session.user
+	if "/" in ref:
+		username, _slash, slug = ref.partition("/")
+		doc = resolve_public(username, slug)
+		if doc and (doc.owner == user or sharing.is_editor(doc.name, user)):
+			return doc
+
+		raise frappe.DoesNotExistError(frappe._("No prototype with slug {0}").format(ref))
+
+	try:
+		return resolve_owned(ref)
+	except frappe.DoesNotExistError:
+		names = frappe.get_all(
+			"Sketch Prototype",
+			filters={"slug": ref, "name": ["in", sharing.shared_with(user) or [""]]},
+			pluck="name",
+		)
+		if len(names) == 1:
+			return frappe.get_doc("Sketch Prototype", names[0])
+
+		if len(names) > 1:
+			frappe.throw(
+				frappe._("{0} matches more than one shared prototype. Use <owner>/<slug>.").format(ref),
+				frappe.ValidationError,
+			)
+
+		raise
 
 
 def site_url() -> str:

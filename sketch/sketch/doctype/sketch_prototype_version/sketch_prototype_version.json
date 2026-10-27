@@ -12,6 +12,7 @@
   "kind",
   "restored_from",
   "source",
+  "author",
   "prompt",
   "summary",
   "changes",
@@ -60,6 +61,13 @@
    "fieldtype": "Select",
    "label": "Source",
    "options": "\nApp\nAgent",
+   "read_only": 1
+  },
+  {
+   "description": "The editor's Sketch username when an invited editor's agent made this version. Empty for the owner.",
+   "fieldname": "author",
+   "fieldtype": "Data",
+   "label": "Author",
    "read_only": 1
   },
   {

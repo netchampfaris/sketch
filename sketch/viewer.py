@@ -22,7 +22,17 @@ import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
-from sketch import annotations, comments, prototype, prototype_files, runtime_assets, signature, thumbnail, thumbnails
+from sketch import (
+	annotations,
+	comments,
+	prototype,
+	prototype_files,
+	runtime_assets,
+	sharing,
+	signature,
+	thumbnail,
+	thumbnails,
+)
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -116,6 +126,7 @@ class SketchViewerRenderer(BaseRenderer):
 	    path does not resolve to a Prototype  -> False, so Frappe answers 404
 	    is_public                             -> serve
 	    caller is the owner                   -> serve
+	    caller is an invited editor           -> serve
 	    valid unexpired signature             -> serve
 	    otherwise                             -> False, so Frappe answers 404
 
@@ -146,7 +157,7 @@ class SketchViewerRenderer(BaseRenderer):
 
 		self.username = parts[1]
 		self.is_owner = frappe.session.user == self.doc.owner
-		if self.doc.is_public or self.is_owner:
+		if sharing.can_view(self.doc.name, frappe.session.user):
 			return True
 
 		return signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig"))
@@ -311,6 +322,20 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return frappe.db.get_value("User", frappe.session.user, "username") or ""
 
+	def role(self) -> str:
+		"""owner, editor, viewer or guest, for the page's chrome. A `check` request is a guest."""
+		if frappe.form_dict.get("sig"):
+			return "guest"
+
+		return sharing.role_of(self.doc.name, frappe.session.user)
+
+	def variant_editor(self) -> str:
+		"""The username a variant credential speaks for, or "" for a `check` request."""
+		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
+			return ""
+
+		return sharing.username_of(frappe.session.user)
+
 	def offers_sign_in(self) -> bool:
 		"""True when a signed-out visitor to a public Prototype is shown "Sign in to comment".
 
@@ -362,8 +387,25 @@ class SketchViewerRenderer(BaseRenderer):
 		# Make default writes the source, so it has a scope of its own: neither
 		# the poll nor the toolbar signature can reorder a slot.
 		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
+		# Deleting a variant is the owner's, for any, and an invited editor's, for
+		# their own. The credential names the person, so the server reads who is
+		# asking from it and never from the page (`sketch.api.delete_variant_signed`).
+		role = self.role()
+		editing = self.variant_editor() if role in ("owner", "editor") else ""
+		delete = (
+			signature.mint(sharing_subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
+			if editing
+			else {}
+		)
+		tree = prototype_files.read_tree(self.doc.name)
+		adopted = sharing.read_adopted(tree)
 		return {
-			"files": prototype_files.read_tree(self.doc.name),
+			"files": tree,
+			"role": role,
+			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
+			"editor": editing,
+			"edit_exp": delete.get("exp", ""),
+			"edit_sig": delete.get("sig", ""),
 			"name": self.doc.name,
 			"title": self.doc.title,
 			"slug": self.doc.slug,
@@ -387,6 +429,11 @@ class SketchViewerRenderer(BaseRenderer):
 			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
 		}
+
+
+def sharing_subject(name: str, username: str) -> str:
+	"""What a variant credential covers: this Prototype, for this one person."""
+	return f"{name}|{username}"
 
 
 def meta_tag(attribute: str, key: str, content: str) -> str:

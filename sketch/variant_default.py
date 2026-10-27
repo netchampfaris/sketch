@@ -19,7 +19,7 @@ import re
 
 import frappe
 
-from sketch import prototype_files, snapshots, versions
+from sketch import editor_variants, prototype_files, snapshots, versions
 
 #: HTML elements with no closing tag, so they never open a depth.
 VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
@@ -227,6 +227,10 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 	if not isinstance(file, str) or not file.endswith(".vue"):
 		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
 
+	if editor_variants.is_extra(option):
+		# An invited editor's option: Sketch copies it into the owner's files.
+		return editor_variants.adopt(doc, file, name, option)
+
 	absolute = prototype_files.safe_join(doc.name, file)
 	versions.lock(doc.name)
 	try:
@@ -235,15 +239,34 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 	except FileNotFoundError:
 		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
 
-	changed = move_slot(source, name, option)
+	# An editor's option the owner made the default leads this set until one of
+	# the owner's own options takes the lead back. The order in the source is
+	# then what already leads, so the source may not change at all.
+	leading = editor_variants.leaders(doc.name, file, name)
+	sets = find_sets(source, name)
+	slots = [s for s in (sets[0]["slots"] if len(sets) == 1 else []) if s["key"] != "default" and s["end"] is not None]
+	if leading and not sets:
+		if option != "original":
+			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+		changed = source
+	elif leading and slots and slots[0]["key"] == option:
+		changed = source
+	else:
+		changed = move_slot(source, name, option)
 
 	# What the agent wrote and has not committed goes in its own version
 	# first, so the next version holds the reorder and nothing else.
 	if versions.pending(doc.name):
 		versions.commit(doc, "Changes before the default was changed", source="App")
 
-	prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
-	versions.note(doc.name, file, versions.MODIFIED)
+	if changed != source:
+		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
+		versions.note(doc.name, file, versions.MODIFIED)
+
+	if leading:
+		editor_variants.clear_defaults(doc.name, file, name)
+		versions.note(doc.name, "src/variants/adopted.json", versions.MODIFIED)
+
 	version = versions.commit(doc, f"Made \u201c{label_of(option)}\u201d the default for {name}", source="App")
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
 
@@ -254,6 +277,10 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	Only that one file is restored, from the version before. It is refused when
 	the file is not as that version left it, so a later write is never
 	clobbered. The caller has checked ownership.
+
+	A default that touched the variants folder (an editor's option made the
+	default, or the owner's option taking the lead back) restores every file it
+	changed, under the same refusal (`editor_variants.restore_files`).
 	"""
 	if not isinstance(file, str) or not file.endswith(".vue"):
 		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
@@ -262,6 +289,19 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 		sequence = int(sequence)
 	except (TypeError, ValueError):
 		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+
+	touched = versions._parse(
+		frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "changes")
+	)
+	if any(str(row.get("path", "")).startswith("src/variants/") for row in touched):
+		prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
+		if not (prompt or "").startswith("Made \u201c"):
+			frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
+
+		result = editor_variants.restore_files(
+			doc, sequence, f"Undid making \u201c{label_of(option)}\u201d the default for {name}"
+		)
+		return {"file": file, "name": name, "option": option, **result}
 
 	absolute = prototype_files.safe_join(doc.name, file)
 	versions.lock(doc.name)

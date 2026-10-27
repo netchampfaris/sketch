@@ -26,7 +26,7 @@ from frappe.utils import strip_html
 from jsonschema import Draft202012Validator
 
 from sketch import annotations as page_annotations
-from sketch import assets, checkd, comments, events, prototype, prototype_files, thumbnails, versions
+from sketch import assets, checkd, comments, events, prototype, prototype_files, sharing, thumbnails, versions
 
 logger = frappe.logger("sketch.mcp")
 
@@ -154,7 +154,7 @@ def failure_text(name: str, e: Exception) -> str:
 
 	message = strip_html(str(e)).strip() or type(e).__name__
 	if isinstance(e, frappe.DoesNotExistError):
-		return f"{name} failed: {message}. Call list_prototypes for the slugs you own."
+		return f"{name} failed: {message}. Call list_prototypes for the prototypes you own or are invited to."
 
 	return f"{name} failed: {message}"
 
@@ -162,13 +162,53 @@ def failure_text(name: str, e: Exception) -> str:
 # --- shared helpers ---------------------------------------------------------
 
 
-def owned(args: dict):
-	"""The Prototype named by the `prototype` argument, for this user."""
+def reachable(args: dict):
+	"""The Prototype named by the `prototype` argument, and this user's role in it.
+
+	Their own, or one they are invited to edit (`<owner>/<slug>`). The role is
+	"owner" or "editor". A tool an editor may not use calls `owned` instead.
+	"""
 	slug = str(args.get("prototype") or "").strip()
 	if not slug:
 		frappe.throw(frappe._("prototype is required. It is the slug, not the title."))
 
-	return prototype.resolve_owned(slug)
+	doc = prototype.resolve_agent(slug)
+	return doc, sharing.role_of(doc.name, frappe.session.user)
+
+
+def owned(args: dict):
+	"""The Prototype named by the `prototype` argument, when this user owns it.
+
+	An invited editor is refused with the reason, so their agent does not try
+	again by another route.
+	"""
+	doc, role = reachable(args)
+	if role != "owner":
+		frappe.throw(
+			frappe._(
+				"Only the owner can do that on this prototype. As an editor you can read it, add variants under "
+				"{0}, delete your own, check and commit."
+			).format(sharing.folder(sharing.username_of(frappe.session.user))),
+			frappe.PermissionError,
+		)
+
+	return doc
+
+
+def editor_of(role: str) -> str | None:
+	"""The username to stamp on an editor's work, or None for the owner's."""
+	return sharing.username_of(frappe.session.user) if role == "editor" else None
+
+
+def guard_editor_write(doc, role: str, entries: list[dict]) -> str | None:
+	"""Refuse an editor's write outside their own folder. Returns the username to stamp, or None for the owner."""
+	by = editor_of(role)
+	if by:
+		sharing.check_paths(doc.name, by, [e.get("path") for e in entries])
+		sharing.check_sources(entries)
+		sharing.check_quota(doc.name, by, entries)
+
+	return by
 
 
 def user_prompt(args: dict) -> str:
@@ -193,10 +233,14 @@ def upgrade_to(pin: str, pins: list[str]) -> str | None:
 
 
 def record(doc, pins: list[str] | None = None) -> dict:
-	"""The Prototype as structured fields. Never prose."""
+	"""The Prototype as structured fields. Never prose.
+
+	One shared with the caller carries the role "editor" and its owner, and its
+	`slug` is `<owner username>/<slug>`: the form every other tool takes.
+	"""
 	if pins is None:
 		pins = prototype.available_pins()
-	return {
+	out = {
 		"id": doc.name,
 		"title": doc.title,
 		"slug": doc.slug,
@@ -204,7 +248,15 @@ def record(doc, pins: list[str] | None = None) -> dict:
 		"upgrade_to": upgrade_to(doc.pin, pins),
 		"is_public": bool(doc.is_public),
 		"url": prototype.public_url(doc),
+		"role": "owner",
 	}
+	if doc.owner != frappe.session.user:
+		owner = sharing.person(doc.owner)
+		out["role"] = "editor"
+		out["slug"] = f"{owner['username']}/{doc.slug}"
+		out["owner"] = {"username": owner["username"], "name": owner["full_name"]}
+
+	return out
 
 
 def upgrade_note(doc) -> list[dict]:
@@ -241,8 +293,18 @@ RECORD_SCHEMA = {
 		},
 		"is_public": {"type": "boolean"},
 		"url": {"type": "string"},
+		"role": {
+			"type": "string",
+			"enum": ["owner", "editor"],
+			"description": "owner: yours, full access. editor: somebody invited you; you can add variants under your own folder, delete your own, read, check and commit.",
+		},
+		"owner": {
+			"type": "object",
+			"description": "Only on a prototype shared with you: who owns it.",
+			"properties": {"username": {"type": "string"}, "name": {"type": "string"}},
+		},
 	},
-	"required": ["id", "title", "slug", "pin", "upgrade_to", "is_public", "url"],
+	"required": ["id", "title", "slug", "pin", "upgrade_to", "is_public", "url", "role"],
 }
 
 PROTOTYPE_PARAM = {
@@ -267,6 +329,15 @@ def do_list_prototypes(args: dict) -> ToolResult:
 	)
 	pins = prototype.available_pins()
 	items = [record(frappe._dict(row), pins) for row in rows]
+	# Prototypes somebody invited this user to. Their owner is not the caller,
+	# so `record` marks them as editor.
+	for name in sharing.shared_with(frappe.session.user):
+		shared = frappe.db.get_value(
+			"Sketch Prototype", name, ["name", "title", "slug", "pin", "is_public", "owner"], as_dict=True
+		)
+		if shared:
+			items.append(record(frappe._dict(shared), pins))
+
 	payload = {"prototypes": items}
 	return ToolResult(text=as_json(payload), structured=payload)
 
@@ -306,13 +377,13 @@ def do_create_prototype(args: dict) -> ToolResult:
 
 
 def do_list_files(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, _role = reachable(args)
 	payload = {"files": prototype_files.list_files(doc.name)}
 	return ToolResult(text=as_json(payload), structured=payload, content=upgrade_note(doc))
 
 
 def do_read_files(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, _role = reachable(args)
 	paths = args.get("paths")
 	if not isinstance(paths, list) or not paths:
 		frappe.throw(frappe._("paths must be a list of one or more relative paths"))
@@ -322,11 +393,13 @@ def do_read_files(args: dict) -> ToolResult:
 
 
 def do_write_files(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, role = reachable(args)
 	versions.lock(doc.name)
 	files = args.get("files")
 	if not isinstance(files, list) or not files:
 		frappe.throw(frappe._("files must be a list of {path, content} objects"))
+
+	by = guard_editor_write(doc, role, files)
 
 	# Which paths are already on disk decides added against modified, so read
 	# it before the write overwrites the answer.
@@ -337,12 +410,12 @@ def do_write_files(args: dict) -> ToolResult:
 	}
 
 	written = prototype_files.write_files(doc.name, files)
-	versions.note_write(doc.name, written, existed)
+	versions.note_write(doc.name, written, existed, by)
 	return ToolResult(text="Wrote {0} file(s): {1}".format(len(written), ", ".join(written)))
 
 
 def do_edit_file(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, role = reachable(args)
 	versions.lock(doc.name)
 	path = args.get("path")
 	old_string = args.get("old_string")
@@ -350,55 +423,72 @@ def do_edit_file(args: dict) -> ToolResult:
 	if not path or old_string is None or new_string is None:
 		frappe.throw(frappe._("path, old_string and new_string are all required"))
 
+	by = guard_editor_write(doc, role, [{"path": path}])
 	prototype_files.edit_file(doc.name, path, old_string, new_string)
-	versions.note(doc.name, path, versions.MODIFIED)
+	versions.note(doc.name, path, versions.MODIFIED, by)
 	return ToolResult(text=f"Edited {path}.")
 
 
 def do_upload_asset(args: dict) -> ToolResult:
 	"""Keep images inside the existing source tree and permission boundary."""
-	doc = owned(args)
+	doc, role = reachable(args)
 	versions.lock(doc.name)
 	path = args["path"]
-	if not path.startswith("src/assets/") or not path.endswith(".js"):
+	by = editor_of(role)
+	if by:
+		# An editor's picture sits in their own folder, such as src/variants/@arohi/assets/logo.js.
+		if not path.startswith(f"{sharing.folder(by)}assets/") or not path.endswith(".js"):
+			frappe.throw(
+				f"path must be a JavaScript module under {sharing.folder(by)}assets/, such as {sharing.folder(by)}assets/logo.js"
+			)
+	elif not path.startswith("src/assets/") or not path.endswith(".js"):
 		frappe.throw("path must be a JavaScript module under src/assets/, such as src/assets/logo.js")
 	content = assets.image_module(args["data_base64"], args["mime_type"])
+	guard_editor_write(doc, role, [{"path": path, "content": content}])
 	existed = {path} if os.path.isfile(prototype_files.safe_join(doc.name, path)) else set()
 	prototype_files.write_files(doc.name, [{"path": path, "content": content}])
-	versions.note_write(doc.name, [path], existed)
+	versions.note_write(doc.name, [path], existed, by)
 	return ToolResult(
 		text=f"Uploaded {path}. Import its default export and bind it to an image's src. The image works in checks without external requests."
 	)
 
 
 def do_edit_files(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, role = reachable(args)
 	versions.lock(doc.name)
+	by = guard_editor_write(doc, role, [{"path": e.get("path")} for e in args["edits"] if isinstance(e, dict)])
 	paths = prototype_files.edit_files(doc.name, args["edits"])
-	versions.note_write(doc.name, paths, set(paths))
+	versions.note_write(doc.name, paths, set(paths), by)
 	return ToolResult(text=f"Edited {len(paths)} file(s): {', '.join(paths)}")
 
 
 def do_delete_file(args: dict) -> ToolResult:
-	doc = owned(args)
+	doc, role = reachable(args)
 	versions.lock(doc.name)
 	path = args.get("path")
 	if not path:
 		frappe.throw(frappe._("path is required"))
 
+	by = editor_of(role)
+	if by:
+		sharing.check_paths(doc.name, by, [path])
+
 	prototype_files.delete_file(doc.name, path)
-	versions.note(doc.name, path, versions.DELETED)
+	versions.note(doc.name, path, versions.DELETED, by)
 	return ToolResult(text=f"Deleted {path}.")
 
 
 def do_commit(args: dict) -> ToolResult:
-	"""File every change since the last version under the user's prompt."""
-	doc = owned(args)
+	"""File every change since the last version under the user's prompt.
+
+	An editor's commit files their own changes and carries their name.
+	"""
+	doc, role = reachable(args)
 	prompt = user_prompt(args)
 	summary = args.get("summary")
 	summary = summary.strip() if isinstance(summary, str) else None
 
-	version = versions.commit(doc, prompt, summary or None)
+	version = versions.commit(doc, prompt, summary or None, by=editor_of(role))
 	if version is None:
 		return ToolResult(
 			text="No file changed since the last version. Nothing recorded.",
@@ -422,8 +512,13 @@ def do_commit(args: dict) -> ToolResult:
 
 def do_list_versions(args: dict) -> ToolResult:
 	"""The version history, newest first. The text shows the newest 30."""
-	doc = owned(args)
-	rows = [version_row(row) for row in versions.history(doc.name)]
+	doc, role = reachable(args)
+	history = versions.history(doc.name)
+	if role == "editor":
+		# An editor reads their own versions. The owner's prompts are the owner's.
+		history = [row for row in history if row.get("author") == editor_of(role)]
+
+	rows = [version_row(row) for row in history]
 	shown = rows[:VERSION_TEXT_ROWS]
 	lines = [version_line(row) for row in shown]
 	if len(rows) > len(shown):
@@ -443,6 +538,7 @@ def version_row(row: dict) -> dict:
 		"files_modified": row.get("files_modified") or 0,
 		"files_deleted": row.get("files_deleted") or 0,
 		"restorable": bool(row.get("restorable")),
+		"author": row.get("author") or "",
 		"created": str(row.get("creation") or ""),
 	}
 
@@ -453,7 +549,7 @@ def version_line(row: dict) -> str:
 	if len(prompt) > 100:
 		prompt = prompt[:97] + "..."
 
-	line = "v{0} [{1}] {2} (+{3} ~{4} -{5}) {6}".format(
+	line = "v{0} [{1}] {2}{7} (+{3} ~{4} -{5}) {6}".format(
 		row["sequence"],
 		row["kind"],
 		prompt,
@@ -461,6 +557,7 @@ def version_line(row: dict) -> str:
 		row["files_modified"],
 		row["files_deleted"],
 		row["created"],
+		f" (by @{row['author']})" if row.get("author") else "",
 	)
 	return line if row["restorable"] else line + " (cannot be restored)"
 
@@ -551,7 +648,7 @@ def do_check(args: dict) -> ToolResult:
 	against the run it guards: `run` gives the claim back on every way out, so
 	nothing between here and there can leave a slot held (`sketch/checkd.py`).
 	"""
-	doc = owned(args)
+	doc, role = reachable(args)
 	screenshot = args.get("screenshot", False)
 	checkd.claim_slot()
 	options = {key: args[key] for key in ("routes", "viewport", "full_page") if key in args}
@@ -572,7 +669,7 @@ def do_check(args: dict) -> ToolResult:
 				{"type": "image", "data": shot["png_base64"], "mimeType": "image/png"},
 			]
 		)
-	uncommitted = versions.pending_count(doc.name)
+	uncommitted = versions.pending_count(doc.name, editor_of(role))
 	report["uncommitted"] = uncommitted
 	status = str(report.get("status") or "unknown")
 	# The quality signal for the whole product: how often an agent writes Vue
@@ -687,6 +784,10 @@ VERSION_SCHEMA = {
 		"files_modified": {"type": "integer"},
 		"files_deleted": {"type": "integer"},
 		"restorable": {"type": "boolean", "description": "False for a version recorded before restore existed."},
+		"author": {
+			"type": "string",
+			"description": "The invited editor's username when their agent made this version. Empty for the owner's.",
+		},
 		"created": {"type": "string"},
 	},
 	"required": ["sequence", "kind", "prompt", "restorable"],
@@ -725,7 +826,7 @@ def build_tools() -> dict[str, Tool]:
 		for tool in [
 			Tool(
 				name="list_prototypes",
-				description="List your Prototypes. Returns id, title, slug, pin, upgrade_to, is_public and url for each one. The slug is what every other tool takes as `prototype`.",
+				description="List your Prototypes, and the ones other people invited you to edit. Returns id, title, slug, pin, upgrade_to, is_public, url and role for each one. The slug is what every other tool takes as `prototype`. Role \"editor\" means somebody else owns it: you can only add variants under src/variants/@<your username>/. Call get_skill and read \"Adding a variant to someone else's prototype\".",
 				parameters={"type": "object", "properties": {}},
 				handler=do_list_prototypes,
 				output_schema={
@@ -909,8 +1010,8 @@ def build_tools() -> dict[str, Tool]:
 						"prototype": PROTOTYPE_PARAM,
 						"path": {
 							"type": "string",
-							"pattern": r"^src/assets/.+\.js$",
-							"description": "Module path, such as src/assets/logo.js.",
+							"pattern": r"^src/(assets|variants/@[a-z0-9-]+/assets)/.+\.js$",
+							"description": "Module path, such as src/assets/logo.js. An editor of someone else's prototype uses src/variants/@<username>/assets/logo.js.",
 						},
 						"mime_type": {"type": "string", "enum": list(assets.MIME_FORMATS)},
 						"data_base64": {

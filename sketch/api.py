@@ -21,8 +21,10 @@ from sketch import (
 	annotations,
 	checkd,
 	comments,
+	editor_variants,
 	prototype,
 	prototype_files,
+	sharing,
 	signature,
 	snapshots,
 	thumbnail,
@@ -227,8 +229,11 @@ def _username() -> str:
 	return frappe.db.get_value("User", frappe.session.user, "username") or ""
 
 
-def _row(doc_or_dict) -> dict:
+def _row(doc_or_dict, username: str | None = None) -> dict:
 	"""One gallery item.
+
+	`username` is the owner's handle when the row is a Prototype shared with the
+	caller; it defaults to the caller's own.
 
 	`file_count`, the description and the timestamp all come off disk, because
 	no field stores them and a stored copy drifts (spec 2).
@@ -246,7 +251,7 @@ def _row(doc_or_dict) -> dict:
 	owner = doc_or_dict.get("owner")
 	files = prototype_files.list_files(name)
 	count = len(files)
-	username = _username()
+	username = username or _username()
 	# Falls back to `creation`, never to `modified`. `modified` is the field
 	# that moves on a visibility toggle, which is the jump this stamp exists to
 	# stop, and an empty tree has no mtime of its own to report.
@@ -491,12 +496,22 @@ def list_versions(slug: str) -> list[dict]:
 				"restored_from": row.get("restored_from") or None,
 				"source": row.get("source") or None,
 				"restorable": bool(row.get("restorable")),
+				"author": _author(row.get("author")),
 				"creation": str(row.get("creation") or ""),
 				"created": pretty_date(row.get("creation")) if row.get("creation") else "",
 			}
 		)
 
 	return rows
+
+
+def _author(username: str | None) -> dict | None:
+	"""The invited editor behind a version, or None for the owner's own."""
+	if not username:
+		return None
+
+	who = sharing.people({username}).get(username)
+	return {"username": username, "full_name": who["name"] if who else username}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -918,7 +933,12 @@ def fork_prototype(username: str, slug: str) -> dict:
 	"""
 	username = (username or "").strip()
 	source = prototype.resolve_readable(slug, username)
-	tree = prototype_files.read_tree(source.name)
+	# What other people added to the source stays with its owner: a fork is a copy of their work.
+	tree = {
+		path: content
+		for path, content in prototype_files.read_tree(source.name).items()
+		if not sharing.is_editor_path(path)
+	}
 
 	doc = prototype.create(source.title)
 	if source.pin and source.pin != doc.pin:
@@ -979,6 +999,109 @@ def set_public(slug: str, is_public: bool) -> dict:
 	doc.is_public = 1 if is_public else 0
 	doc.save()
 	return _row(doc.as_dict())
+
+
+# --------------------------------------------------------------------- sharing
+
+
+def _share_state(doc) -> dict:
+	"""Everything the Share dialog draws, for the owner."""
+	return {
+		"is_public": bool(doc.is_public),
+		"public_url": prototype.public_url(doc),
+		"owner": sharing.person(doc.owner),
+		"editors": sharing.editors(doc.name),
+	}
+
+
+@frappe.whitelist()
+def share_info(slug: str) -> dict:
+	"""Who a Prototype is shared with. Owner only: `resolve_owned` is the permission check."""
+	return _share_state(prototype.resolve_owned(slug))
+
+
+@frappe.whitelist(methods=["POST"])
+def invite_editor(slug: str, username: str) -> dict:
+	"""Invite a person by their exact Sketch username. Owner only.
+
+	No search and no listing of users: the answer to a name is the person it
+	names or a refusal that says so. Returns the Share dialog's state.
+	"""
+	doc = prototype.resolve_owned(slug)
+	sharing.invite(doc, username)
+	return _share_state(doc)
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_editor(slug: str, username: str) -> dict:
+	"""Take an editor off a Prototype. Owner only. Their variants stay. Returns the Share dialog's state."""
+	doc = prototype.resolve_owned(slug)
+	sharing.remove(doc, username)
+	return _share_state(doc)
+
+
+@frappe.whitelist()
+def shared_prototypes() -> list[dict]:
+	"""Every Prototype somebody invited this user to, newest invitation first.
+
+	The rows are the gallery's own (`_row`), with the owner added, and the
+	address is the owner's. `modified` orders nothing here: an invitation is
+	the order a person thinks in.
+	"""
+	rows = []
+	for name in sharing.shared_with(frappe.session.user):
+		doc = frappe.db.get_value(
+			"Sketch Prototype",
+			name,
+			["name", "title", "slug", "pin", "is_public", "creation", "owner"],
+			as_dict=True,
+		)
+		if not doc:
+			continue
+
+		owner = sharing.person(doc.owner)
+		row = _row(doc, owner["username"])
+		row["owner"] = {k: owner[k] for k in ("username", "full_name", "user_image")}
+		rows.append(row)
+
+	return rows
+
+
+def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:
+	"""Who a variant credential speaks for, and whether they own the Prototype. Any refusal is a 404."""
+	from sketch.viewer import sharing_subject
+
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not username or not signature.verify(sharing_subject(name, username), exp, sig, signature.VARIANT_EDIT):
+		raise frappe.DoesNotExistError
+
+	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	owner = frappe.db.get_value("Sketch Prototype", name, "owner")
+	if not user or not owner or not (user == owner or sharing.is_editor(name, user)):
+		raise frappe.DoesNotExistError
+
+	return frappe.get_doc("Sketch Prototype", name), user == owner
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def delete_variant_signed(name: str, username: str = "", exp: str = "", sig: str = "", option: str = "") -> dict:
+	"""Delete a variant an invited editor added, from the Viewer. Saves a version, so Undo can bring it back.
+
+	The owner may delete any variant; an editor, their own. The credential in
+	the page names the person (`signature.VARIANT_EDIT`), and the server reads
+	their standing again on every call: an editor who was removed deletes nothing.
+	"""
+	doc, is_owner = _variant_person(name, username, exp, sig)
+	return editor_variants.delete(doc, username, is_owner, option)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def undo_delete_variant_signed(
+	name: str, username: str = "", exp: str = "", sig: str = "", option: str = "", sequence: str = ""
+) -> dict:
+	"""Bring back the variant version `sequence` deleted, unless the tree changed since."""
+	doc, is_owner = _variant_person(name, username, exp, sig)
+	return editor_variants.undo_delete(doc, username, is_owner, sequence, option)
 
 
 @frappe.whitelist(methods=["POST"])
