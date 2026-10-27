@@ -562,6 +562,19 @@ class TestVersions(ShareCase):
 		self.assertEqual([v["prompt"] for v in mine], ["Add a compact KPI strip"])
 		self.assertEqual(mine[0]["author"], "d2tshed")
 
+	def test_changes_noted_one_call_at_a_time_all_reach_the_version(self):
+		"""Each write, edit and delete notes one file. A later note must not drop an earlier one, or from another person."""
+		self.invite()
+		self.ok(self.agent(self.owner, "write_files", files=[{"path": "src/pages/New.vue", "content": "<template>n</template>"}]))
+		for name in ("a", "b", "c"):
+			self.ok(self.agent(self.ed, "write_files", files=[{"path": self.folder + name + ".vue", "content": COMPACT}]))
+		self.ok(self.agent(self.ed, "commit", prompt="Three"))
+		for name in ("a", "b", "c"):
+			self.ok(self.agent(self.ed, "delete_file", path=self.folder + name + ".vue"))
+		made = self.ok(self.agent(self.ed, "commit", prompt="Remove them"))["structuredContent"]
+		self.assertEqual(sorted(c["path"] for c in made["changes"]), [self.folder + n + ".vue" for n in "abc"])
+		self.assertEqual(versions.pending(self.doc.name), [{"path": "src/pages/New.vue", "action": "added"}])
+
 	def test_an_editors_uncommitted_count_is_their_own(self):
 		self.invite()
 		self.ok(self.agent(self.owner, "write_files", files=[{"path": "src/pages/New.vue", "content": "<template>n</template>"}]))
