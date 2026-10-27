@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 
-from sketch import annotations, signature
+from sketch import annotations, sharing, signature
 
 PROTOTYPE = "Sketch Prototype"
 COMMENT = "Sketch Comment"
@@ -143,17 +143,19 @@ def actor_for(name: str, username: str, exp, sig) -> Actor:
 
 def _actor(name: str, username: str) -> Actor:
 	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
-	row = frappe.db.get_value(PROTOTYPE, name, ["owner", "is_public"], as_dict=True)
-	if not user or not row or not (row.is_public or row.owner == user):
+	owner = frappe.db.get_value(PROTOTYPE, name, "owner")
+	if not user or not owner or not sharing.can_view(name, user):
 		raise frappe.DoesNotExistError
 
-	return Actor(username, user, row.owner == user)
+	return Actor(username, user, owner == user)
 
 
 def can_see(name: str, user: str) -> bool:
-	"""Whether this user may read and write comments on the Prototype."""
-	row = frappe.db.get_value(PROTOTYPE, name, ["owner", "is_public"], as_dict=True)
-	return bool(row and user != "Guest" and (row.is_public or row.owner == user))
+	"""Whether this user may read and write comments on the Prototype.
+
+	On a public Prototype, anyone signed in. On a private one, the owner and the people invited.
+	"""
+	return user != "Guest" and sharing.can_view(name, user)
 
 
 # ---------------------------------------------------------------------- reads

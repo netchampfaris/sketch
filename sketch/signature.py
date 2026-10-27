@@ -59,12 +59,18 @@ DEFAULT_TTL = 60
 #:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
 #:   minted into the owner's live page only, and what it can do is reorder
 #:   slots in a `.vue` file the owner already owns, which Undo reverses.
+#: - VARIANT_EDIT deletes a variant (`sketch.api.delete_variant_signed`). It is
+#:   minted over the hash id and one username together, like COMMENT, into the
+#:   page of the owner and of each invited editor. The server reads the person
+#:   from it: an editor can delete files in their own folder, the owner any
+#:   variant, and what is deleted comes back with Undo.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
 COMMENT = "comment"
 COMMENT_MINT = "comment-mint"
 VARIANT_DEFAULT = "variant_default"
+VARIANT_EDIT = "variant_edit"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

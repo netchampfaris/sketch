@@ -13,6 +13,7 @@ class SketchPrototypeVersion(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		author: DF.Data | None
 		changes: DF.LongText | None
 		files_added: DF.Int
 		files_deleted: DF.Int

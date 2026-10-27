@@ -50,8 +50,11 @@ def webserver_port() -> int:
 
 	site_config wins over common_site_config, so each site can have its own
 	port. That keeps a test run on one site off another site's server.
+
+	`SKETCH_TEST_PORT` points a run at a server of its own, for a worktree whose
+	code the site's usual server does not run.
 	"""
-	return int(frappe.get_conf().get("webserver_port") or 8000)
+	return int(os.environ.get("SKETCH_TEST_PORT") or frappe.get_conf().get("webserver_port") or 8000)
 
 
 def base_url() -> str:

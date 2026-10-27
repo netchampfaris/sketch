@@ -714,3 +714,49 @@ away. A wrong type is silent. A syntax error is fatal.
 
 **There is no `frappe-ui/experimental`.** `Accordion`, `Calendar`,
 `FloatingWindow`, `MultiEmailInput` and `CodeEditor` are not available.
+
+## 9. Adding a variant to someone else's prototype
+
+`list_prototypes` marks a prototype `role: "editor"` when its owner invited you.
+Its `slug` is `<owner>/<slug>`: pass that as `prototype` everywhere. You can add
+your take on a part of it. You cannot change the owner's page.
+
+What you can do there:
+
+- Read every file (`list_files`, `read_files`) and run `check`.
+- Write, edit and delete files **only under `src/variants/@<your username>/`**.
+  Sketch refuses any other path. Files are `.vue`, `.ts` or `.js`; no CSS files.
+- `commit` with the user's message. Your commits carry your name. Use
+  `list_versions` to see your own.
+- Nothing else: no notes, tweaks, default, name, runtime or restore. Those are the
+  owner's.
+
+One variant is one `.vue` component with a `<variant>` tag. The tag says where the
+option goes. Sketch adds it next to the owner's options and labels it "Made by
+you". It is never the default, and a mistake in it shows in its own option only.
+
+```vue
+<!-- src/variants/@arohi/kpi-strip-compact.vue -->
+<variant set="KPI strip" name="Compact" />
+
+<script setup>
+import { Badge } from 'frappe-ui'
+</script>
+
+<template>
+  <div class="flex gap-4 text-p-sm">…</div>
+</template>
+```
+
+- `set="KPI strip"` adds an option to the owner's existing `<Variants name="KPI strip">`.
+  The component is standalone: copy the sample data it needs into your file. Read the
+  owner's file first and match its look.
+- `component="src/components/KpiStrip.vue"` starts a set around that component, for a
+  part that has no variants yet. The owner's original becomes option 1 and stays the
+  default; your component replaces it where it is used and receives the same props
+  and slots, so keep its interface.
+- `name` is the option's label ("Compact"), up to 60 characters.
+- No `<style>` block: use Tailwind classes. Import from `frappe-ui` and from your own
+  folder. You may import the owner's components to reuse them, never change them.
+- A file without a `<variant>` tag is a helper your variants can import.
+- Keep to 30 small files. Delete a variant with `delete_file`.

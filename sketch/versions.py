@@ -51,21 +51,22 @@ def lock(name: str) -> None:
 	frappe.db.get_value(PROTOTYPE, name, "name", for_update=True)
 
 
-def note(name: str, path: str, action: str) -> None:
+def note(name: str, path: str, action: str, by: str | None = None) -> None:
 	"""Fold one change into the pending list of this Prototype.
 
 	`action` is one of ADDED, MODIFIED or DELETED. Nothing is recorded until
-	`commit` runs.
+	`commit` runs. `by` is the username of an invited editor whose agent made
+	the change, and None for the owner's.
 	"""
 	if not path:
 		return
 
 	changes = pending(name)
-	_fold(changes, path, action)
+	_fold(changes, path, action, by)
 	_set_pending(name, changes)
 
 
-def note_write(name: str, paths: list[str], existed: set[str]) -> None:
+def note_write(name: str, paths: list[str], existed: set[str], by: str | None = None) -> None:
 	"""Fold a batch of written paths into the pending list.
 
 	A path in `existed` was already on disk before the write, so it is a
@@ -75,25 +76,35 @@ def note_write(name: str, paths: list[str], existed: set[str]) -> None:
 	changes = pending(name)
 	for path in paths or []:
 		if path:
-			_fold(changes, path, MODIFIED if path in existed else ADDED)
+			_fold(changes, path, MODIFIED if path in existed else ADDED, by)
 
 	_set_pending(name, changes)
 
 
-def pending(name: str) -> list[dict]:
+def pending(name: str, by: str | None = None, everyone: bool = False) -> list[dict]:
 	"""The changes noted since the last version, oldest first.
 
-	Each row is {"path", "action"}. One path holds one row.
+	Each row is {"path", "action"}. One path holds one row. Only the changes of
+	one person: the owner's by default, or the invited editor `by`. A person's
+	commit files their own changes and leaves everybody else's pending, so a
+	version never claims work its author did not make. `everyone` returns all
+	of them, each row with its `by`.
 	"""
-	return _parse(frappe.db.get_value(PROTOTYPE, name, "pending_changes"))
+	rows = _parse(frappe.db.get_value(PROTOTYPE, name, "pending_changes"))
+	if everyone:
+		return rows
+
+	return [{"path": r.get("path"), "action": r.get("action")} for r in rows if r.get("by") == by]
 
 
-def pending_count(name: str) -> int:
+def pending_count(name: str, by: str | None = None) -> int:
 	"""How many files changed since the last version."""
-	return len(pending(name))
+	return len(pending(name, by))
 
 
-def commit(doc, prompt: str, summary: str | None = None, source: str | None = None):
+def commit(
+	doc, prompt: str, summary: str | None = None, source: str | None = None, by: str | None = None
+):
 	"""Record the pending changes as one version. Returns the version doc.
 
 	Returns None and changes nothing when nothing is pending, so a second
@@ -111,6 +122,10 @@ def commit(doc, prompt: str, summary: str | None = None, source: str | None = No
 	The caller resolves the Prototype through prototype.resolve_owned first,
 	which is permission-checked, so the row is written with ignore_permissions
 	and the Prototype's owner.
+
+	`by` is the username of an invited editor. Their commit files their own
+	pending changes, and the version carries their name (`author`). The owner's
+	commit (`by` None) files the owner's changes and leaves an editor's alone.
 	"""
 	if not (prompt or "").strip():
 		frappe.throw(frappe._("A version needs the user prompt"), frappe.ValidationError)
@@ -119,14 +134,14 @@ def commit(doc, prompt: str, summary: str | None = None, source: str | None = No
 	# pending list or the same maximum sequence and write two rows for one request.
 	lock(doc.name)
 
-	changes = pending(doc.name)
+	changes = pending(doc.name, by)
 	if not changes:
 		return None
 
 	version = record(
-		doc, REQUEST, prompt, changes, snapshots.capture(doc.name), summary=summary, source=source
+		doc, REQUEST, prompt, changes, snapshots.capture(doc.name), summary=summary, source=source, author=by
 	)
-	_set_pending(doc.name, [])
+	_set_pending(doc.name, [r for r in pending(doc.name, everyone=True) if r.get("by") != by])
 	return version
 
 
@@ -139,6 +154,7 @@ def record(
 	restored_from: int | None = None,
 	summary: str | None = None,
 	source: str | None = None,
+	author: str | None = None,
 ):
 	"""Insert one version row. Returns the version doc.
 
@@ -152,6 +168,7 @@ def record(
 	version.kind = kind
 	version.restored_from = restored_from
 	version.source = source
+	version.author = author
 	version.prompt = prompt
 	version.summary = summary
 	version.changes = json.dumps(changes)
@@ -185,6 +202,14 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 	restore can be undone by restoring the version before it. Changes still
 	pending are committed first, so work the agent had not filed is not lost.
 
+	Invited editors' folders (`src/variants/@name/`) are not part of a restore.
+	An editor's variant added after the version stays, and one the version held
+	is not put back over what the editor has since changed: the restore touches
+	the owner's files only. The new version's tree is the target with the
+	editors' files as they are now, so restoring the version before it brings
+	the owner's files back the same way. The result names how many editor files
+	were kept (`kept_editor_files`).
+
 	Raises frappe.ValidationError for a version that does not exist or that was
 	recorded before manifests did. With `dry_run` it only reports the files
 	that would change. A restore that would change nothing records nothing.
@@ -192,8 +217,15 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 	"""
 	target = _manifest_of(doc.name, sequence)
 	if dry_run:
-		changes = diff(snapshots.manifest(doc.name), target)
-		return {"sequence": sequence, "changes": changes, **_counts(changes)}
+		current = snapshots.manifest(doc.name)
+		target = keep_editors(current, target)
+		changes = diff(current, target)
+		return {
+			"sequence": sequence,
+			"changes": changes,
+			**_counts(changes),
+			"kept_editor_files": count_editor_files(current),
+		}
 
 	lock(doc.name)
 	if pending(doc.name):
@@ -201,8 +233,14 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 
 	# Stored now, so the tree being replaced can always be put back.
 	current = snapshots.capture(doc.name)
+	target = keep_editors(current, target)
 	changes = diff(current, target)
-	result = {"sequence": sequence, "changes": changes, **_counts(changes)}
+	result = {
+		"sequence": sequence,
+		"changes": changes,
+		**_counts(changes),
+		"kept_editor_files": count_editor_files(current),
+	}
 	if not changes:
 		return {**result, "recorded": False}
 
@@ -298,6 +336,7 @@ def history(name: str) -> list[dict]:
 			table.kind,
 			table.restored_from,
 			table.source,
+			table.author,
 			table.prompt,
 			table.summary,
 			table.changes,
@@ -332,7 +371,27 @@ def _set_pending(name: str, changes: list[dict]) -> None:
 	)
 
 
-def _fold(changes: list[dict], path: str, action: str) -> None:
+def keep_editors(current: dict, target: dict) -> dict:
+	"""`target` with every editor file as it is in `current`.
+
+	A restore is about the owner's files. An editor's variants are theirs: the
+	tree after a restore holds the ones that are there now, whether or not the
+	restored version knew them.
+	"""
+	from sketch import sharing
+
+	kept = {path: sha for path, sha in target.items() if not sharing.is_editor_path(path)}
+	kept.update({path: sha for path, sha in current.items() if sharing.is_editor_path(path)})
+	return kept
+
+
+def count_editor_files(tree: dict) -> int:
+	from sketch import sharing
+
+	return sum(1 for path in tree if sharing.is_editor_path(path))
+
+
+def _fold(changes: list[dict], path: str, action: str, by: str | None = None) -> None:
 	"""Merge one change into the list in place. One path, one entry.
 
 	The collapse rules:
@@ -364,7 +423,7 @@ def _fold(changes: list[dict], path: str, action: str) -> None:
 		row["action"] = action
 		return
 
-	changes.append({"path": path, "action": action})
+	changes.append({"path": path, "action": action, **({"by": by} if by else {})})
 
 
 def _next_sequence(name: str) -> int:
