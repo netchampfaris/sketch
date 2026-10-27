@@ -2,9 +2,9 @@
 // Numbered markers on the page. Each follows its element: re-resolved by selector on every
 // scroll, resize, route change and (throttled) DOM change. A pin whose element has gone
 // stays where it last was, faded. Sent notes turn gray.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useEventListener } from '@vueuse/core'
-import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, isOurs, notes, resolveNote, tagOf, type Note } from './annotate'
+import { computed, ref } from 'vue'
+import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, notes, resolveNote, tagOf, type Note } from './annotate'
+import { clearHover, usePinTracking } from './pinTracking'
 
 const props = defineProps<{ route: string; selected?: string }>()
 const emit = defineEmits<{ open: [note: Note, x: number, y: number] }>()
@@ -35,43 +35,7 @@ function measure() {
 	pos.value = next
 }
 
-let raf = 0
-function schedule() {
-	if (raf) return
-	raf = requestAnimationFrame(() => {
-		raf = 0
-		measure()
-	})
-}
-
-// Scroll doesn't bubble, so listen in the capture phase to catch the shell's own scroller.
-useEventListener(window, 'scroll', schedule, { capture: true, passive: true })
-useEventListener(window, 'resize', schedule)
-
-let mo: MutationObserver | null = null
-let wait = 0
-onMounted(() => {
-	measure()
-	mo = new MutationObserver((list) => {
-		// Our own pins and outline changing must not trigger another measure.
-		if (list.every((m) => isOurs(m.target))) return
-		if (wait) return
-		wait = window.setTimeout(() => {
-			wait = 0
-			schedule()
-		}, 120)
-	})
-	mo.observe(document.body, { childList: true, subtree: true })
-})
-onBeforeUnmount(() => {
-	mo?.disconnect()
-	cancelAnimationFrame(raf)
-	clearTimeout(wait)
-	hoverEl.value = null
-	hoverFrac.value = null
-})
-
-watch([visible, () => props.route], () => schedule(), { flush: 'post' })
+usePinTracking(measure, [visible, () => props.route])
 
 function enter(n: Note) {
 	const el = resolveNote(n)
@@ -79,10 +43,6 @@ function enter(n: Note) {
 	hoverLabel.value = el ? tagOf(el) : ''
 	// A dragged-box note redraws its box instead of outlining the container.
 	hoverFrac.value = el && n.box ? n.box : null
-}
-function leave() {
-	hoverEl.value = null
-	hoverFrac.value = null
 }
 function click(n: Note, e: MouseEvent) {
 	const p = pos.value[n.id]
@@ -106,7 +66,7 @@ function click(n: Note, e: MouseEvent) {
 			:class="pos[n.id]?.found === false && 'opacity-50'"
 			:style="{ left: `${pos[n.id].x}px`, top: `${pos[n.id].y}px` }"
 			@mouseenter="enter(n)"
-			@mouseleave="leave"
+			@mouseleave="clearHover"
 			@click.stop="click(n, $event)"
 		>
 			<!-- A map pin: a square rounded on three corners, turned so the sharp one points at the spot. -->

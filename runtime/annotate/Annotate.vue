@@ -640,9 +640,19 @@ const { width: bw, height: bh } = useElementSize(bar, { width: 0, height: 0 }, {
 const ready = computed(() => bw.value > 0 && bh.value > 0)
 
 // Resizing the window re-places the toolbar: every position is derived from the anchor.
+// The tabs stay under the pointer when the mode changes, so the bar is placed as if it were as wide as it has been:
+// what follows the tabs comes and goes on the right.
+// The owner's widest toolbar is measured up front (the unseen twin below), so even the first switch holds still.
+const widest = ref(0)
+const ghost = ref<HTMLElement | null>(null)
+const { width: gw } = useElementSize(ghost, { width: 0, height: 0 }, { box: 'border-box' })
+watch([bw, gw], ([w, g]) => (widest.value = Math.max(widest.value, w, g)))
+const phone = computed(() => vw.value < 640)
+watch(phone, () => (widest.value = bw.value))
+const slotW = computed(() => Math.max(bw.value, widest.value))
 function place(a: Anchor) {
 	const [v, h] = a.split('-')
-	const left = h === 'left' ? INSET : h === 'right' ? vw.value - bw.value - INSET : (vw.value - bw.value) / 2
+	const left = h === 'left' ? INSET : h === 'right' ? vw.value - slotW.value - INSET : (vw.value - slotW.value) / 2
 	const top = v === 'top' ? INSET : vh.value - bh.value - INSET
 	return { left: clamp(left, 0, Math.max(0, vw.value - bw.value)), top: clamp(top, 0, Math.max(0, vh.value - bh.value)) }
 }
@@ -720,11 +730,13 @@ const countLabel = computed(() => (mode.value === 'tweak' ? plural(tweakCount.va
 
 // Tabs: one tooltip for the three, worded for the tab under the pointer. The Comment tab carries
 // the number of threads still open.
-const commentLabel = computed(() => (openCount.value ? `Comment ${openCount.value}` : 'Comment'))
+// Under 640px the tabs are icons: the three labels would not fit. Each keeps its name for assistive tech.
+const tab = (label: string, value: Mode, icon: string, name = label) =>
+	phone.value ? { label: name, value, icon, onClick: () => use(value) } : { label, value, iconLeft: icon, onClick: () => use(value) }
 const tabOptions = computed(() => [
-	{ label: 'Note', value: 'note', iconLeft: 'lucide-sticky-note', onClick: () => use('note') },
-	{ label: 'Tweak', value: 'tweak', iconLeft: 'lucide-paintbrush', onClick: () => use('tweak') },
-	{ label: commentLabel.value, value: 'comment', iconLeft: 'lucide-message-circle', onClick: () => use('comment') },
+	tab('Note', 'note', 'lucide-sticky-note'),
+	tab('Tweak', 'tweak', 'lucide-paintbrush'),
+	tab('Comment', 'comment', 'lucide-message-circle', openCount.value ? `Comment, ${openCount.value} open` : 'Comment'),
 ])
 const tabHover = ref<Mode>('note')
 function onTabHover(e: PointerEvent) {
@@ -745,15 +757,16 @@ function openFromTrigger() {
 
 // The comments panel: a floating card on the right, collapsed from its own button; on a phone a bottom sheet.
 const panelOpen = ref(true)
-const phone = computed(() => vw.value < 640)
 const showPanel = computed(() => enabled.value && mode.value === 'comment' && !guest)
 const togglePanel = () => (phone.value ? (sheetOpen.value = !sheetOpen.value) : (panelOpen.value = !panelOpen.value))
 const panelShown = computed(() => (phone.value ? sheetOpen.value : panelOpen.value))
-// The card keeps clear of the toolbar when the toolbar is parked on the right edge.
+// The card starts below a typical page header (its action buttons sit top right), so it never covers them and the page never moves.
+// It also keeps clear of the toolbar when the toolbar is parked on the right edge.
+const PANEL_TOP = 72
 const panelBox = computed(() => {
 	const b = barBox.value
 	const right = anchor.value.endsWith('right')
-	const top = anchor.value.startsWith('top') && right ? b.bottom + 8 : 12
+	const top = Math.max(PANEL_TOP, anchor.value.startsWith('top') && right ? b.bottom + 8 : 0)
 	const bottom = anchor.value.startsWith('bottom') && right ? vh.value - b.top + 8 : 12
 	return { top: `${top}px`, '--comments-list-max': `${Math.max(120, vh.value - top - bottom - 96)}px` }
 })
@@ -901,7 +914,7 @@ function revealTweak(id: string) {
 
 	<template v-if="enabled">
 		<Pins v-if="mode === 'note'" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
-		<CommentPins v-if="mode === 'comment' && !guest" :route="key" @open="openThreadAt" />
+		<CommentPins v-if="mode === 'comment' && !guest && !(phone && sheetOpen)" :route="key" @open="openThreadAt" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
@@ -1002,7 +1015,6 @@ function revealTweak(id: string) {
 				v-model="text"
 				:x="draft.x"
 				:y="draft.y"
-				:component="draft.component"
 				:extra="draft.extra"
 				:anchor="newAnchor"
 				:thread="thread"
@@ -1022,11 +1034,11 @@ function revealTweak(id: string) {
 			leave-to-class="opacity-0"
 		>
 			<div v-if="showPanel && !phone && panelOpen" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
-				<CommentsPanel @choose="openFromList" @hide="panelOpen = false" />
+				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
 			</div>
 		</Transition>
 		<BottomSheet v-if="showPanel && phone" v-model:open="sheetOpen" title="Comments">
-			<CommentsPanel embedded @choose="openFromList" />
+			<CommentsPanel embedded :route="key" @choose="openFromList" />
 		</BottomSheet>
 
 		<Transition
@@ -1147,6 +1159,18 @@ function revealTweak(id: string) {
 			</div>
 		</Transition>
 
+		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured. -->
+		<div v-if="owner && !phone" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
+			<TabButtons :options="tabOptions" model-value="note">
+				<template #suffix="{ button }">
+					<span v-if="button.value === 'comment' && openCount" class="tabular-nums text-ink-gray-5">{{ openCount }}</span>
+				</template>
+			</TabButtons>
+			<Button variant="ghost" label="12 notes" />
+			<Button variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
+			<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
+		</div>
+
 		<Transition
 			appear
 			enter-from-class="opacity-0 translate-y-2 motion-reduce:translate-y-0"
@@ -1167,15 +1191,21 @@ function revealTweak(id: string) {
 				@click.capture="barClick"
 			>
 				<!-- Tool switch. The current tab stays lit; Escape or close is the way off. -->
-				<Button v-if="guest" variant="solid" theme="gray" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
+				<Button v-if="guest" variant="subtle" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
 				<Tooltip v-else-if="owner" :text="tabTip" :hover-delay="600">
 					<div class="inline-flex" @pointerover="onTabHover">
-						<TabButtons :options="tabOptions" :model-value="mode" />
+						<TabButtons :options="tabOptions" :model-value="mode">
+							<template #suffix="{ button }">
+								<span v-if="button.value === 'comment' && openCount" class="tabular-nums text-ink-gray-5">{{ openCount }}</span>
+							</template>
+						</TabButtons>
 					</div>
 				</Tooltip>
 				<!-- A reader has one tool. -->
 				<Tooltip v-else :text="active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
-					<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-message-circle" :label="commentLabel" @click="pick('comment')" />
+					<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-message-circle" @click="pick('comment')">
+						Comment<span v-if="openCount" class="ml-1 tabular-nums text-ink-gray-5">{{ openCount }}</span>
+					</Button>
 				</Tooltip>
 
 				<Tooltip v-if="mode === 'comment' && !guest" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600">
@@ -1192,11 +1222,11 @@ function revealTweak(id: string) {
 				<template v-if="owner && mode !== 'comment'">
 					<Tooltip v-if="!count" :text="`No ${noun}s yet`" :hover-delay="600">
 						<span class="inline-flex" tabindex="0">
-							<Button variant="ghost" icon-left="lucide-copy" label="Copy prompt" disabled />
+							<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" disabled />
 						</span>
 					</Tooltip>
 					<Tooltip v-else text="Copy prompt for Claude" :hover-delay="600">
-						<Button variant="ghost" icon-left="lucide-copy" label="Copy prompt" @click="copy" />
+						<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" @click="copy" />
 					</Tooltip>
 				</template>
 

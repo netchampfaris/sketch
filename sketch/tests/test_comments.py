@@ -193,6 +193,19 @@ class TestThreads(CommentCase):
 		self.assertEqual(set(listed["people"]), {self.reader_name, self.other_name})
 		self.assertEqual(comments.open_count(self.doc.name), 2)
 
+	def test_every_comment_carries_its_authors_full_name(self):
+		thread = self.start(self.reader_name, "one")
+		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="two")
+		self.assertEqual(after["name"], "Sketch Test cmreader")
+		self.assertEqual(after["replies"][0]["name"], "Sketch Test cmother")
+
+	def test_a_person_with_no_full_name_shows_as_their_username(self):
+		thread = self.start(self.reader_name, "one")
+		reader = frappe.db.get_value("User", {"username": self.reader_name}, ["name", "full_name"], as_dict=True)
+		self.addCleanup(frappe.db.set_value, "User", reader.name, "full_name", reader.full_name)
+		frappe.db.set_value("User", reader.name, "full_name", "")
+		self.assertEqual(comments.one_thread(self.doc.name, thread["id"])["name"], self.reader_name)
+
 	def test_editing_is_for_the_author_alone_the_owner_included(self):
 		thread = self.start(self.reader_name, "mine")
 		with self.assertRaises(frappe.PermissionError):
@@ -398,7 +411,7 @@ class TestAddToNotes(CommentCase):
 
 		self.assertEqual(annotations.read(self.doc.name)["notes"], [])
 		note = self.call(api.comment_to_note, self.owner_name, comment=thread["id"])
-		self.assertEqual(note["note"], f"@{self.reader_name}: “Labels are hard to scan”")
+		self.assertEqual(note["note"], "Sketch Test cmreader: “Labels are hard to scan”")
 		self.assertEqual((note["selector"], note["route"]), (ANCHOR["selector"], ANCHOR["route"]))
 		self.assertNotIn("author", note)
 		stored = annotations.read(self.doc.name)["notes"]
@@ -409,7 +422,7 @@ class TestAddToNotes(CommentCase):
 		thread = self.start(self.reader_name, "first")
 		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="second")
 		note = self.call(api.comment_to_note, self.owner_name, comment=after["replies"][0]["id"])
-		self.assertTrue(note["note"].startswith(f"@{self.other_name}: "))
+		self.assertTrue(note["note"].startswith("Sketch Test cmother: "))
 		self.assertEqual(note["selector"], ANCHOR["selector"])
 
 
