@@ -572,6 +572,10 @@ function fileLabel(count: number): string {
                   <span aria-hidden="true">&middot;</span>
                 </template>
                 <span :title="fullDate(version)">{{ timeLabel(version) }}</span>
+                <template v-if="version.author">
+                  <span aria-hidden="true">&middot;</span>
+                  <span class="truncate" :title="`@${version.author.username}`">by {{ version.author.full_name }}</span>
+                </template>
                 <template v-if="version.kind === 'request' && version.source === 'App'">
                   <span aria-hidden="true">&middot;</span>
                   <span>from the app</span>

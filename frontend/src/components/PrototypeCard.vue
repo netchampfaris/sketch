@@ -6,10 +6,11 @@
  * rail: Open, then the overflow menu. Row two is every meta fact on one line,
  * with the copy-link button when there is a link.
  *
- * Public/Private is one boolean and it is drawn once, by the Badge. The menu
- * sets it: Share makes it public, Make private takes it back. It was a Switch
- * on the card, which put a control that publishes to the internet one stray
- * click away from the artwork, and cost a row to say what the Badge says.
+ * Public/Private is one boolean and it is drawn once, by the Badge. The Share
+ * dialog sets it, next to the list of people invited. It was a Switch on the
+ * card, which put a control that publishes to the internet one stray click
+ * away from the artwork, and cost a row to say what the Badge says. Share
+ * opens from the rail and from the menu.
  *
  * Rename, Files, Export as zip, History and Delete sit in the same menu,
  * because they are UI-only actions. Files reads the source the agent wrote,
@@ -24,19 +25,12 @@ import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
+import ShareDialog from './ShareDialog.vue'
 import { copyText, downloadPrototypeZip, method } from '../store'
 import type { Prototype } from '../types'
 
 const props = defineProps<{ prototype: Prototype }>()
 const emit = defineEmits<{ changed: []; removed: [] }>()
-
-const setPublic = useCall<Prototype, { slug: string; is_public: boolean }>({
-  url: method('set_public'),
-  method: 'POST',
-  immediate: false,
-  onSuccess: () => emit('changed'),
-  onError: (error) => toast.error(error.message),
-})
 
 const rename = useCall<Prototype, { slug: string; title: string }>({
   url: method('rename_prototype'),
@@ -83,13 +77,13 @@ const remove = useCall<{ name: string }, { slug: string }>({
 // per card.
 const historyOpen = ref(false)
 const filesOpen = ref(false)
+const shareOpen = ref(false)
 
 /** True while the zip is on the wire. It disables the menu, like a write. */
 const exporting = ref(false)
 
 const busy = computed(
   () =>
-    setPublic.loading ||
     rename.loading ||
     remove.loading ||
     refresh.loading ||
@@ -184,31 +178,10 @@ function askDelete(): void {
 const menuOptions = computed(() => [
   // No Open row: the action has its own button beside this menu.
   //
-  // One row, two labels. It names what the click does next, not the state the
-  // card is already in: the Badge beside the title carries the state. It is
-  // disabled while a write is in flight, which is the job the switch's own
-  // `:disabled` used to do.
-  props.prototype.is_public
-    ? {
-        label: 'Make private',
-        icon: 'lucide-lock',
-        disabled: busy.value,
-        onClick: () =>
-          setPublic.submit({ slug: props.prototype.slug, is_public: false }).catch(() => {}),
-      }
-    : {
-        label: 'Share',
-        icon: 'lucide-globe',
-        disabled: busy.value,
-        onClick: () =>
-          setPublic.submit({ slug: props.prototype.slug, is_public: true }).catch(() => {}),
-      },
-  {
-    label: 'Copy public link',
-    icon: 'lucide-link',
-    disabled: !props.prototype.is_public,
-    onClick: copyPublicUrl,
-  },
+  // Share opens the dialog that holds who is invited and whether the link is
+  // public. It replaces the rows that made the prototype public or private
+  // and copied its link: the dialog does both, so there is one way to each.
+  { label: 'Share', icon: 'lucide-users', onClick: () => (shareOpen.value = true) },
   // Above Rename, because it is about the picture the row sits under, and the
   // rows below it are about the Prototype's name and history. It is one row
   // whatever the card is showing: "there is no picture yet" and "the picture
@@ -267,10 +240,9 @@ const menuOptions = computed(() => [
         >
       </h2>
       <!--
-        The Badge reports the state. It does not set it: Share and Make
-        private are in the menu, so nothing on the card can be toggled by a
-        stray click on the artwork. `sm` keeps it quieter than the name beside
-        it, and green reads as "anyone can reach this", which is the fact that
+        The Badge reports the state. It does not set it: the Share dialog
+        does, so nothing on the card can be toggled by a stray click on the
+        artwork. `sm` keeps it quieter than the name beside it, and green reads as "anyone can reach this", which is the fact that
         matters here.
       -->
       <Badge
@@ -297,6 +269,9 @@ const menuOptions = computed(() => [
           variant="ghost"
           @click="openViewer"
         />
+      </Tooltip>
+      <Tooltip text="Share">
+        <Button aria-label="Share" icon="lucide-users" variant="ghost" @click="shareOpen = true" />
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
@@ -331,6 +306,7 @@ const menuOptions = computed(() => [
       </Tooltip>
     </div>
 
+    <ShareDialog v-model:open="shareOpen" :prototype="prototype" @changed="emit('changed')" />
     <PrototypeFilesDialog
       v-model:open="filesOpen"
       :slug="prototype.slug"
