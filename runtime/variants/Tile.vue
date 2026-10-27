@@ -97,7 +97,7 @@ watch(
     >
       <div style="transform: scale(var(--ls)); transform-origin: right bottom">
         <Button
-          variant="ghost"
+          variant="subtle"
           size="sm"
           :loading="saving"
           :aria-label="`Make ${tile.opt} the default for ${tile.setName}`"

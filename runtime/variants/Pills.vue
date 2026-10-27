@@ -130,9 +130,10 @@ function openHere() {
 }
 const off = (s: VSet) => currentOf(s) !== s.options()[0]?.value
 const isKept = (s: VSet) => kept[setId(s)] === currentOf(s)
-// The owner's rows carry two more actions. The column is there for all of them, so it never moves under the pointer
-// when a pick makes one of them appear.
-const actions = computed(() => Boolean(keepHandler.value || credential.value))
+// The owner's rows carry two more actions (only the owner's page has the credential; a commenter's toolbar has a Keep
+// handler too, but a note is the owner's to write). The column is there for all of them, so it never moves under the
+// pointer when a pick makes one of them appear.
+const actions = computed(() => Boolean(credential.value))
 // Make default: the pick becomes the first slot in the source. The page reloads once it is saved.
 const saving = ref<string | null>(null)
 const held = ref(0)
