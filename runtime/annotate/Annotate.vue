@@ -10,7 +10,7 @@ import { computed, defineComponent, h, markRaw, onBeforeUnmount, ref, shallowRef
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
-import { Badge, BottomSheet, Button, TabButtons, Tooltip, toast } from 'frappe-ui'
+import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import { bridge, closeCanvas, openCanvas, setKeepHandler, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
 import { openCount, openThread, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { isGuest, isOwner } from './host'
@@ -92,6 +92,10 @@ const sheetOpen = ref(false)
 // The canvas is open over the page: its tiles take the pins, and its own panel (or on a phone the sheet) takes the list.
 const canvasOpen = computed(() => bridge.open)
 const sheetMode = computed(() => (canvasOpen.value ? bridge.phone : vw.value < 640))
+// The canvas covers the page at z-[60], and a sheet is z-50 wherever it lands. Over the canvas the sheet is drawn into a
+// layer of its own at the canvas's level, below the toolbar (which comes after it), so it is seen and taps reach it.
+const sheetHost = ref<HTMLElement | null>(null)
+providePortalTarget(() => (canvasOpen.value ? (sheetHost.value ?? undefined) : undefined))
 
 // Picking machinery (hover, box, measuring) runs for the two tools that pin things to the page.
 // A phone's comments sheet covers the page, so nothing is picked while it is open. Over the canvas a click picks a
@@ -240,6 +244,15 @@ function onNoted(row: Note) {
 watch(thread, (t, was) => {
 	if (was && !t && draft.value?.editing === was.id) close()
 })
+// A new comment or note on a tile has no pin yet: the canvas draws a draft one where the tile was clicked.
+watch(
+	draft,
+	(d) => {
+		const t = d && !d.editing ? d.tile : undefined
+		canvasUi.draft = t ? { spot: { route: t.route, tile: t.tile }, fx: t.fx, fy: t.fy } : null
+	},
+	{ immediate: true },
+)
 watch(
 	() => draft.value?.editing,
 	(id) => {
@@ -261,9 +274,9 @@ async function leaveCanvas() {
 	closeCanvas(router)
 	await until(() => !bridge.open)
 }
-const GONE = { set: 'This option no longer exists', state: 'This state no longer exists', default: 'This page no longer exists' }
 // Show something pinned to a tile: open the canvas if it is not, bring the tile into view, then open the box at
-// its pin. A tile that has gone says so, and the box opens beside the row instead, so the thread can still be read and resolved.
+// its pin. A tile that has gone has no pin to open at (its row sits under "Removed from canvas"), so the box opens beside
+// the row instead, and the thread can still be read and resolved.
 async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
 	if (!canvasOpen.value) {
 		openCanvas(router, spot.tile.view || `page:${spot.route}`)
@@ -271,7 +284,6 @@ async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: 
 	}
 	const point = tileExists(bridge.model, spot) === false ? null : await bridge.reveal?.(spot, { fx: at.x, fy: at.y })
 	if (point) return show(point.x, point.y)
-	toast.info(GONE[spot.tile.kind])
 	const r = row?.getBoundingClientRect()
 	show(r ? r.left : vw.value / 2, r ? r.top + r.height / 2 : vh.value / 2)
 }
@@ -755,7 +767,7 @@ useEventListener(window, 'blur', () => {
 })
 
 // ---- Toolbar position ------------------------------------------------------------------
-const INSET = 16
+const LIVE_INSET = 16
 const anchor = ref<Anchor>(readAnchor())
 // Until the toolbar has been moved once, the trigger keeps to the bottom-right corner.
 const moved = ref(storedAnchor() !== null)
@@ -788,8 +800,11 @@ const { width: gw } = useElementSize(ghost, { width: 0, height: 0 }, { box: 'bor
 watch([bw, gw], ([w, g]) => (widest.value = Math.max(widest.value, w, g)))
 const phone = computed(() => vw.value < 640)
 watch(phone, () => (widest.value = bw.value))
-const slotW = computed(() => Math.max(bw.value, widest.value))
+// On the canvas the bar is as wide as its own widest mode (the twin below, without Close and the count), never the live page's.
+const slotW = computed(() => (canvasOpen.value ? Math.max(bw.value, gw.value) : Math.max(bw.value, widest.value)))
 function place(a: Anchor) {
+	// On the canvas the toolbar keeps the panel's 12px from the edges.
+	const INSET = canvasOpen.value ? 12 : LIVE_INSET
 	const [v, h] = a.split('-')
 	const room = vw.value - reserve.value
 	const left = h === 'left' ? INSET : h === 'right' ? room - slotW.value - INSET : (room - slotW.value) / 2
@@ -1335,20 +1350,23 @@ function revealTweak(id: string) {
 			</div>
 		</Transition>
 
-		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured. -->
+		<div ref="sheetHost" class="fixed left-0 top-0 z-[60] size-0" />
+
+		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured. The canvas has no count button and no Close.
+			The count is measured at two digits, so the tabs hold still when it passes 9. -->
 		<div v-if="owner" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
 			<TabButtons :options="tabOptions" model-value="note">
 				<template #suffix="{ button }">
 					<template v-if="button.value === 'comment' && openCount">
 						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
-						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ openCount }}</span>
+						<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ Math.max(openCount, 10) }}</span>
 					</template>
 				</template>
 			</TabButtons>
-			<Button variant="ghost" label="12 notes" />
+			<Button v-if="!canvasOpen" variant="ghost" label="12 notes" />
 			<Button v-if="phone" variant="ghost" icon="lucide-copy" aria-label="Copy prompt" />
 			<Button v-else variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
-			<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
+			<Button v-if="!canvasOpen" variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
 		</div>
 
 		<Transition
@@ -1363,7 +1381,7 @@ function revealTweak(id: string) {
 				aria-label="Annotate"
 				class="pointer-events-auto fixed z-[60] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
 				:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
-				:style="{ left: `${pos.left}px`, top: `${pos.top}px`, minWidth: owner ? `${widest}px` : undefined }"
+				:style="{ left: `${pos.left}px`, top: `${pos.top}px`, minWidth: owner && !canvasOpen ? `${widest}px` : undefined }"
 				@pointerdown="barDown"
 				@pointermove="barMove"
 				@pointerup="barUp"
@@ -1374,7 +1392,7 @@ function revealTweak(id: string) {
 				<Button v-if="guest" variant="subtle" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
 				<Tooltip v-else-if="owner" :text="tabTip" :hover-delay="600">
 					<div class="inline-flex" @pointerover="onTabHover">
-						<TabButtons :options="tabOptions" :model-value="mode">
+						<TabButtons :options="tabOptions" :model-value="canvasOpen && !active ? undefined : mode">
 							<template #suffix="{ button }">
 								<template v-if="button.value === 'comment' && openCount">
 						<span v-if="button.name" class="sr-only">{{ button.name }}</span>
@@ -1387,15 +1405,15 @@ function revealTweak(id: string) {
 				<!-- A reader has one tool. -->
 				<Tooltip v-else :text="active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
 					<Button :variant="active ? 'subtle' : 'ghost'" icon-left="lucide-message-circle" @click="pick('comment')">
-						Comment<span v-if="openCount" class="ml-1 tabular-nums text-ink-gray-5">{{ openCount }}</span>
+						Comment<span v-if="openCount" class="ml-2 tabular-nums text-ink-gray-5">{{ openCount }}</span>
 					</Button>
 				</Tooltip>
 
-				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || bridge.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600">
+				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || bridge.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600" :disabled="phone">
 					<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
 				</Tooltip>
 
-				<span v-if="owner && count" data-notes-trigger>
+				<span v-if="owner && count && !canvasOpen" data-notes-trigger>
 					<Tooltip :text="mode === 'tweak' ? 'Show tweaks' : 'Show notes'" :hover-delay="600">
 						<Button :variant="listOpen ? 'subtle' : 'ghost'" :label="countLabel" @click="listOpen = !listOpen" />
 					</Tooltip>

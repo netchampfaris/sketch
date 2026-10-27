@@ -10,7 +10,11 @@ export const handlers = {
 	note: null as ((n: Note, x: number, y: number) => void) | null,
 }
 // The note whose box is open, so its pin can wear a ring.
-export const canvasUi = reactive({ noteId: '' })
+export const canvasUi = reactive({
+	noteId: '',
+	// The tile spot a new comment or note is being written for, so its pin shows where it was clicked.
+	draft: null as { spot: TileSpot; fx: number; fy: number } | null,
+})
 
 // A spot on a tile, as a note or a comment stores it: the page in `route`, the element fields empty, and the
 // click as a fraction of the tile. The server checks it again (sketch/comments.py clean_tile_anchor).

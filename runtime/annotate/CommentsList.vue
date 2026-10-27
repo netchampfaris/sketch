@@ -58,6 +58,8 @@ const groups = computed<Group[]>(() => {
 })
 // A header names the group when there is more than one, and always on the canvas, where "This view" is one of them.
 const headers = computed(() => onCanvas.value || groups.value.length > 1)
+// A view with no comments still gets its header, so the list does not start at another page without saying so.
+const noneHere = computed(() => onCanvas.value && !searching.value && !groups.value.some((g) => g.key === 'here'))
 
 // A canvas thread says which tile it is on; in "This view" the tile's name alone is enough.
 function place(t: Thread, g: Group): string | undefined {
@@ -104,6 +106,10 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
 			<template v-else-if="status === 'ready'">
+				<section v-if="noneHere" class="flex flex-col gap-0.5" aria-label="This view">
+					<p class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">This view</p>
+					<p class="px-2 py-1.5 text-p-sm text-ink-gray-5">No comments here yet</p>
+				</section>
 				<section v-for="g in groups" :key="g.key" class="flex flex-col gap-0.5" :aria-label="headers ? g.name : undefined">
 					<p v-if="headers" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }}</p>
 					<CommentRow v-for="t in g.threads" :key="t.id" :thread="t" :selected="openThread === t.id" :place="place(t, g)" @choose="emit('choose', t, $event)" />
