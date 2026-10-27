@@ -150,8 +150,25 @@ def open_count(name: str) -> int:
 	return frappe.db.count(COMMENT, {"prototype": name, "thread": ["is", "not set"], "resolved": 0})
 
 
+def full_names(usernames) -> dict:
+	"""Each person's full name by username, the username itself when they have none.
+
+	It is sent as plain text and shown as escaped text, like the words of a comment.
+	"""
+	names = {u for u in usernames if u}
+	if not names:
+		return {}
+
+	users = frappe.get_all("User", filters={"username": ["in", list(names)]}, fields=["username", "full_name"])
+	found = {u.username: (u.full_name or "").strip() for u in users}
+	return {u: found.get(u) or u for u in names}
+
+
 def list_threads(name: str) -> list[dict]:
-	"""Every thread with its replies, oldest reply first. The page sorts threads."""
+	"""Every thread with its replies, oldest reply first. The page sorts threads.
+
+	Each comment carries `name`, its author's full name, so a page never has to guess it.
+	"""
 	rows = frappe.get_all(
 		COMMENT,
 		filters={"prototype": name},
@@ -159,12 +176,14 @@ def list_threads(name: str) -> list[dict]:
 		order_by="creation asc, name asc",
 		limit_page_length=0,
 	)
+	names = full_names(row.author for row in rows)
 	threads, by_id = [], {}
 	for row in rows:
 		if not row.thread:
 			thread = {
 				"id": row.name,
 				"author": row.author,
+				"name": names[row.author],
 				"text": row.text or "",
 				"ts": _ts(row.creation),
 				"edited": bool(row.edited),
@@ -182,6 +201,7 @@ def list_threads(name: str) -> list[dict]:
 				{
 					"id": row.name,
 					"author": row.author,
+					"name": names[row.author],
 					"text": row.text or "",
 					"ts": _ts(row.creation),
 					"edited": bool(row.edited),
@@ -292,7 +312,7 @@ def add_to_notes(name: str, actor: Actor, comment: str) -> dict:
 	note = {
 		**anchor,
 		"id": _note_id(),
-		"note": f"@{row.author}: “{(row.text or '').strip()}”",
+		"note": f"{full_names([row.author])[row.author]}: “{(row.text or '').strip()}”",
 		"createdAt": int(datetime.now(UTC).timestamp() * 1000),
 	}
 	return annotations.add_note(name, note)

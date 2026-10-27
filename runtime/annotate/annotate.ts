@@ -3,7 +3,7 @@
 // Saved state is restored by store.ts once the Prototype's payload is known; nothing here reads
 // the Prototype's files or storage directly.
 import { ref, shallowRef, type Ref } from 'vue'
-import { subject } from './host'
+import { host, subject } from './host'
 import type { TweakItem } from './tweak'
 
 
@@ -156,8 +156,8 @@ export function writeAnchor(a: Anchor) {
 
 // ---- Our own UI is never a target ------------------------------------------------------
 export const UI_ATTR = 'data-annotate-ui'
-// Tooltips from the component library are portalled out of our markup; treat them as ours too.
-const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"]`
+// Tooltips and menus from the component library are portalled out of our markup; treat them as ours too.
+const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"],[role="menu"]`
 export const isOurs = (el: Node | null | undefined) => {
   const e = el instanceof Element ? el : el?.parentElement
   return !!e?.closest(OURS)
