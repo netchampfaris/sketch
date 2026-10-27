@@ -21,6 +21,28 @@ export interface SketchSession {
   logout_url: string
 }
 
+/** Someone who made something new on a prototype. `sketch.badges.card`. */
+export interface NewPerson {
+  username: string
+  /** Full name, or the username when there is none. */
+  name: string
+  /** `User.user_image`, or "" for a user who has none. */
+  image: string
+}
+
+/**
+ * What changed on a prototype since this person last looked: the line on its gallery card.
+ * Counts are what is still unseen. `by` is the first three people, `more` how many others.
+ * `mention` is set when someone named this person in a comment they have not opened.
+ */
+export interface PrototypeNew {
+  variants: number
+  comments: number
+  by: NewPerson[]
+  more: number
+  mention: { by: NewPerson; thread: string } | null
+}
+
 export interface Prototype {
   name: string
   title: string
@@ -43,6 +65,8 @@ export interface Prototype {
    * absent when that capture failed, so a reader falls back to `light`.
    */
   thumbnail: PrototypeThumbnail | null
+  /** Null when nothing is new. Absent on rows the gallery does not draw for a person. */
+  new?: PrototypeNew | null
 }
 
 /** A person as the Share dialog and the shared cards draw them. */

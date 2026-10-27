@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-28 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "prototype",
+  "user",
+  "kind",
+  "item",
+  "seen_at"
+ ],
+ "fields": [
+  {
+   "description": "The Prototype hash id. Data and not Link: the Prototype's own delete removes these rows (sketch_prototype.py on_trash).",
+   "fieldname": "prototype",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Prototype",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1,
+   "description": "The person's User id. Data and not Link, so removing a user never waits on these rows."
+  },
+  {
+   "description": "Variant: the item is an option value such as @arohi/compact. Thread: the item is the first comment's id.",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Variant\nThread",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "When this person last looked at it. Something someone else made after this is new to them again.",
+   "fieldname": "seen_at",
+   "fieldtype": "Datetime",
+   "label": "Seen at",
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-28 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sketch",
+ "name": "Sketch Seen",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

@@ -22,6 +22,7 @@
  */
 import { computed, ref } from 'vue'
 import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
@@ -277,6 +278,9 @@ const menuOptions = computed(() => [
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
+
+    <!-- What is new since the owner last looked. Absent when nothing is, so the card is as it was. -->
+    <NewLine :news="prototype.new" :href="prototype.viewer_path" />
 
     <!--
       Every meta fact on one line, in the order a user asks for them: how big

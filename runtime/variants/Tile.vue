@@ -8,6 +8,7 @@ import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
 import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { canDelete, deleteFailure, deleteVariant } from './edit'
+import { isNew } from './badges'
 import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
@@ -130,6 +131,7 @@ watch(
         <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="stacked ? 'w-full' : ''">
           <span v-if="tile.n" class="tabular-nums text-ink-gray-4">{{ tile.n }}</span>
           <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
+          <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
           <span v-if="tile.author" class="flex min-w-0 shrink-[3] items-center gap-1 text-ink-gray-4" :title="`Made by ${personName(tile.author)}`">
             <Avatar class="shrink-0" size="xs" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
             <span class="truncate">Made by {{ shortName(tile.author) }}</span>

@@ -10,6 +10,7 @@ import {
 	MAX_BYTES,
 	ago,
 	byteLength,
+	pieces,
 	createThread,
 	edit,
 	reply,
@@ -24,6 +25,8 @@ import {
 import type { Note } from './annotate'
 import AuthorAvatar from './AuthorAvatar.vue'
 import ComposerInput from './ComposerInput.vue'
+import MentionField from './MentionField.vue'
+import { decode, encode, forget } from './mentions'
 
 const props = defineProps<{
 	x: number
@@ -99,7 +102,7 @@ const canResolve = computed(() => !!props.thread && (props.thread.author === me 
 
 // What each ⋯ offers, only to whoever may use it. The thread's own Delete lives in the header menu.
 function startEdit(c: Reply) {
-	editing.value = { id: c.id, text: c.text }
+	editing.value = { id: c.id, text: decode(c.text) }
 	// The menu hands focus back to its button as it closes; take it after that.
 	setTimeout(() => root.value?.querySelector<HTMLTextAreaElement>('[data-editing] textarea')?.focus(), 50)
 }
@@ -142,7 +145,8 @@ function start() {
 	if (!canStart.value || !props.anchor) return
 	const text = props.modelValue.trim()
 	void run(async () => {
-		const t = await createThread(props.anchor!, text)
+		const t = await createThread(props.anchor!, encode(text))
+		forget()
 		emit('update:modelValue', '')
 		emit('created', t)
 	})
@@ -155,7 +159,8 @@ function sendReply() {
 	const text = replyText.value.trim()
 	if (!t || !ready(text)) return
 	void run(async () => {
-		await reply(t.id, text)
+		await reply(t.id, encode(text))
+		forget()
 		replyText.value = ''
 	})
 }
@@ -167,7 +172,8 @@ function saveEdit() {
 	const t = props.thread
 	if (!e || !t || !ready(e.text)) return
 	void run(async () => {
-		await edit(t.id, e.id, e.text.trim())
+		await edit(t.id, e.id, encode(e.text.trim()))
+		forget()
 		editing.value = null
 	})
 }
@@ -270,7 +276,7 @@ function onKey(e: KeyboardEvent) {
 					<div class="ml-7 mt-1">
 						<template v-if="editing?.id === c.id">
 							<div data-editing>
-								<Textarea v-model="editing.text" :rows="3" class="w-full resize-none" />
+								<MentionField v-model="editing.text"><Textarea v-model="editing.text" :rows="3" class="w-full resize-none" /></MentionField>
 							</div>
 							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
 							<div class="mt-2 flex justify-end gap-2">
@@ -279,7 +285,7 @@ function onKey(e: KeyboardEvent) {
 							</div>
 						</template>
 						<template v-else>
-							<p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7">{{ c.text }}</p>
+							<p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7"><template v-for="(piece, i) in pieces(c.text)" :key="i"><span v-if="piece.mention" class="text-ink-blue-6">{{ piece.text }}</span><template v-else>{{ piece.text }}</template></template></p>
 							<div v-if="confirming === c.id" class="mt-2">
 								<p class="text-p-sm text-ink-gray-6">{{ c.id === thread.id ? 'Delete this thread?' : 'Delete this reply?' }}</p>
 								<div class="mt-2 flex justify-end gap-2">

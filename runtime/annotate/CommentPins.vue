@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, resolve, tagOf } from './annotate'
 import { clearHover, usePinTracking } from './pinTracking'
-import { matching, openThread, type Thread } from './comments'
+import { matching, openThread, plain, type Thread } from './comments'
 import AuthorAvatar from './AuthorAvatar.vue'
 
 const props = defineProps<{ route: string }>()
@@ -57,7 +57,7 @@ function click(t: Thread, e: MouseEvent) {
 	const p = pos.value[t.id]
 	emit('open', t, p?.x ?? e.clientX, p?.y ?? e.clientY)
 }
-const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.replies.length} ${t.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${t.text.slice(0, 80)}`
+const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.replies.length} ${t.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${plain(t.text).slice(0, 80)}`
 </script>
 
 <template>

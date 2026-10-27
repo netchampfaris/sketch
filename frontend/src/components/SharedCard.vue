@@ -12,6 +12,7 @@
  */
 import { computed, ref } from 'vue'
 import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import { copyText, downloadPrototypeZip } from '../store'
@@ -84,6 +85,8 @@ const menuOptions = computed(() => [
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
+
+    <NewLine :news="prototype.new" :href="prototype.viewer_path" />
 
     <div class="flex h-7 items-center gap-2">
       <Avatar :image="prototype.owner.user_image" :label="prototype.owner.full_name" size="xs" />

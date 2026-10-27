@@ -23,6 +23,7 @@ class SketchComment(Document):
 		anchor: DF.LongText | None
 		author: DF.Data
 		edited: DF.Check
+		mentions: DF.SmallText | None
 		prototype: DF.Data
 		resolved: DF.Check
 		text: DF.LongText | None

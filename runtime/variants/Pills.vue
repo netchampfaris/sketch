@@ -5,6 +5,7 @@ import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
 import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { canMakeDefault, credential, makeDefault, makeFailure } from './default'
 import { people, personName, shortName } from './extras'
 import LensMenu from './LensMenu.vue'
@@ -43,11 +44,18 @@ const appRows = computed(() => Object.values(states).filter((s) => s.path === ''
 const pageStateRows = computed(() => Object.values(states).filter((s) => s.path !== '' && onPage(route, s.path)))
 const count = computed(() => appRows.value.length + pageStateRows.value.length + setRows.value.length)
 
+// What is new for this person on this page: options teammates made that nobody here has looked at, and unread threads.
+const optionsOf = (s: VSet) => s.options().map((o) => o.value)
+const freshOf = (s: VSet | DState) => (isState(s) ? 0 : freshIn(optionsOf(s)))
+const dot = computed(() => pageHasNew(route.path, setRows.value.flatMap(optionsOf)))
+
 const open = ref(false)
 const pill = ref<HTMLElement | null>(null)
 const toggle = () => {
   open.value = !open.value
   if (open.value) {
+    // Opening the card is looking at the page's news: the pill's dot clears. The rows keep theirs until opened.
+    badges.opened[route.path] = true
     sort()
     // Tab then runs down the rows from the first dropdown.
     nextTick(() => document.querySelector<HTMLElement>('#sketch-demo-card button')?.focus())
@@ -174,12 +182,19 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
       @mouseenter="hover(isState(s) ? null : (s as VSet))"
       @mouseleave="hover(null)"
     >
-      <span class="flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
+      <span class="relative flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
+        <span
+          v-if="freshOf(s)"
+          class="absolute left-0 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-surface-blue-6"
+          role="img"
+          :title="`${freshOf(s)} new since you last looked`"
+          :aria-label="`${freshOf(s)} new since you last looked`"
+        />
         <span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s) }}</span>
       </span>
       <div v-if="isState(s)" class="justify-self-start"><LensMenu :state="s" :show-name="false" /></div>
       <div v-else class="min-w-0 justify-self-start">
-        <Dropdown :options="menuOf(s as VSet)">
+        <Dropdown :options="menuOf(s as VSet)" @update:open="(o: boolean) => o && lookAt(optionsOf(s as VSet))">
           <Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as VSet)}`">
             <span class="flex items-center gap-1.5">
               <span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as VSet)">{{ labelOf(s as VSet) }}</span>
@@ -266,6 +281,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
       <Button variant="ghost" aria-controls="sketch-demo-card" :aria-expanded="open" :class="open ? 'bg-surface-gray-3' : ''" @click="toggle">
         <span class="flex items-center gap-1.5">
           <span class="text-p-sm text-ink-gray-8">Demo</span>
+          <span v-if="dot && !open" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" role="img" aria-label="New on this page" />
           <span class="size-3.5 text-ink-gray-5" :class="open ? 'lucide-chevron-up' : 'lucide-chevron-down'" aria-hidden="true" />
         </span>
       </Button>

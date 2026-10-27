@@ -11,6 +11,7 @@ Every method carries type annotations, because `require_type_annotated_api_metho
 is set in hooks.py.
 """
 
+import json
 import os
 from datetime import UTC, datetime
 
@@ -19,6 +20,7 @@ from frappe.utils import cint, convert_utc_to_system_timezone, pretty_date
 
 from sketch import (
 	annotations,
+	badges,
 	checkd,
 	comments,
 	editor_variants,
@@ -229,7 +231,7 @@ def _username() -> str:
 	return frappe.db.get_value("User", frappe.session.user, "username") or ""
 
 
-def _row(doc_or_dict, username: str | None = None) -> dict:
+def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 	"""One gallery item.
 
 	`username` is the owner's handle when the row is a Prototype shared with the
@@ -277,6 +279,7 @@ def _row(doc_or_dict, username: str | None = None) -> dict:
 		"updated": pretty_date(updated_at) if updated_at else "",
 		"viewer_path": f"/u/{username}/{slug}",
 		"public_url": f"{_public_base()}/u/{username}/{slug}",
+		**({"new": badges.card(name, new_for, files)} if new_for else {}),
 	}
 
 
@@ -332,7 +335,7 @@ def list_prototypes() -> list[dict]:
 		order_by="creation desc",
 		limit_page_length=0,
 	)
-	items = [_row(row) for row in rows]
+	items = [_row(row, new_for=frappe.session.user) for row in rows]
 	# Python's sort is stable, so the SQL order above survives as the tiebreak
 	# between two Prototypes whose newest file carries the same second.
 	items.sort(key=lambda item: item["modified"], reverse=True)
@@ -777,10 +780,11 @@ def _commenter(name: str, username: str, exp: str, sig: str) -> comments.Actor:
 def comments_list(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
 	"""Every thread on a Prototype, for someone who may comment on it."""
 	actor = _commenter(name, username, exp, sig)
-	threads = comments.list_threads(name)
+	threads = badges.decorate(name, actor.user, comments.list_threads(name))
 	return {
 		"threads": threads,
 		"people": comments.people_in(threads),
+		"mentionable": [p for p in comments.mentionable(name) if p["username"] != actor.username],
 		"me": actor.username,
 		"is_owner": actor.is_owner,
 	}
@@ -791,7 +795,7 @@ def comment_add(name: str, username: str = "", exp: str = "", sig: str = "", anc
 	"""Start a thread on an element. Returns the thread."""
 	actor = _commenter(name, username, exp, sig)
 	thread = comments.add_thread(name, actor, anchor, text)
-	return comments.one_thread(name, thread)
+	return comments.one_thread(name, thread, actor.user)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -799,21 +803,21 @@ def comment_reply(name: str, username: str = "", exp: str = "", sig: str = "", t
 	"""Reply in a thread. Returns the thread."""
 	actor = _commenter(name, username, exp, sig)
 	comments.add_reply(name, actor, thread, text)
-	return comments.one_thread(name, thread)
+	return comments.one_thread(name, thread, actor.user)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_edit(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "", text: str = ""):
 	"""Edit your own comment. Returns its thread."""
 	actor = _commenter(name, username, exp, sig)
-	return comments.one_thread(name, comments.edit(name, actor, comment, text))
+	return comments.one_thread(name, comments.edit(name, actor, comment, text), actor.user)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_delete(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
 	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
 	actor = _commenter(name, username, exp, sig)
-	return comments.one_thread(name, comments.delete(name, actor, comment))
+	return comments.one_thread(name, comments.delete(name, actor, comment), actor.user)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -823,7 +827,35 @@ def comment_resolve(
 	"""Resolve (or reopen, with resolved=0) a thread. Returns the thread."""
 	actor = _commenter(name, username, exp, sig)
 	comments.set_resolved(name, actor, thread, bool(frappe.utils.cint(resolved)))
-	return comments.one_thread(name, thread)
+	return comments.one_thread(name, thread, actor.user)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def seen_mark(name: str, username: str = "", exp: str = "", sig: str = "", variants: str = "", threads: str = "") -> dict:
+	"""Record that this person has looked at some variants (option values) and threads (ids).
+
+	The Viewer is sandboxed and sends no cookie, so the page's `seen` credential stands in
+	(`signature.SEEN`). It names the person; their standing is read again on every call.
+	Both lists are JSON arrays. A bad credential, or a person with no badges here, is a 404.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not username or not signature.verify(comments.subject(name, username), exp, sig, signature.SEEN):
+		raise frappe.DoesNotExistError
+
+	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	if not user:
+		raise frappe.DoesNotExistError
+
+	return {"marked": badges.mark(name, user, _json_list(variants), _json_list(threads))}
+
+
+def _json_list(raw) -> list:
+	try:
+		data = json.loads(raw) if isinstance(raw, str) else raw
+	except ValueError:
+		return []
+
+	return data if isinstance(data, list) else []
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -1106,7 +1138,7 @@ def shared_prototypes() -> list[dict]:
 			continue
 
 		owner = sharing.person(doc.owner)
-		row = _row(doc, owner["username"])
+		row = _row(doc, owner["username"], new_for=frappe.session.user)
 		row["owner"] = {k: owner[k] for k in ("username", "full_name", "user_image")}
 		rows.append(row)
 

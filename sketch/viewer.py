@@ -24,6 +24,7 @@ from frappe.website.page_renderers.base_renderer import BaseRenderer
 
 from sketch import (
 	annotations,
+	badges,
 	comments,
 	prototype,
 	prototype_files,
@@ -397,6 +398,10 @@ class SketchViewerRenderer(BaseRenderer):
 			if editing
 			else {}
 		)
+		# What is new for this person, and the right to say they have looked
+		# (`sketch.badges`, `sketch.api.seen_mark`). Nobody else gets either.
+		seen = signature.mint(comments.subject(self.doc.name, commenter), LIVE_TTL_SECONDS, signature.SEEN) if commenter else {}
+		fresh = badges.page(self.doc.name, frappe.session.user) if commenter else None
 		tree = prototype_files.read_tree(self.doc.name)
 		adopted = sharing.read_adopted(tree)
 		return {
@@ -425,6 +430,9 @@ class SketchViewerRenderer(BaseRenderer):
 			"comment_exp": ticket.get("exp", ""),
 			"comment_sig": ticket.get("sig", ""),
 			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
+			"seen_exp": seen.get("exp", ""),
+			"seen_sig": seen.get("sig", ""),
+			"badges": fresh,
 			"variant_exp": variant.get("exp", ""),
 			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
