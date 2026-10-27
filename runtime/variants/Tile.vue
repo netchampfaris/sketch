@@ -5,7 +5,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useIntersectionObserver } from '@vueuse/core'
 import { Badge, Button, toast } from 'frappe-ui'
-import { canMakeDefault, makeDefault } from './default'
+import { canMakeDefault, makeDefault, makeFailure } from './default'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
 import { restoreScrolls } from './snapshot'
@@ -20,6 +20,8 @@ const props = defineProps<{
   app: any
   win: { w: number; h: number }
   sandbox?: Sandbox
+  // The tile is under ~280px on screen: its actions go on a second line under the label.
+  narrow?: boolean
 }>()
 const emit = defineEmits<{ activate: []; openPage: []; near: [near: boolean] }>()
 
@@ -42,8 +44,8 @@ const rect = computed(() => {
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
   return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
 })
-// Make default: the owner's page only, on an option that is not first. The page reloads once it is saved, so the
-// Default badge is on the new first tile when it comes back.
+// Make default: the owner's page only, on the live tile, on an option that is not first. The page reloads once it is
+// saved, so the Default badge is on the new first tile when it comes back.
 const defaultable = computed(() => {
   const t = props.tile
   return t.kind === 'set' && !t.isDefault && t.setFile && t.setName && t.setOptions
@@ -59,7 +61,7 @@ async function makeIt() {
     await makeDefault(defaultable.value, props.tile.option!)
   } catch (e) {
     saving.value = false
-    toast.error(`Couldn't change the default. ${(e as Error).message}`)
+    toast.error(makeFailure(e as Error))
   }
 }
 
@@ -76,44 +78,35 @@ watch(
 
 <template>
   <div class="group/tile absolute" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
-    <!-- The caption sits under the tile, drawn at its on-screen size (never larger than at the fit zoom). -->
+    <!-- The caption sits under the tile. It is laid out at 1x and scaled to its on-screen size (never larger than at the
+         fit zoom), so the row wraps by what the eye sees. Number, name and Default badge on one line; the live tile adds
+         Make default (owner) and Open page at the right end. On a narrow tile the badge and the buttons go under the
+         name, so the name never truncates away (there is room for one button a line). -->
     <div
-      class="absolute inset-x-0 top-full"
-      :style="{ paddingTop: 'calc(8px * var(--ls))', paddingRight: live ? 'calc(110px * var(--ls))' : '0', fontSize: 'calc(13px * var(--ls))', lineHeight: '1.3' }"
+      class="absolute left-0 top-full origin-top-left text-p-sm"
+      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
-      <div class="truncate text-ink-gray-5" :title="tile.caption">
-        <span v-if="tile.n" class="mr-1.5 tabular-nums text-ink-gray-4">{{ tile.n }}</span>{{ tile.caption }}
+      <div class="flex items-center gap-x-1.5" :class="narrow ? 'flex-wrap gap-y-0.5' : ''">
+        <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="narrow ? 'w-full' : ''">
+          <span v-if="tile.n" class="tabular-nums text-ink-gray-4">{{ tile.n }}</span>
+          <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
+          <Badge v-if="tile.isDefault && !narrow" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
+        </div>
+        <Badge v-if="tile.isDefault && narrow" label="Default" theme="gray" variant="subtle" size="sm" />
+        <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="narrow ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
+          <Button
+            v-if="canDefault"
+            variant="ghost"
+            size="xs"
+            :loading="saving"
+            :aria-label="`Make ${tile.opt} the default for ${tile.setName}`"
+            @click.stop="makeIt"
+          >
+            <span :class="saving ? 'sr-only' : ''">Make default</span>
+          </Button>
+          <Button :class="narrow ? '-ml-0.5' : ''" variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
+        </div>
       </div>
-    </div>
-    <!-- Make default, above the tile's top right. It shows on hover and focus (always where there is no hover), and the
-         padding under it keeps the pointer on the tile while it travels up. -->
-    <div
-      v-if="canDefault"
-      data-ui
-      data-slot="make-default"
-      class="absolute bottom-full right-0 opacity-0 focus-within:opacity-100 group-hover/tile:opacity-100 [@media(hover:none)]:opacity-100"
-      :class="saving ? '!opacity-100' : ''"
-      :style="{ paddingBottom: 'calc(2px * var(--ls))' }"
-    >
-      <div style="transform: scale(var(--ls)); transform-origin: right bottom">
-        <Button
-          variant="subtle"
-          size="sm"
-          :loading="saving"
-          :aria-label="`Make ${tile.opt} the default for ${tile.setName}`"
-          @click.stop="makeIt"
-        >
-          <span :class="saving ? 'sr-only' : ''">Make default</span>
-        </Button>
-      </div>
-    </div>
-    <div
-      v-if="live"
-      data-ui
-      class="absolute right-0 top-full"
-      style="margin-top: calc(2px * var(--ls)); transform: scale(var(--ls)); transform-origin: right top"
-    >
-      <Button variant="ghost" size="sm" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
     </div>
 
     <!-- A page that has a States set but not this state: same size, dashed, nothing to open. -->
@@ -145,13 +138,6 @@ watch(
         :style="{ borderWidth: `calc(${live ? 2 : 1}px * var(--inv))` }"
         aria-hidden="true"
       />
-      <div
-        v-if="tile.isDefault"
-        class="pointer-events-none absolute z-20"
-        :style="{ left: 'calc(8px * var(--ls))', top: 'calc(8px * var(--ls))', transform: 'scale(var(--ls))', transformOrigin: 'top left' }"
-      >
-        <Badge label="Default" theme="gray" variant="subtle" size="sm" />
-      </div>
       <!-- Only the set's own box shows; the rest of the tile is the tile background. -->
       <div class="absolute overflow-hidden" :style="clip">
         <div v-if="live && sandbox" data-live class="absolute left-0 top-0 cursor-auto" :style="shift">
