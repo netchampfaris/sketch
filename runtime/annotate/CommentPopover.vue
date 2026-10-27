@@ -36,6 +36,8 @@ const props = defineProps<{
 	extra: number
 	// The toolbar's box: the popover keeps clear of it when they would overlap sideways.
 	avoid: { left: number; right: number; top: number; bottom: number } | null
+	// The open comments panel: the popover flips to the left of the point rather than cover it.
+	panel: { left: number; right: number; top: number; bottom: number } | null
 }>()
 const emit = defineEmits<{
 	'update:modelValue': [text: string]
@@ -51,26 +53,34 @@ const WIDTH = 300
 const GAP = 12
 const EDGE = 12
 
-// Right and below the point; flips above or left when it would run off the viewport.
+// Right and below the point; flips above or left when it would run off the viewport or onto the open panel.
+// Under 640px it spans the screen, less an edge on each side.
 const pos = computed(() => {
 	const vw = window.innerWidth
 	const vh = window.innerHeight
-	const W = Math.min(WIDTH, vw - 2 * EDGE)
+	const W = vw < 640 ? vw - 2 * EDGE : WIDTH
 	const h = height.value || 220
+	const a = props.avoid
+	const topFor = (left: number) => {
+		let lo = EDGE
+		let hi = vh - EDGE - h
+		if (a && left < a.right && left + W > a.left) {
+			if (a.top > vh / 2) hi = a.top - EDGE - h
+			else lo = a.bottom + EDGE
+		}
+		const top = props.y + GAP
+		return Math.max(lo, Math.min(top > hi ? props.y - GAP - h : top, Math.max(lo, hi)))
+	}
 	let left = props.x + GAP
 	if (left + W > vw - EDGE) left = props.x - GAP - W
 	left = Math.max(EDGE, Math.min(left, vw - W - EDGE))
-	let lo = EDGE
-	let hi = vh - EDGE - h
-	const a = props.avoid
-	if (a && left < a.right && left + W > a.left) {
-		if (a.top > vh / 2) hi = a.top - EDGE - h
-		else lo = a.bottom + EDGE
+	let top = topFor(left)
+	const p = props.panel
+	if (p && left + W > p.left && left < p.right && top < p.bottom && top + h > p.top) {
+		left = Math.max(EDGE, Math.min(props.x - GAP - W, p.left - EDGE - W))
+		top = topFor(left)
 	}
-	let top = props.y + GAP
-	if (top > hi) top = props.y - GAP - h
-	top = Math.max(lo, Math.min(top, Math.max(lo, hi)))
-	return { left: `${left}px`, top: `${top}px`, transformOrigin: `${props.x - left}px ${props.y - top}px` }
+	return { left: `${left}px`, top: `${top}px`, width: `${W}px`, transformOrigin: `${props.x - left}px ${props.y - top}px` }
 })
 
 onMounted(async () => {
@@ -210,7 +220,7 @@ function onKey(e: KeyboardEvent) {
 		data-annotate-ui
 		role="dialog"
 		aria-label="Comment"
-		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1.5rem)] w-[min(18.75rem,calc(100vw-1.5rem))] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
+		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1.5rem)] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
 		:style="pos"
 		@keydown="onKey"
 	>
@@ -218,28 +228,28 @@ function onKey(e: KeyboardEvent) {
 		<div v-if="thread" class="flex h-6 items-center gap-0.5">
 			<p class="min-w-0 flex-1 truncate text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
 			<Tooltip v-if="canResolve" :text="thread.resolved ? 'Reopen' : 'Resolve'" :hover-delay="600">
-				<Button size="xs" variant="ghost" icon="lucide-check" :aria-label="thread.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
+				<Button size="xs" :variant="thread.resolved ? 'subtle' : 'ghost'" icon="lucide-check" :aria-label="thread.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
 			</Tooltip>
 			<Dropdown v-if="threadMenu.length" :options="threadMenu" align="end">
 				<Button size="xs" variant="ghost" icon="lucide-ellipsis" aria-label="Thread menu" />
 			</Dropdown>
 			<Tooltip text="Close" :hover-delay="600">
-				<Button size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+				<Button class="-mr-[5px]" size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 			</Tooltip>
 		</div>
 		<!-- A new comment has no header; on touch, with no Escape, it keeps a way out. -->
 		<div v-else class="mb-1 hidden h-6 items-center justify-end [@media(hover:none)]:flex">
-			<Button size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+			<Button class="-mr-[5px]" size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 		</div>
 
 		<template v-if="thread">
 			<!-- Every icon button sits inside this box with room to spare: it scrolls, so anything past its edge would be cut. -->
-			<div class="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto">
+			<div class="-mr-[5px] mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto pr-[5px]">
 				<div v-for="c in comments" :key="c.id" class="group">
 					<!-- One row, one centre line: avatar, name, time and the menu. -->
 					<div class="flex h-6 items-center gap-2">
 						<AuthorAvatar :username="c.author" size="sm" />
-						<p class="flex min-w-0 flex-1 items-center gap-1 text-base">
+						<p class="flex min-w-0 flex-1 items-center gap-1 text-p-sm">
 							<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ c.name || c.author }}</span>
 							<span class="shrink-0 text-ink-gray-5" aria-hidden="true">·</span>
 							<span class="shrink-0 text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
@@ -247,7 +257,7 @@ function onKey(e: KeyboardEvent) {
 						</p>
 						<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" :options="commentMenu(c)" align="end">
 							<Button
-								class="shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+								class="-mr-[5px] shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
 								variant="ghost"
 								size="xs"
 								icon="lucide-ellipsis"
@@ -260,22 +270,22 @@ function onKey(e: KeyboardEvent) {
 					<div class="ml-7 mt-1">
 						<template v-if="editing?.id === c.id">
 							<div data-editing>
-								<Textarea v-model="editing.text" :rows="3" class="w-full resize-none text-base" />
+								<Textarea v-model="editing.text" :rows="3" class="w-full resize-none" />
 							</div>
 							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
-							<div class="mt-2 flex items-center gap-2">
+							<div class="mt-2 flex justify-end gap-2">
 								<Button variant="ghost" label="Cancel" @click="editing = null" />
-								<Button class="ml-auto" variant="solid" theme="gray" label="Save" :disabled="!ready(editing.text) || busy" @click="saveEdit" />
+								<Button variant="solid" theme="gray" label="Save" :disabled="!ready(editing.text) || busy" @click="saveEdit" />
 							</div>
 						</template>
 						<template v-else>
-							<p class="whitespace-pre-wrap break-words text-base text-ink-gray-7">{{ c.text }}</p>
-							<div v-if="confirming === c.id" class="mt-1 flex items-center gap-2">
-								<span class="min-w-0 flex-1 text-p-sm text-ink-gray-6">
-									{{ c.id === thread.id && thread.replies.length ? `Delete this and its ${thread.replies.length} ${thread.replies.length === 1 ? 'reply' : 'replies'}?` : 'Delete this for good?' }}
-								</span>
-								<Button variant="ghost" label="Cancel" @click="confirming = null" />
-								<Button variant="subtle" theme="red" label="Delete" :disabled="busy" @click="del(c)" />
+							<p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7">{{ c.text }}</p>
+							<div v-if="confirming === c.id" class="mt-2">
+								<p class="text-p-sm text-ink-gray-6">{{ c.id === thread.id ? 'Delete this thread?' : 'Delete this reply?' }}</p>
+								<div class="mt-2 flex justify-end gap-2">
+									<Button variant="ghost" label="Cancel" @click="confirming = null" />
+									<Button variant="subtle" theme="red" label="Delete" :disabled="busy" @click="del(c)" />
+								</div>
 							</div>
 						</template>
 					</div>
