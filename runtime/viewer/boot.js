@@ -539,7 +539,10 @@ async function run() {
   // it `dialog.confirm()` and `toast.success()` do nothing and report no
   // error, so the Runtime mounts it rather than trusting every Prototype to.
   // It renders no wrapper element of its own.
-  const app = createApp(() => h(FrappeUIProvider, null, { default: () => h(App) }))
+  // A Prototype that imports `sketch:variants` gets the Demo pill and the canvas beside its App. The canvas draws
+  // that App in frames, so it is handed the component. It is inside the provider, so its toasts and dialogs work.
+  const Chrome = bare.get('sketch:variants')?.Chrome
+  const app = createApp(() => h(FrappeUIProvider, null, { default: () => [h(App), Chrome && h(Chrome, { shell: App })] }))
   app.config.errorHandler = (err, _i, info) =>
     errors.push({ kind: 'vue', message: String(err?.message || err), info })
   app.use(router).use(FrappeUI)
