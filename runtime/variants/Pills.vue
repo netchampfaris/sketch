@@ -6,12 +6,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
 import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
-import { canMakeDefault, credential, makeDefault, makeFailure } from './default'
+import { bridge } from './bridge'
+import { canKeepOnly, canMakeDefault, credential, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { people, personName, shortName } from './extras'
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
-import { choices, currentOf, idOf, isChoice, keepHandler, kept, nav, onPage, openCanvas, setId, sets, slugOfRoute, states } from './state'
+import { choices, currentOf, idOf, isChoice, nav, onPage, openCanvas, setId, sets, slugOfRoute, states } from './state'
 import type { DState, VSet } from './state'
 
 const [DefineRow, Row] = createReusableTemplate<{ s: VSet | DState; role?: boolean }>({
@@ -44,7 +45,7 @@ const appRows = computed(() => Object.values(states).filter((s) => s.path === ''
 const pageStateRows = computed(() => Object.values(states).filter((s) => s.path !== '' && onPage(route, s.path)))
 const count = computed(() => appRows.value.length + pageStateRows.value.length + setRows.value.length)
 
-// What is new for this person on this page: options teammates made that nobody here has looked at, and unread threads.
+// What is new for this person on this page: options teammates made that nobody here has looked at. Unread threads mark the Comment tool instead.
 const optionsOf = (s: VSet) => s.options().map((o) => o.value)
 const freshOf = (s: VSet | DState) => (isState(s) ? 0 : freshIn(optionsOf(s)))
 const dot = computed(() => pageHasNew(route.path, setRows.value.flatMap(optionsOf)))
@@ -82,7 +83,11 @@ const { height } = useElementSize(stack, { width: 0, height: 0 }, { box: 'border
 // On a phone the stack sits above the page's MobileNav bar, when it has one, so the annotate button and the toasts rise with it.
 const navH = ref(0)
 // With a bar the stack sits 4.75rem (76px) from the bottom, as the original did; a taller bar lifts it further.
-const lift = computed(() => (navH.value ? Math.max(navH.value + 6, 64) : 0))
+const lift = computed(() => {
+  const bar = navH.value ? Math.max(navH.value + 6, 64) : 0
+  // The open toolbar on a phone sits at the bottom edge; the pill rides above it (the stack is 0.75rem, 12px, up already).
+  return Math.max(bar, bridge.toolbarLift - 12)
+})
 function measureNav() {
   const bar = window.matchMedia('(max-width: 767px)').matches ? document.querySelector<HTMLElement>('[data-slot="mobile-nav"]') : null
   navH.value = bar ? Math.floor(bar.getBoundingClientRect().height) : 0
@@ -143,12 +148,10 @@ function openHere() {
   go(first ? `set:${pageSlug(first.path)}/${first.key}` : hereStates.value ? `page:${pageStateRows.value[0].path}` : 'auto')
 }
 const off = (s: VSet) => currentOf(s) !== s.options()[0]?.value
-const isKept = (s: VSet) => kept[setId(s)] === currentOf(s)
-// The owner's rows carry two more actions (only the owner's page has the credential; a commenter's toolbar has a Keep
-// handler too, but a note is the owner's to write).
+// The owner's rows carry two more actions (only the owner's page has the credential).
 const actions = computed(() => Boolean(credential.value))
-// The column is only there while a row is off its default or kept; otherwise the card is as narrow as a commenter's.
-const actionsShown = computed(() => actions.value && setRows.value.some((s) => off(s) || isKept(s)))
+// The column is only there while a row is off its default; otherwise the card is as narrow as a commenter's.
+const actionsShown = computed(() => actions.value && setRows.value.some(off))
 // Make default: the pick becomes the first slot in the source. The page reloads once it is saved.
 const saving = ref<string | null>(null)
 const held = ref(0)
@@ -164,12 +167,18 @@ async function makeIt(s: VSet, e: MouseEvent) {
     toast.error(makeFailure(err as Error))
   }
 }
-const keep = (s: VSet) => {
-  const el = s.elements()[0]
-  if (!el) return
+// Keep only this: the same server action as the canvas tile's menu. The page reloads with "Kept …" and Undo.
+async function keepIt(s: VSet) {
+  const option = currentOf(s)
+  if (!option || saving.value) return
+  saving.value = setId(s)
   hover(null)
-  keepHandler.value?.(el, `Keep ${labelOf(s)} for ${s.label}. Remove the other variants and the <Variants> wrapper.`)
-  kept[setId(s)] = currentOf(s)!
+  try {
+    await keepOnly(s, option, labelOf(s))
+  } catch (err) {
+    saving.value = null
+    toast.error(keepFailure(err as Error))
+  }
 }
 const rowLabel = (s: VSet | DState) => (isState(s) && !role(s) ? 'State' : s.label)
 const role = (s: VSet | DState) => isState(s) && s.path === ''
@@ -184,15 +193,15 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
       @mouseenter="hover(isState(s) ? null : (s as VSet))"
       @mouseleave="hover(null)"
     >
-      <span class="relative flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
+      <span class="flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
+        <span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s) }}</span>
         <span
           v-if="freshOf(s)"
-          class="absolute left-0 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-surface-blue-6"
+          class="ml-1.5 size-1.5 shrink-0 rounded-full bg-surface-blue-6"
           role="img"
           :title="`${freshOf(s)} new since you last looked`"
           :aria-label="`${freshOf(s)} new since you last looked`"
         />
-        <span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s) }}</span>
       </span>
       <div v-if="isState(s)" class="justify-self-start"><LensMenu :state="s" :show-name="false" /></div>
       <div v-else class="min-w-0 justify-self-start">
@@ -229,7 +238,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
         <span
           v-if="!isState(s)"
           class="flex shrink-0 items-center justify-end gap-1 max-md:col-span-2 max-md:col-start-2 max-md:row-start-2 max-md:justify-start"
-          :class="!off(s as VSet) && !isKept(s as VSet) ? 'max-md:hidden' : ''"
+          :class="!off(s as VSet) ? 'max-md:hidden' : ''"
         >
           <Button
             v-if="canMakeDefault(s as VSet)"
@@ -242,18 +251,16 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
             :aria-label="`Make ${labelOf(s as VSet)} the default for ${s.label}`"
             @click="makeIt(s as VSet, $event)"
           ><span class="text-p-sm" :class="saving === setId(s as VSet) ? 'sr-only' : ''">Make default</span></Button>
-          <span v-if="keepHandler && isKept(s as VSet)" class="flex items-center gap-1 text-p-sm text-ink-gray-5">
-            <span class="lucide-check size-4" aria-hidden="true" />Kept
-          </span>
           <Button
-            v-else-if="keepHandler"
+            v-if="canKeepOnly(s as VSet)"
             :class="off(s as VSet) || hovered === setId(s as VSet) ? '' : 'invisible max-md:hidden'"
             variant="ghost"
+            :loading="saving === setId(s as VSet)"
             :disabled="!!saving"
             :tabindex="off(s as VSet) || hovered === setId(s as VSet) ? undefined : -1"
             :aria-label="`Keep only ${labelOf(s as VSet)} for ${s.label}`"
-            @click="keep(s as VSet)"
-          ><span class="text-p-sm">Keep only this</span></Button>
+            @click="keepIt(s as VSet)"
+          ><span class="text-p-sm" :class="saving === setId(s as VSet) ? 'sr-only' : ''">Keep only this</span></Button>
         </span>
         <span v-else class="max-md:hidden" />
       </template>

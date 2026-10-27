@@ -371,8 +371,10 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	option as its only one, so an editor can add to it again.
 
 	A wrapped component's only own option is `original`; its extras are all that goes.
-	Keeping an extra of a wrapped component leaves `original` where it is, since that is
-	the component's own file: the kept option leads it.
+	Keeping an extra of a wrapped component replaces `original`: the extra's source is
+	written into the component's own file, its `<variant>` tag dropped, and every variant
+	file of the component goes with its registry row. No set is left. `removed` counts the
+	component's own version among the options that went.
 
 	Returns `removed`, how many options went.
 	"""
@@ -419,20 +421,27 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	extras = editor_variants.targeting(doc.name, file, name)
 	found = None
 	kept_path = None
+	# A person's option of a component with no `<Variants>` of its own replaces the component: it moves into the
+	# component's file and no set is left around it.
+	replaced = None
 	if extra:
 		kept_path = editor_variants.path_of(option)
 		if kept_path not in extras:
 			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
 
-		if sharing.is_editor_path(kept_path):
+		if not sets:
+			replaced = editor_variants.replacement(doc, file, name, option)
+			label = replaced["label"]
+			changed = replaced["source"]
+		elif sharing.is_editor_path(kept_path):
 			found = editor_variants.adoptable(doc, file, name, option)
 			label = found["meta"]["name"]
 		else:
 			label = _name_of(doc.name, kept_path, option)
 
 	others = [path for path in extras if path != kept_path]
-	leads = bool(extra and found is None and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
-	if changed == source and not others and not found and not leads:
+	leads = bool(extra and found is None and not replaced and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
+	if changed == source and not others and not found and not leads and not replaced:
 		frappe.throw(frappe._("{0} is already the only option.").format(label), frappe.ValidationError)
 
 	if versions.pending(doc.name):
@@ -447,12 +456,13 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 
 	registry = editor_variants.read_registry(doc.name)
 	before = json.dumps(registry, sort_keys=True)
-	for path in others:
+	# Replacing the component takes the kept variant's file away too: its source now lives in the component.
+	for path in [*others, kept_path] if replaced else others:
 		prototype_files.delete_file(doc.name, path)
 		versions.note(doc.name, path, versions.DELETED)
 		registry.pop(path, None)
 
-	if kept_path and kept_path in registry:
+	if kept_path and kept_path in registry and not replaced:
 		registry[kept_path]["default"] = True
 
 	if json.dumps(registry, sort_keys=True) != before:
@@ -463,9 +473,11 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	return {
 		"file": file,
 		"name": name,
-		"option": editor_variants.option_of(kept_path) if kept_path else option,
+		"option": "original" if replaced else editor_variants.option_of(kept_path) if kept_path else option,
 		"label": label,
-		"removed": dropped + len(others),
+		# The component's own version goes too, when a person's replaced it.
+		"removed": dropped + len(others) + (1 if replaced else 0),
+		"replaced": bool(replaced),
 		"sequence": version.sequence if version else None,
 	}
 

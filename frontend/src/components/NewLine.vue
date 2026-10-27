@@ -42,10 +42,11 @@ const link = computed(() =>
     class="flex h-6 min-w-0 items-center gap-2 text-xs text-ink-gray-5 hover:text-ink-gray-7"
     :title="label"
   >
-    <span class="min-w-0 truncate">
-      <span v-if="mention" class="text-ink-gray-8">{{ mention }}</span
-      ><template v-if="mention && counts"> &middot; </template
-      ><template v-if="counts">{{ counts }}</template>
+    <!-- The mention gives way first when the card is narrow; the counts and the faces after it keep their room. -->
+    <span class="flex min-w-0 items-baseline gap-1">
+      <span v-if="mention" class="min-w-0 truncate text-ink-gray-8">{{ mention }}</span>
+      <span v-if="mention && counts" class="shrink-0" aria-hidden="true">&middot;</span>
+      <span v-if="counts" class="whitespace-nowrap" :class="mention ? 'shrink-0' : 'truncate'">{{ counts }}</span>
     </span>
     <span v-if="news.by.length" class="flex shrink-0 items-center" :title="news.by.map((p) => p.name).join(', ')">
       <Avatar

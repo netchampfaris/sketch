@@ -41,6 +41,8 @@ export const bridge = shallowReactive({
   reveal: null as ((spot: TileSpot, at?: { fx: number; fy: number }) => Promise<{ x: number; y: number } | null>) | null,
   pointOf: null as ((spot: TileSpot, at: { fx: number; fy: number }) => { x: number; y: number } | null) | null,
   // ---- Set by the toolbar
+  // On a phone, how far from the bottom the open toolbar's top edge (plus a gap) is: the Demo pill rides above it.
+  toolbarLift: 0,
   // What a person may do here, and the tool picking tiles ('' while browsing).
   canComment: false,
   canNote: false,

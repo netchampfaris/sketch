@@ -1,4 +1,4 @@
-// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `setKeepHandler`, `enableMakeDefault`,
+// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `enableMakeDefault`,
 // `makeDefault` and `Chrome` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
 import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
@@ -8,11 +8,10 @@ import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sa
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { setKeepHandler } from './state'
 export { enableMakeDefault, makeDefault } from './default'
 export { enableVariantEdit } from './edit'
 export { registerExtras } from './extras'
-export { badges, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
+export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { closeCanvas, openCanvas } from './state'

@@ -21,6 +21,7 @@ path built from it is checked against the folder it must be in.
 """
 
 import json
+import posixpath
 import re
 
 import frappe
@@ -205,6 +206,42 @@ def move_in(doc, host_file: str, set_name: str, found: dict) -> str:
 	versions.note(doc.name, found["path"], versions.DELETED)
 	versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 	return destination
+
+
+IMPORT = re.compile(r"""(\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.{1,2}(?:/[^"']*)?)\2""")
+
+
+def as_component(source: str, from_path: str, to_path: str) -> str:
+	"""A variant's source as the file `to_path`: its `<variant>` tag gone, its relative imports still pointing where they did."""
+	source = sharing.VARIANT_TAG.sub("", source, count=1).lstrip("\r\n")
+	here = posixpath.dirname(from_path)
+	there = posixpath.dirname(to_path)
+
+	def point(match):
+		relative = posixpath.relpath(posixpath.normpath(posixpath.join(here, match.group(3))), there)
+		return f"{match.group(1)}{match.group(2)}{relative if relative.startswith('.') else './' + relative}{match.group(2)}"
+
+	return IMPORT.sub(point, source)
+
+
+def replacement(doc, host_file: str, set_name: str, option: str) -> dict:
+	"""A variant of a wrapped component, as the source that replaces the component's own file. Writes nothing.
+
+	Returns `source` and `label`. An editor's variant is checked as for adoption; an adopted one is the owner's already.
+	"""
+	path = path_of(option)
+	if sharing.is_editor_path(path):
+		found = adoptable(doc, host_file, set_name, option)
+		return {"source": as_component(found["source"], path, host_file), "label": found["meta"]["name"]}
+
+	versions.lock(doc.name)
+	try:
+		source = prototype_files.read_files(doc.name, [path])[0]["content"]
+	except frappe.ValidationError:
+		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
+
+	meta = sharing.variant_meta(source)
+	return {"source": as_component(source, path, host_file), "label": (meta or {}).get("name") or option.rsplit("/", 1)[-1]}
 
 
 def adopt(doc, host_file: str, set_name: str, option: str) -> dict:

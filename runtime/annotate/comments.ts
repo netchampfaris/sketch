@@ -174,7 +174,8 @@ export const toNote = (comment: string) => call<Note>('comment_to_note', { comme
 // Where a canvas thread sits, or null for a thread on the live page.
 export const spotOfThread = (t: Thread): TileSpot | null => (t.anchor.tile ? { route: t.anchor.route, tile: t.anchor.tile } : null)
 export const threadById = (id: string | null | undefined) => (id ? threads.value.find((t) => t.id === id) : undefined)
-export const personOf = (username: string) => people.value[username] ?? {}
+// Someone who has not commented yet is known from the mention list.
+export const personOf = (username: string): Person => people.value[username] ?? mentionable.value.find((m) => m.username === username) ?? {}
 
 // ---- Time --------------------------------------------------------------------------------------
 export function ago(ts: number): string {

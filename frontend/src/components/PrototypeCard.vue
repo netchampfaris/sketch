@@ -232,7 +232,7 @@ const menuOptions = computed(() => [
 </script>
 
 <template>
-  <article class="min-w-0">
+  <article class="flex min-w-0 flex-col">
     <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
 
     <!--
@@ -315,7 +315,8 @@ const menuOptions = computed(() => [
       </Dropdown>
     </div>
 
-    <!-- What is new since the owner last looked. Absent when nothing is, so the card is as it was. -->
+    <!-- What is new since the owner last looked. The meta row under it is pinned to the card's bottom (`mt-auto`), so it
+         lines up across a grid row whether or not a card has a line. -->
     <NewLine :news="prototype.new" :href="prototype.viewer_path" />
 
     <!--
@@ -326,7 +327,7 @@ const menuOptions = computed(() => [
       The copy button only exists while there is a link to copy. The row keeps
       its height either way, because `h-7` is the button's own height.
     -->
-    <div class="flex h-7 items-center justify-between gap-2">
+    <div class="mt-auto flex h-7 items-center justify-between gap-2">
       <span class="min-w-0 truncate text-xs text-ink-gray-5">
         {{ subtitle }} &middot; Updated {{ prototype.updated }}
       </span>

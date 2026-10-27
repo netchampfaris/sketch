@@ -1,5 +1,5 @@
 // "Make default": ask the server to move a variant to the front of its set, so the first slot (the
-// default) is the one the owner prefers. Internal, like `setKeepHandler`: the pill uses it, and so
+// default) is the one the owner prefers. Internal: the pill uses it, and so
 // does the canvas tile. The Viewer is sandboxed with no cookie, so the write is authorised by the
 // signature the payload carries (sketch.api.set_variant_default_signed). Only the owner's live page
 // gets one, so a Guest, a `check` and a framed card never see the button.
@@ -36,6 +36,8 @@ type Note = {
   kept?: boolean
   // How many other options Keep only this removed.
   removed?: number
+  // The option replaced a component wrapped by a person's set: no set is left, so the toast names the component first.
+  replaced?: boolean
   undo?: Undo
   // The file as the page loaded it after the write, to tell a later change from none.
   hash?: string
@@ -89,7 +91,7 @@ const others = (n = 0) => (n ? `, removed ${n} other${n === 1 ? '' : 's'}` : '')
 
 function announce(note: Note, files?: Record<string, string>) {
   const message = note.kept
-    ? note.restored ? 'Options restored' : `Kept ${note.label}${others(note.removed)}`
+    ? note.restored ? 'Options restored' : `Kept ${note.replaced ? `${note.set} · ` : ''}${note.label}${others(note.removed)}`
     : note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
   const back = note.undo
   if (!back) return void toast.success(message)
@@ -189,6 +191,7 @@ export async function keepOnly(set: { name: string; file: string }, option: stri
     label,
     kept: true,
     removed: done?.removed,
+    replaced: done?.replaced,
     undo: done?.sequence ? { option: kept, label, sequence: done.sequence } : undefined,
   })
 }
