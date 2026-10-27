@@ -3,9 +3,9 @@
 // by selector on every scroll, resize, route change and (throttled) DOM change, like the note pins.
 // Pins that land on each other fan out sideways, so every one of them stays reachable by pointer;
 // the panel lists them all as well.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useEventListener } from '@vueuse/core'
-import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, isOurs, resolve, tagOf } from './annotate'
+import { computed, ref } from 'vue'
+import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, resolve, tagOf } from './annotate'
+import { clearHover, usePinTracking } from './pinTracking'
 import { matching, openThread, type Thread } from './comments'
 import AuthorAvatar from './AuthorAvatar.vue'
 
@@ -43,39 +43,7 @@ function measure() {
 	pos.value = next
 }
 
-let raf = 0
-function schedule() {
-	if (raf) return
-	raf = requestAnimationFrame(() => {
-		raf = 0
-		measure()
-	})
-}
-useEventListener(window, 'scroll', schedule, { capture: true, passive: true })
-useEventListener(window, 'resize', schedule)
-
-let mo: MutationObserver | null = null
-let wait = 0
-onMounted(() => {
-	measure()
-	mo = new MutationObserver((list) => {
-		if (list.every((m) => isOurs(m.target))) return
-		if (wait) return
-		wait = window.setTimeout(() => {
-			wait = 0
-			schedule()
-		}, 120)
-	})
-	mo.observe(document.body, { childList: true, subtree: true })
-})
-onBeforeUnmount(() => {
-	mo?.disconnect()
-	cancelAnimationFrame(raf)
-	clearTimeout(wait)
-	hoverEl.value = null
-	hoverFrac.value = null
-})
-watch([visible, () => props.route], () => schedule(), { flush: 'post' })
+usePinTracking(measure, [visible, () => props.route])
 
 const shown = computed(() => visible.value.filter((t) => pos.value[t.id]))
 function enter(t: Thread) {
@@ -83,10 +51,6 @@ function enter(t: Thread) {
 	hoverEl.value = el
 	hoverLabel.value = el ? tagOf(el) : ''
 	hoverFrac.value = el && t.anchor.box ? t.anchor.box : null
-}
-function leave() {
-	hoverEl.value = null
-	hoverFrac.value = null
 }
 function click(t: Thread, e: MouseEvent) {
 	const p = pos.value[t.id]
@@ -108,19 +72,26 @@ const label = (t: Thread) => `Comment from @${t.author}${t.replies.length ? `, $
 			data-comment-pin
 			type="button"
 			:aria-label="label(t)"
-			class="group pointer-events-auto fixed flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition-transform duration-150 hover:z-[62] hover:scale-110 focus-visible:z-[62] motion-reduce:transition-none motion-reduce:hover:scale-100"
+			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[62] hover:scale-110 focus-visible:z-[62] motion-reduce:transition-none motion-reduce:hover:scale-100"
 			:class="[openThread === t.id ? 'z-[62]' : 'z-[60]', pos[t.id]?.found === false && 'opacity-50', t.resolved && 'opacity-60']"
 			:style="{ left: `${pos[t.id].x}px`, top: `${pos[t.id].y}px` }"
 			@mouseenter="enter(t)"
-			@mouseleave="leave"
+			@mouseleave="clearHover"
 			@click.stop="click(t, $event)"
 		>
+			<!-- The note pin's shape, so the tip is the spot and the words beside it stay readable; the avatar sits in it. -->
 			<span
-				class="rounded-full shadow ring-2 transition-colors duration-150"
-				:class="openThread === t.id ? 'ring-outline-blue-6' : 'ring-surface-base'"
-			>
-				<AuthorAvatar :username="t.author" size="md" />
-			</span>
+				class="absolute inset-0 rotate-45 rounded-full rounded-br-none shadow ring-2 ring-surface-base transition-colors duration-150"
+				:class="t.resolved ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
+				aria-hidden="true"
+			/>
+			<!-- The thread being read: a 2px ring in the pin's own colour, 2px off the edge. -->
+			<span
+				v-if="openThread === t.id"
+				class="pointer-events-none absolute -inset-1 rotate-45 rounded-full rounded-br-none border-2 border-outline-blue-6"
+				aria-hidden="true"
+			/>
+			<span class="relative flex"><AuthorAvatar :username="t.author" size="sm" /></span>
 		</button>
 	</TransitionGroup>
 </template>

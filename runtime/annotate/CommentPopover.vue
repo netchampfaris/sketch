@@ -4,7 +4,7 @@
 // under the composer, with a Retry.
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useElementSize } from '@vueuse/core'
-import { Badge, Button, Textarea, toast } from 'frappe-ui'
+import { Button, Dropdown, Textarea, Tooltip, toast } from 'frappe-ui'
 import { host } from './host'
 import {
 	MAX_BYTES,
@@ -23,6 +23,7 @@ import {
 } from './comments'
 import type { Note } from './annotate'
 import AuthorAvatar from './AuthorAvatar.vue'
+import ComposerInput from './ComposerInput.vue'
 
 const props = defineProps<{
 	x: number
@@ -46,14 +47,15 @@ const emit = defineEmits<{
 
 const root = ref<HTMLElement | null>(null)
 const { height } = useElementSize(root, { width: 0, height: 220 }, { box: 'border-box' })
-const W = 320
+const WIDTH = 300
 const GAP = 12
-const EDGE = 8
+const EDGE = 12
 
 // Right and below the point; flips above or left when it would run off the viewport.
 const pos = computed(() => {
 	const vw = window.innerWidth
 	const vh = window.innerHeight
+	const W = Math.min(WIDTH, vw - 2 * EDGE)
 	const h = height.value || 220
 	let left = props.x + GAP
 	if (left + W > vw - EDGE) left = props.x - GAP - W
@@ -84,6 +86,26 @@ const comments = computed<Reply[]>(() => (props.thread ? [props.thread, ...props
 const canEdit = (c: Reply) => c.author === me
 const canDelete = (c: Reply) => c.author === me || owner
 const canResolve = computed(() => !!props.thread && (props.thread.author === me || owner))
+
+// What each ⋯ offers, only to whoever may use it. The thread's own Delete lives in the header menu.
+function startEdit(c: Reply) {
+	editing.value = { id: c.id, text: c.text }
+	// The menu hands focus back to its button as it closes; take it after that.
+	setTimeout(() => root.value?.querySelector<HTMLTextAreaElement>('[data-editing] textarea')?.focus(), 50)
+}
+const commentMenu = (c: Reply) => {
+	const first = c.id === props.thread?.id
+	return [
+		canEdit(c) && { label: 'Edit', icon: 'lucide-pencil', onClick: () => startEdit(c) },
+		owner && { label: 'Add to notes', icon: 'lucide-sticky-note', onClick: () => addToNotes(c) },
+		canDelete(c) && !first && { label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = c.id) },
+	].filter((o) => !!o) as any[]
+}
+const threadMenu = computed<any[]>(() =>
+	props.thread && canDelete(props.thread)
+		? [{ label: owner ? 'Delete thread' : 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = props.thread!.id) }]
+		: [],
+)
 
 // ---- Saving: one run at a time; a failure leaves the words where they are and offers a retry ----
 const busy = ref(false)
@@ -168,12 +190,17 @@ function addToNotes(c: Reply) {
 	})
 }
 
+// Enter sends from the words box itself (ComposerInput); here only an edit in place has keys of its own.
 function onKey(e: KeyboardEvent) {
-	if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return
-	e.preventDefault()
-	if (editing.value) saveEdit()
-	else if (props.thread) sendReply()
-	else start()
+	if (!editing.value) return
+	if (e.key === 'Escape') {
+		e.preventDefault()
+		e.stopPropagation()
+		editing.value = null
+	} else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+		e.preventDefault()
+		saveEdit()
+	}
 }
 </script>
 
@@ -183,34 +210,59 @@ function onKey(e: KeyboardEvent) {
 		data-annotate-ui
 		role="dialog"
 		aria-label="Comment"
-		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1rem)] w-80 flex-col rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-3 shadow-xl"
+		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1.5rem)] w-[min(18.75rem,calc(100vw-1.5rem))] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
 		:style="pos"
 		@keydown="onKey"
 	>
-		<div class="flex items-center gap-2">
-			<p class="flex min-w-0 flex-1 items-baseline gap-2 text-base">
-				<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ thread?.anchor.component || component }}</span>
-				<span v-if="extra" class="shrink-0 tabular-nums text-ink-gray-5">+{{ extra }} more</span>
-			</p>
-			<Badge v-if="thread?.resolved" class="shrink-0" theme="green" variant="subtle" size="sm" label="Resolved" />
-			<Button v-if="canResolve" class="shrink-0" variant="ghost" :label="thread?.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
-			<Button class="shrink-0" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+		<!-- A thread: the few things you can do to it, as quiet icons. -->
+		<div v-if="thread" class="-mr-1 -mt-1 flex items-center justify-end gap-0.5">
+			<Tooltip v-if="canResolve" :text="thread.resolved ? 'Reopen' : 'Resolve'" :hover-delay="600">
+				<Button
+					:variant="thread.resolved ? 'subtle' : 'ghost'"
+					:theme="thread.resolved ? 'green' : 'gray'"
+					icon="lucide-check"
+					:aria-label="thread.resolved ? 'Reopen' : 'Resolve'"
+					:disabled="busy"
+					@click="toggleResolved"
+				/>
+			</Tooltip>
+			<Dropdown v-if="threadMenu.length" :options="threadMenu" align="end">
+				<Button variant="ghost" icon="lucide-ellipsis" aria-label="Thread menu" />
+			</Dropdown>
+			<Tooltip text="Close" :hover-delay="600">
+				<Button variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
+			</Tooltip>
+		</div>
+		<!-- A new comment has no header; on touch, with no Escape, it keeps a way out. -->
+		<div v-else class="-mr-1 -mt-1 mb-1 hidden items-center justify-end [@media(hover:none)]:flex">
+			<Button variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 		</div>
 
-		<!-- A thread: every comment, then a reply. -->
 		<template v-if="thread">
-			<div class="mt-1 min-h-0 flex-1 divide-y divide-outline-gray-1 overflow-y-auto">
-				<div v-for="c in comments" :key="c.id" class="flex gap-2 py-2">
-					<span class="mt-px shrink-0"><AuthorAvatar :username="c.author" size="sm" /></span>
+			<div class="mt-1 min-h-0 flex-1 space-y-3 overflow-y-auto">
+				<div v-for="c in comments" :key="c.id" class="group flex gap-2">
+					<span class="flex h-5 shrink-0 items-center"><AuthorAvatar :username="c.author" size="sm" /></span>
 					<div class="min-w-0 flex-1">
-						<p class="flex items-baseline gap-2">
-							<span class="min-w-0 truncate text-base font-medium text-ink-gray-8">@{{ c.author }}</span>
-							<span class="shrink-0 text-sm text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
-							<span v-if="c.edited" class="shrink-0 text-sm text-ink-gray-4">edited</span>
+						<p class="flex h-5 items-center gap-1 text-base">
+							<span class="min-w-0 truncate font-medium text-ink-gray-8">@{{ c.author }}</span>
+							<span class="shrink-0 text-ink-gray-5" aria-hidden="true">·</span>
+							<span class="shrink-0 text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
+							<span v-if="c.edited" class="shrink-0 text-ink-gray-4">(edited)</span>
+							<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" :options="commentMenu(c)" align="end">
+								<Button
+									class="-my-0.5 -mr-1 ml-auto shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+									variant="ghost"
+									size="xs"
+									icon="lucide-ellipsis"
+									aria-label="Comment actions"
+								/>
+							</Dropdown>
 						</p>
 
 						<template v-if="editing?.id === c.id">
-							<Textarea v-model="editing.text" :rows="3" class="mt-1 text-base" />
+							<div data-editing>
+								<Textarea v-model="editing.text" :rows="3" class="mt-1 w-full resize-none text-base" />
+							</div>
 							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
 							<div class="mt-2 flex items-center gap-2">
 								<Button variant="ghost" label="Cancel" @click="editing = null" />
@@ -226,37 +278,20 @@ function onKey(e: KeyboardEvent) {
 								<Button variant="ghost" label="Cancel" @click="confirming = null" />
 								<Button variant="subtle" theme="red" label="Delete" :disabled="busy" @click="del(c)" />
 							</div>
-							<div v-else class="-ml-2 mt-0.5 flex flex-wrap items-center">
-								<Button v-if="canEdit(c)" variant="ghost" size="sm" label="Edit" @click="editing = { id: c.id, text: c.text }" />
-								<Button v-if="canDelete(c)" variant="ghost" size="sm" label="Delete" @click="confirming = c.id" />
-								<Button v-if="owner" variant="ghost" size="sm" label="Add to notes" :disabled="busy" @click="addToNotes(c)" />
-							</div>
 						</template>
 					</div>
 				</div>
 			</div>
 
-			<div class="mt-1 border-t border-outline-gray-1 pt-3">
-				<Textarea v-model="replyText" :rows="2" placeholder="Reply…" class="text-base" />
-				<p v-if="tooLong(replyText)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
-				<div class="mt-2 flex items-center gap-2">
-					<span class="text-xs text-ink-gray-4">⌘↵ to send</span>
-					<Button class="ml-auto" variant="solid" theme="gray" label="Reply" :disabled="!ready(replyText) || busy" @click="sendReply" />
-				</div>
-			</div>
+			<ComposerInput v-model="replyText" class="mt-3" placeholder="Reply…" send-label="Reply" :can-send="ready(replyText) && !busy" @send="sendReply" />
+			<p v-if="tooLong(replyText)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
 		</template>
 
 		<!-- A new thread. -->
 		<template v-else>
-			<Textarea :model-value="modelValue" :rows="3" placeholder="Add a comment…" class="mt-2 text-base" @update:model-value="emit('update:modelValue', $event)" />
+			<p v-if="extra" class="mb-1 text-p-sm tabular-nums text-ink-gray-5">On this and {{ extra }} more</p>
+			<ComposerInput :model-value="modelValue" placeholder="Add a comment…" send-label="Comment" :can-send="canStart && !busy" @update:model-value="emit('update:modelValue', $event)" @send="start" />
 			<p v-if="tooLong(modelValue)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
-			<div class="mt-3 flex items-center gap-2">
-				<span class="text-xs text-ink-gray-4">⌘↵ to send</span>
-				<span class="ml-auto flex items-center gap-2">
-					<Button variant="ghost" label="Cancel" @click="emit('close')" />
-					<Button variant="solid" theme="gray" label="Comment" :disabled="!canStart || busy" @click="start" />
-				</span>
-			</div>
 		</template>
 
 		<p v-if="failed" role="alert" class="mt-2 flex items-center gap-1 text-p-sm text-ink-red-3">
