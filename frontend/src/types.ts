@@ -34,6 +34,8 @@ export interface NewPerson {
  * What changed on a prototype since this person last looked: the line on its gallery card.
  * Counts are what is still unseen. `by` is the first three people, `more` how many others.
  * `mention` is set when someone named this person in a comment they have not opened.
+ * `invited` is set for an invited editor until they first open the prototype, and `adopted` while the owner's
+ * making their variant the default is still unseen.
  */
 export interface PrototypeNew {
   variants: number
@@ -41,6 +43,8 @@ export interface PrototypeNew {
   by: NewPerson[]
   more: number
   mention: { by: NewPerson; thread: string } | null
+  invited: { by: NewPerson } | null
+  adopted: { label: string; by: NewPerson } | null
 }
 
 export interface Prototype {
@@ -87,9 +91,11 @@ export interface ShareState {
   owner: SharePerson
   /** In the order they were invited. */
   editors: SharePerson[]
+  /** People who commented and are not invited, first to comment first. They lose access when the link goes private. */
+  commenters: { username: string; full_name: string }[]
 }
 
-/** A Prototype somebody invited you to edit. `sketch.api.shared_prototypes`. */
+/** A Prototype somebody invited you to edit (`sketch.api.shared_prototypes`), or one you only talked on (`conversations`). */
 export interface SharedPrototype extends Prototype {
   owner: SharePerson
 }

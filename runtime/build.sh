@@ -22,7 +22,7 @@ BASE=/assets/sketch/runtimes/$VERSION
 
 # The shared source that goes into every Runtime. A change to any of it, or
 # to this version's lockfile, changes the stamp.
-SOURCES="runtime-entry tailwind viewer fonts annotate variants internals.css
+SOURCES="runtime-entry tailwind viewer fonts annotate variants shared internals.css
   internals.tailwind.config.js vite.runtime.config.js vite.annotate.config.js
   make-lucide-map.mjs make-manifest.mjs build.sh package.json"
 STAMP=$(cd "$HERE" && find $SOURCES "versions/$VERSION/package.json" "versions/$VERSION/yarn.lock" \

@@ -3,12 +3,12 @@
 // same username everywhere (pin, panel and thread).
 import { computed } from 'vue'
 import { Avatar } from 'frappe-ui'
+import { avatarTheme } from '../shared/avatarTheme'
 import { personOf } from './comments'
 
 const props = defineProps<{ username: string; size?: 'xs' | 'sm' | 'md' | 'lg' }>()
 
-const THEMES = ['blue', 'green', 'amber', 'violet', 'red'] as const
-const theme = computed(() => THEMES[[...props.username].reduce((n, c) => n + c.charCodeAt(0), 0) % THEMES.length])
+const theme = computed(() => avatarTheme(props.username))
 const person = computed(() => personOf(props.username))
 </script>
 

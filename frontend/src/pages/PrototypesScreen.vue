@@ -14,7 +14,7 @@ import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
 import SharedCard from '../components/SharedCard.vue'
 import { usePoll } from '../poll'
-import { method, prototypes, session, sharedPrototypes } from '../store'
+import { conversationPrototypes, method, prototypes, session, sharedPrototypes } from '../store'
 import type { Prototype, SharedPrototype } from '../types'
 
 const showPicker = ref(false)
@@ -27,6 +27,12 @@ const count = computed(() => items.value.length)
  * is one, so most users never see it.
  */
 const shared = computed(() => sharedPrototypes.data ?? [])
+
+/**
+ * Prototypes this user commented on or was mentioned in, and neither owns nor
+ * edits. The same card and the same news line, so a reply reaches them.
+ */
+const conversations = computed(() => conversationPrototypes.data ?? [])
 
 /**
  * True until the first list lands. It latches, and it is not a computed over
@@ -125,6 +131,7 @@ const probe = useCall<Prototype[]>({
  */
 let signature = ''
 let sharedSignature = ''
+let conversationSignature = ''
 
 /** The poll's reader for the shared list, the same way `probe` reads the owned one. */
 const probeShared = useCall<SharedPrototype[]>({
@@ -144,6 +151,19 @@ watch(
   () => sharedPrototypes.data,
   (rows) => {
     sharedSignature = JSON.stringify(rows ?? [])
+  },
+  { immediate: true },
+)
+
+const probeConversations = useCall<SharedPrototype[]>({
+  url: method('conversations'),
+  immediate: false,
+})
+
+watch(
+  () => conversationPrototypes.data,
+  (rows) => {
+    conversationSignature = JSON.stringify(rows ?? [])
   },
   { immediate: true },
 )
@@ -179,6 +199,11 @@ usePoll(
     if (!alive()) return
     if (!probeShared.error && invited && JSON.stringify(invited) !== sharedSignature)
       await sharedPrototypes.reload()
+    // A reply or a mention arrives the same way.
+    const talked = await probeConversations.reload()
+    if (!alive()) return
+    if (!probeConversations.error && talked && JSON.stringify(talked) !== conversationSignature)
+      await conversationPrototypes.reload()
     return true
   },
   { interval: POLL_MS },
@@ -187,6 +212,7 @@ usePoll(
 onMounted(() => {
   if (!prototypes.isFinished) prototypes.reload()
   sharedPrototypes.reload()
+  conversationPrototypes.reload()
 })
 </script>
 
@@ -313,6 +339,20 @@ onMounted(() => {
     </h2>
     <div class="grid gap-6 md:grid-cols-2">
       <SharedCard v-for="item in shared" :key="item.name" :prototype="item" />
+    </div>
+  </section>
+
+  <!-- Same as above: one heading, no count, nothing drawn until there is a conversation. -->
+  <section
+    v-if="conversations.length"
+    class="px-3 pb-10 sm:px-5"
+    aria-labelledby="conversations-heading"
+  >
+    <h2 id="conversations-heading" class="mb-4 truncate text-2xl-semibold text-ink-gray-8">
+      Conversations
+    </h2>
+    <div class="grid gap-6 md:grid-cols-2">
+      <SharedCard v-for="item in conversations" :key="item.name" :prototype="item" conversation />
     </div>
   </section>
 

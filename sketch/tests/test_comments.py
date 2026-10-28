@@ -293,13 +293,11 @@ class TestThreads(CommentCase):
 			(api.comment_reply, {"thread": thread["id"], "text": "b"}),
 			(api.comment_edit, {"comment": thread["id"], "text": "c"}),
 			(api.comment_resolve, {"thread": thread["id"]}),
-			(api.comment_to_note, {"comment": thread["id"]}),
 			(api.comment_delete, {"comment": thread["id"]}),
 		)
 		for fn, fields in writes:
-			who = self.owner_name if fn is api.comment_to_note else self.reader_name
 			with self.subTest(fn=fn.__name__), mock.patch.object(comments, "_lock", wraps=comments._lock) as lock:
-				self.call(fn, who, **fields)
+				self.call(fn, self.reader_name, **fields)
 				lock.assert_called_once_with(self.doc.name)
 
 	def test_the_epoch_is_checked_after_the_lock(self):
@@ -404,26 +402,50 @@ class TestPrivate(CommentCase):
 
 
 class TestAddToNotes(CommentCase):
-	def test_only_the_owner_copies_a_comment_into_notes(self):
+	"""Add to notes opens a note on the thread's words; nothing is saved until the owner saves it (decision 47)."""
+
+	def test_only_the_owner_gets_a_draft_and_it_saves_nothing(self):
 		thread = self.start(self.reader_name, "Labels are hard to scan")
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_to_note, self.reader_name, comment=thread["id"])
+			self.call(api.comment_note_draft, self.reader_name, comment=thread["id"])
 
-		self.assertEqual(annotations.read(self.doc.name)["notes"], [])
-		note = self.call(api.comment_to_note, self.owner_name, comment=thread["id"])
-		self.assertEqual(note["note"], "Sketch Test cmreader: “Labels are hard to scan”")
-		self.assertEqual((note["selector"], note["route"]), (ANCHOR["selector"], ANCHOR["route"]))
-		self.assertNotIn("author", note)
-		stored = annotations.read(self.doc.name)["notes"]
-		self.assertEqual([n["id"] for n in stored], [note["id"]])
+		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		self.assertEqual(draft["note"], "Sketch Test cmreader: Labels are hard to scan")
+		self.assertEqual((draft["anchor"]["selector"], draft["anchor"]["route"]), (ANCHOR["selector"], ANCHOR["route"]))
+		self.assertEqual(annotations.read(self.doc.name)["notes"], [], "the owner has not saved it yet")
 		self.assertEqual(len(self.rows()), 1, "the comment stays where it is")
 
-	def test_a_reply_is_credited_to_its_own_author_on_the_threads_element(self):
+	def test_the_draft_is_the_whole_thread_one_line_per_comment_whichever_comment_asked(self):
 		thread = self.start(self.reader_name, "first")
-		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="second")
-		note = self.call(api.comment_to_note, self.owner_name, comment=after["replies"][0]["id"])
-		self.assertTrue(note["note"].startswith("Sketch Test cmother: "))
-		self.assertEqual(note["selector"], ANCHOR["selector"])
+		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="second\nline  two")
+		after = self.call(api.comment_reply, self.owner_name, thread=thread["id"], text="third")
+		for asked in (thread["id"], after["replies"][1]["id"]):
+			with self.subTest(asked=asked):
+				draft = self.call(api.comment_note_draft, self.owner_name, comment=asked)
+				self.assertEqual(
+					draft["note"].split("\n"),
+					["Sketch Test cmreader: first", "Sketch Test cmother: second line two", "Sketch Test cmowner: third"],
+				)
+				self.assertEqual(draft["anchor"]["selector"], ANCHOR["selector"], "the thread's own spot, not the reply's")
+
+	def test_a_mention_reads_as_a_name(self):
+		thread = self.start(self.reader_name, f"@[{self.owner_name}] is this right?")
+		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		self.assertNotIn("@[", draft["note"])
+		self.assertIn("@Sketch Test cmowner is this right?", draft["note"])
+
+	def test_the_owner_saves_the_edited_words_as_the_note(self):
+		thread = self.start(self.reader_name, "Labels are hard to scan")
+		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		note = {**draft["anchor"], "id": "n1", "note": "Make the labels bolder"}
+		annotations.save(self.doc.name, json.dumps({"notes": [note]}), 0)
+		stored = annotations.read(self.doc.name)["notes"]
+		self.assertEqual([(n["id"], n["note"]) for n in stored], [("n1", "Make the labels bolder")])
+		self.assertEqual(len(self.rows()), 1)
+
+	def test_the_old_one_step_call_is_gone(self):
+		self.assertFalse(hasattr(api, "comment_to_note"))
+		self.assertFalse(hasattr(comments, "add_to_notes"))
 
 
 TILE = {
@@ -604,12 +626,14 @@ class TestTiles(CommentCase):
 		with set_user(self.owner):
 			self.assertEqual(self._annotations()["notes"], [])
 
-		note = self.call(api.comment_to_note, self.owner_name, comment=thread["id"])
-		self.assertEqual(note["tile"]["option"], "donut", "the tile comes along")
+		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		self.assertEqual(draft["anchor"]["tile"]["option"], "donut", "the tile comes along")
+		note = {**draft["anchor"], "id": "n1", "note": draft["note"]}
+		annotations.save(self.doc.name, json.dumps({"notes": [note]}), 0)
 		with set_user(self.owner):
 			read = self._annotations()
 
-		self.assertEqual([n["id"] for n in read["notes"]], [note["id"]])
+		self.assertEqual([n["id"] for n in read["notes"]], ["n1"])
 		self.assertEqual(read["notes"][0]["where"], "Canvas · Overview › Spend summary › option Donut")
 		self.assertIn("This one reads best", read["notes"][0]["note"])
 		self.assertEqual(len(self.rows()), 1, "the comment stays")
@@ -617,7 +641,7 @@ class TestTiles(CommentCase):
 	def test_a_reader_cannot_copy_a_tile_comment_into_notes(self):
 		thread = self.start(self.reader_name, anchor=tile_anchor())
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_to_note, self.reader_name, comment=thread["id"])
+			self.call(api.comment_note_draft, self.reader_name, comment=thread["id"])
 
 		self.assertEqual(annotations.read(self.doc.name)["notes"], [])
 
@@ -700,3 +724,200 @@ class TestMigration(CommentCase):
 		for raw in frappe.get_all("Sketch Prototype", pluck="annotations"):
 			notes = json.loads(raw).get("notes", []) if raw else []
 			self.assertFalse([n for n in notes if isinstance(n, dict) and n.get("author")])
+
+
+class TestPicks(CommentCase):
+	"""A live-page comment keeps what the Demo showed (decision 42). A tile comment keeps nothing of the kind."""
+
+	PICKS = [
+		{"kind": "set", "path": "/", "key": "kpi-strip", "label": "KPI strip", "option": "wide", "optionLabel": "Wide", "default": True},
+		{"kind": "state", "path": "/", "key": "status", "label": "Status", "option": "Error", "optionLabel": "Error", "default": False},
+	]
+
+	def test_the_picks_come_back_with_the_thread(self):
+		thread = self.start(self.reader_name, anchor={**ANCHOR, "picks": self.PICKS})
+		listed = self.call(api.comments_list, self.owner_name)["threads"][0]
+		self.assertEqual(listed["id"], thread["id"])
+		self.assertEqual(listed["anchor"]["picks"], self.PICKS)
+
+	def test_a_thread_with_no_picks_has_none(self):
+		self.start(self.reader_name)
+		self.assertNotIn("picks", self.call(api.comments_list, self.owner_name)["threads"][0]["anchor"])
+
+	def test_a_bad_pick_is_dropped_and_the_rest_kept(self):
+		bad = [
+			"nope",
+			{"kind": "colour", "key": "a", "option": "b"},
+			{"kind": "set", "key": "", "option": "b"},
+			{**self.PICKS[0], "label": "x" * 500},
+			{"kind": "state", "key": "k", "option": "v", "path": 4, "default": "yes"},
+		]
+		thread = self.start(self.reader_name, anchor={**ANCHOR, "picks": bad})
+		picks = thread["anchor"]["picks"]
+		self.assertEqual([p["key"] for p in picks], ["kpi-strip", "k"])
+		self.assertLessEqual(len(picks[0]["label"]), comments.PICK_TEXT["label"])
+		self.assertEqual((picks[1]["path"], picks[1]["default"]), ("", True))
+
+	def test_picks_that_are_not_a_list_are_ignored_and_the_list_is_capped(self):
+		self.assertNotIn("picks", self.start(self.reader_name, anchor={**ANCHOR, "picks": "all of them"})["anchor"])
+		many = [{**self.PICKS[0], "key": f"k{i}"} for i in range(comments.MAX_PICKS + 10)]
+		self.assertEqual(len(self.start(self.reader_name, anchor={**ANCHOR, "picks": many})["anchor"]["picks"]), comments.MAX_PICKS)
+
+	def test_a_tile_comment_keeps_no_picks(self):
+		thread = self.start(self.reader_name, anchor={**tile_anchor(), "picks": self.PICKS})
+		self.assertNotIn("picks", thread["anchor"])
+
+
+class TestOutsidersLoseAccess(CommentCase):
+	"""Turning the link off keeps the outsiders' comments and says they cannot open it now (decision 46)."""
+
+	def go_private(self):
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+
+	def invite(self, username):
+		with set_user(self.owner):
+			api.invite_editor(self.doc.slug, username)
+
+	def test_the_share_state_names_those_who_commented_and_are_not_invited(self):
+		self.start(self.reader_name)
+		self.call(api.comment_reply, self.other_name, thread=self.start(self.reader_name)["id"], text="me too")
+		self.start(self.owner_name)
+		self.invite(self.other_name)
+		with set_user(self.owner):
+			state = api.share_info(self.doc.slug)
+		self.assertEqual([c["username"] for c in state["commenters"]], [self.reader_name], "not the owner, not an editor")
+		self.assertEqual(state["commenters"][0]["full_name"], "Sketch Test cmreader")
+
+	def test_nobody_is_marked_while_the_link_is_public(self):
+		self.start(self.reader_name)
+		threads = comments.list_threads(self.doc.name)
+		self.assertFalse(threads[0]["noAccess"])
+
+	def test_an_outsiders_comment_stays_and_is_marked_when_it_goes_private(self):
+		self.invite(self.other_name)
+		thread = self.start(self.reader_name, "Outsider")
+		self.call(api.comment_reply, self.other_name, thread=thread["id"], text="Editor")
+		self.start(self.owner_name, "Owner")
+		self.go_private()
+		listed = comments.list_threads(self.doc.name)
+		by_text = {t["text"]: t for t in listed}
+		self.assertTrue(by_text["Outsider"]["noAccess"])
+		self.assertEqual([r["noAccess"] for r in by_text["Outsider"]["replies"]], [False], "an editor keeps access")
+		self.assertFalse(by_text["Owner"]["noAccess"])
+
+	def test_an_outsider_does_not_open_the_pass_when_it_is_private(self):
+		self.start(self.reader_name)
+		self.go_private()
+		with self.assertRaises(Exception):
+			self.pass_for(self.reader_name)
+
+	def test_inviting_them_gives_the_access_back(self):
+		self.start(self.reader_name)
+		self.go_private()
+		self.assertTrue(comments.list_threads(self.doc.name)[0]["noAccess"])
+		self.invite(self.reader_name)
+		self.assertFalse(comments.list_threads(self.doc.name)[0]["noAccess"])
+
+
+class TestFormerCommenter(CommentCase):
+	"""Someone who commented before the prototype went private is told so; everyone else gets the plain 404."""
+
+	def render(self, user):
+		with set_user(user):
+			renderer = SketchViewerRenderer(path=f"u/{self.owner_name}/{self.doc.slug}")
+			if not renderer.can_render():
+				return None
+			return renderer.render()
+
+	def test_a_former_commenter_sees_a_simple_page_and_not_the_prototype(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		response = self.render(self.reader)
+		self.assertEqual(response.status_code, 403)
+		page = response.get_data(as_text=True)
+		self.assertIn("Sketch made this prototype private", page.replace("Sketch Test", "Sketch"))
+		self.assertNotIn("hello", page)
+		self.assertNotIn("sketch-data", page)
+
+	def test_someone_who_never_commented_gets_the_plain_404(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		self.assertIsNone(self.render(self.other), "can_render is False, so Frappe answers 404")
+		self.assertIsNone(self.render("Guest"))
+
+	def test_a_former_commenter_opens_it_again_when_it_is_public(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		self.assertEqual(self.render(self.reader).status_code, 403)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 1)
+		self.assertEqual(self.render(self.reader).status_code, 200)
+
+	def test_an_invited_editor_who_commented_gets_the_prototype(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		with set_user(self.owner):
+			api.invite_editor(self.doc.slug, self.reader_name)
+		self.assertEqual(self.render(self.reader).status_code, 200)
+
+
+class TestConversations(CommentCase):
+	"""A prototype you neither own nor edit but commented on or were mentioned in gets a card of its own (decision 43)."""
+
+	def listed(self, user):
+		with set_user(user):
+			return [r["name"] for r in api.conversations()]
+
+	def test_a_commenter_has_the_prototype_in_conversations(self):
+		self.assertEqual(self.listed(self.reader), [])
+		self.start(self.reader_name)
+		self.assertEqual(self.listed(self.reader), [self.doc.name])
+		self.assertEqual(self.listed(self.other), [], "someone who only watched has nothing")
+
+	def mentioned_only(self):
+		"""The other person replied once, was mentioned after, and took their own reply back: only the mention is left."""
+		thread = self.start(self.reader_name)
+		reply = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="hm")["replies"][0]
+		self.call(api.comment_reply, self.owner_name, thread=thread["id"], text=f"@[{self.other_name}] what do you think?")
+		self.call(api.comment_delete, self.other_name, comment=reply["id"])
+		self.assertFalse(frappe.db.exists(comments.COMMENT, {"prototype": self.doc.name, "author": self.other_name}))
+
+	def test_a_mention_puts_it_there_without_a_comment(self):
+		self.mentioned_only()
+		self.assertEqual(self.listed(self.other), [self.doc.name])
+
+	def test_the_card_is_the_shared_card_with_its_owner_and_news(self):
+		self.mentioned_only()
+		with set_user(self.other):
+			row = api.conversations()[0]
+		self.assertEqual(row["owner"]["username"], self.owner_name)
+		self.assertEqual(row["new"]["mention"]["by"]["username"], self.owner_name)
+
+	def test_your_own_and_your_shared_prototypes_are_not_conversations(self):
+		self.start(self.owner_name)
+		self.assertEqual(self.listed(self.owner), [])
+		self.start(self.reader_name)
+		with set_user(self.owner):
+			api.invite_editor(self.doc.slug, self.reader_name)
+		self.assertEqual(self.listed(self.reader), [], "Shared with me already has it")
+
+	def test_a_prototype_made_private_since_is_not_listed(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		self.assertEqual(self.listed(self.reader), [])
+
+	def test_newest_talk_first(self):
+		later = utils.make_prototype(self.owner, "d2t-comments-two", files=FILES, is_public=True)
+		self.addCleanup(utils.drop_prototype, later.name)
+		self.start(self.reader_name)
+		p = self.pass_for(self.reader_name)
+		with set_user("Guest"):
+			mint = comments.mint_ticket(later.name, self.reader_name)
+			door = api.comment_pass(later.name, self.reader_name, str(mint["exp"]), mint["sig"])
+			api.comment_add(later.name, self.reader_name, str(door["exp"]), door["sig"], anchor=json.dumps(ANCHOR), text="second")
+		self.assertEqual(self.listed(self.reader), [later.name, self.doc.name])
+		self.assertTrue(p)
+
+	def test_a_guest_has_none(self):
+		self.start(self.reader_name)
+		with set_user("Guest"):
+			self.assertEqual(api.conversations(), [])

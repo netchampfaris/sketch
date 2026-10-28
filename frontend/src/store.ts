@@ -42,6 +42,16 @@ export const sharedPrototypes = useCall<SharedPrototype[]>({
 })
 
 /**
+ * Prototypes this user commented on or was mentioned in and neither owns nor edits.
+ * The gallery draws a section for it only while there is one.
+ */
+export const conversationPrototypes = useCall<SharedPrototype[]>({
+  url: method('conversations'),
+  immediate: false,
+  initialData: [],
+})
+
+/**
  * The /feed listing: every public Prototype on the site, newest first.
  *
  * `allow_guest` on the server, so this is the one read here that answers with

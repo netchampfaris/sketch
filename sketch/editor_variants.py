@@ -197,7 +197,7 @@ def move_in(doc, host_file: str, set_name: str, found: dict) -> str:
 	destination = _free_path(doc.name, f"{sharing.ADOPTED_DIR}{stem}.vue")
 	clear_defaults(doc.name, host_file, set_name)
 	registry = read_registry(doc.name)
-	registry[destination] = {"author": found["author"], "default": True}
+	registry[destination] = {"author": found["author"], "default": True, "at": str(frappe.utils.now_datetime())}
 
 	prototype_files.write_files(doc.name, [{"path": destination, "content": found["source"]}])
 	prototype_files.delete_file(doc.name, found["path"])

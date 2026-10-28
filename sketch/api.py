@@ -870,10 +870,10 @@ def _json_list(raw) -> list:
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_to_note(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "") -> dict:
-	"""The owner copies a comment into a new note of their own. Returns the note."""
+def comment_note_draft(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "") -> dict:
+	"""The note a thread would make, for the owner to edit and save. Saves nothing. Returns the words and the anchor."""
 	actor = _commenter(name, username, exp, sig)
-	return comments.add_to_notes(name, actor, comment)
+	return comments.note_draft(name, actor, comment)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1100,6 +1100,8 @@ def _share_state(doc) -> dict:
 		"public_url": prototype.public_url(doc),
 		"owner": sharing.person(doc.owner),
 		"editors": sharing.editors(doc.name),
+		# People who commented and are not invited: they keep their access only while the link is public.
+		"commenters": comments.outsiders(doc.name),
 	}
 
 
@@ -1129,6 +1131,23 @@ def remove_editor(slug: str, username: str) -> dict:
 	return _share_state(doc)
 
 
+def _shared_row(name: str, user: str) -> dict | None:
+	"""A Prototype somebody else owns, as a card of the caller's: the gallery row with its owner added."""
+	doc = frappe.db.get_value(
+		"Sketch Prototype",
+		name,
+		["name", "title", "slug", "pin", "is_public", "creation", "owner"],
+		as_dict=True,
+	)
+	if not doc:
+		return None
+
+	owner = sharing.person(doc.owner)
+	row = _row(doc, owner["username"], new_for=user)
+	row["owner"] = {k: owner[k] for k in ("username", "full_name", "user_image")}
+	return row
+
+
 @frappe.whitelist()
 def shared_prototypes() -> list[dict]:
 	"""Every Prototype somebody invited this user to, newest invitation first.
@@ -1137,23 +1156,20 @@ def shared_prototypes() -> list[dict]:
 	address is the owner's. `modified` orders nothing here: an invitation is
 	the order a person thinks in.
 	"""
-	rows = []
-	for name in sharing.shared_with(frappe.session.user):
-		doc = frappe.db.get_value(
-			"Sketch Prototype",
-			name,
-			["name", "title", "slug", "pin", "is_public", "creation", "owner"],
-			as_dict=True,
-		)
-		if not doc:
-			continue
+	rows = (_shared_row(name, frappe.session.user) for name in sharing.shared_with(frappe.session.user))
+	return [row for row in rows if row]
 
-		owner = sharing.person(doc.owner)
-		row = _row(doc, owner["username"], new_for=frappe.session.user)
-		row["owner"] = {k: owner[k] for k in ("username", "full_name", "user_image")}
-		rows.append(row)
 
-	return rows
+@frappe.whitelist()
+def conversations() -> list[dict]:
+	"""Every Prototype this user commented on or was mentioned in and neither owns nor edits, newest talk first.
+
+	The same card as "Shared with me", with the same news line, so a reply to someone who is not an
+	editor still reaches them (decision 43). A Prototype made private since is not listed: they can no longer open it.
+	"""
+	user = frappe.session.user
+	rows = (_shared_row(name, user) for name in comments.conversations(_username(), user))
+	return [row for row in rows if row]
 
 
 def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:

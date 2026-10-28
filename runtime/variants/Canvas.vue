@@ -10,7 +10,7 @@ import LensMenu from './LensMenu.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, spotOf, tileExists } from './bridge'
-import { placeToasts } from './default'
+import { landed, placeToasts } from './default'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
@@ -52,6 +52,8 @@ const lensStr = computed(() => Object.values(lens()).join('+'))
 const keyOf = (cacheId: string) => `${cacheId}|${lensStr.value}|${win.w}x${win.h}`
 
 const model = shallowRef<PageModel[] | null>(null)
+// A set Keep only this left with one option stays in Browse while you are on it, and leaves once you pick something else.
+const isLone = (s: { options: unknown[] }) => !isChoice(s.options)
 
 // ---- The pick
 const raw = computed(() => String([route.query.canvas].flat()[0] ?? ''))
@@ -70,6 +72,12 @@ watch(
   },
   { immediate: true },
 )
+watch(raw, (r) => {
+  const m = model.value
+  if (!m || !m.some((p) => p.sets.some((s) => isLone(s) && r !== `set:${p.slug}/${s.key}`))) return
+  const next = m.map((p) => ({ ...p, sets: p.sets.filter((s) => !isLone(s) || r === `set:${p.slug}/${s.key}`) }))
+  model.value = session.model = pagesModel.value = next
+})
 // Opening a set is looking at all of its options: the ones a teammate made stop being new (the tiles keep their
 // "New" badge until the next visit, so nothing vanishes under the pointer).
 watch(
@@ -169,6 +177,7 @@ async function discover() {
   }
   const records = (router.options.routes as any[]).filter((r) => r.component && !r.path.includes(':'))
   const pages: PageModel[] = []
+  const here = raw.value
   for (const r of records) {
     if (!alive) return
     const snap = await runJob(r.path, makeSandbox(null))
@@ -179,7 +188,7 @@ async function discover() {
       title: titleOfRoute(r),
       states: snap.reg.states.filter((s) => s.path === r.path).map((s) => ({ key: s.key, label: s.label, options: s.options })),
       sets: snap.reg.sets
-        .filter((s) => s.path === r.path && isChoice(s.options))
+        .filter((s) => s.path === r.path && (isChoice(s.options) || here === `set:${slugOfRoute(r)}/${s.key}`))
         .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null })),
     })
     // Page order for sets: top to bottom, then left to right.
@@ -249,6 +258,18 @@ const liveId = ref<string | null>(null)
 const liveTile = computed(() => layout.value.tiles.find((t) => t.id === liveId.value) ?? null)
 const liveSandbox = computed(() => (liveTile.value ? makeSandbox(liveTile.value, true) : undefined))
 watch([lensStr, () => pickValue.value], () => (liveId.value = null))
+// A write that reloaded the page (Make default, Keep only this, Undo) leaves the option it landed on ringed once it is drawn.
+watch(
+  [() => layout.value.tiles, landed, pickValue],
+  () => {
+    const l = landed.value
+    const t = l && layout.value.tiles.find((x) => x.kind === 'set' && x.setName === l.set && x.option === l.option)
+    if (!t) return
+    liveId.value = t.id
+    landed.value = null
+  },
+  { immediate: true },
+)
 
 function openPage(t: TileBox) {
   nav.pushed = false
@@ -351,6 +372,7 @@ onMounted(() => {
   discover().then(() => pump())
 })
 onBeforeUnmount(() => {
+  landed.value = null
   bridge.open = false
   bridge.reveal = null
   bridge.pointOf = null

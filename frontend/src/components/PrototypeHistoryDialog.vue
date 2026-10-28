@@ -609,7 +609,7 @@ function fileLabel(count: number): string {
         </template>
       </div>
 
-      <p v-if="nearlyFull" class="mt-3 text-sm" :class="isFull ? 'text-ink-red-4' : 'text-ink-gray-5'">
+      <p v-if="nearlyFull" class="mt-3 text-sm" :class="isFull ? 'text-ink-red-7' : 'text-ink-gray-5'">
         {{ usageText }}
       </p>
 

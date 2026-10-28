@@ -129,11 +129,14 @@ class SketchViewerRenderer(BaseRenderer):
 	    caller is the owner                   -> serve
 	    caller is an invited editor           -> serve
 	    valid unexpired signature             -> serve
+	    signed in, commented here before it
+	      was made private                    -> a short page saying so (403)
 	    otherwise                             -> False, so Frappe answers 404
 
 	A bad or expired signature is not an error. It falls through, so a stale
 	link to a public Prototype still works and a private one still answers 404.
-	The answer is always 404, never 403: a 403 confirms the URL exists.
+	The answer is 404, never 403, for everyone but a former commenter: a 403
+	confirms the URL exists, and that person has already seen it (decision 46).
 	"""
 
 	def __init__(self, path=None, http_status_code=None):
@@ -141,6 +144,7 @@ class SketchViewerRenderer(BaseRenderer):
 		self.doc = None
 		self.username = ""
 		self.is_owner = False
+		self.former_commenter = False
 
 	def can_render(self) -> bool:
 		"""True only when this path is a Prototype the caller may see."""
@@ -161,7 +165,19 @@ class SketchViewerRenderer(BaseRenderer):
 		if sharing.can_view(self.doc.name, frappe.session.user):
 			return True
 
-		return signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig"))
+		if signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig")):
+			return True
+
+		self.former_commenter = self.is_former_commenter()
+		return self.former_commenter
+
+	def is_former_commenter(self) -> bool:
+		"""True for a signed-in person who commented here while it was public and cannot open it now."""
+		if frappe.session.user == "Guest" or self.doc.is_public:
+			return False
+
+		username = sharing.username_of(frappe.session.user)
+		return bool(username) and bool(frappe.db.exists(comments.COMMENT, {"prototype": self.doc.name, "author": username}))
 
 	def response_headers(self) -> dict:
 		"""The response headers for this caller. can_render() ran first.
@@ -209,6 +225,9 @@ class SketchViewerRenderer(BaseRenderer):
 		# script, so the sandbox changes nothing a reader sees. They still take
 		# the same headers as the document: one rule for the whole renderer is
 		# one rule to check.
+		if self.former_commenter:
+			return self.build_response(private_html(self.doc.owner), 403, self.response_headers())
+
 		path = runtime_html_path(self.doc.pin)
 		if not path or not os.path.isfile(path):
 			# Trap 11. Never a blank iframe.
@@ -233,6 +252,10 @@ class SketchViewerRenderer(BaseRenderer):
 		# this test every check would be counted as a stranger reading a public
 		# link. Sketch drives that browser itself.
 		from sketch import events
+
+		if not frappe.form_dict.get("sig"):
+			# An invited editor who opens it has seen the invitation and any default made of their variant.
+			badges.opened(self.doc.name, frappe.session.user)
 
 		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
 		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
@@ -469,8 +492,19 @@ def bad_slot_html(pin: str, count: int) -> str:
 	)
 
 
-def _error_html(title: str, detail: str, action: str) -> str:
+def private_html(owner: str) -> str:
+	"""What a person who commented before the owner made the Prototype private is shown instead of a bare 404."""
+	name = (frappe.db.get_value("User", owner, "full_name") or "").split()
+	who = escape_html(name[0] if name else sharing.username_of(owner) or "The owner")
+	return _error_html(
+		f"{who} made this prototype private",
+		"Only they and the people they invite can open it.",
+	)
+
+
+def _error_html(title: str, detail: str, action: str = "") -> str:
 	"""A plain page a person can read. No Runtime, so no Runtime assets."""
+	note = f"<p style='margin:0;color:#666'>{action}</p>" if action else ""
 	return (
 		"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
 		"<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -478,6 +512,6 @@ def _error_html(title: str, detail: str, action: str) -> str:
 		'<body style="margin:0;padding:2rem;font:14px/1.6 ui-sans-serif,system-ui,sans-serif">'
 		f"<h1 style='font-size:1rem;margin:0 0 .5rem'>{title}</h1>"
 		f"<p style='margin:0 0 .5rem'>{detail}</p>"
-		f"<p style='margin:0;color:#666'>{action}</p>"
+		f"{note}"
 		"</body></html>"
 	)

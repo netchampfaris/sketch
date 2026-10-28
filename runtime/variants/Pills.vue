@@ -5,6 +5,7 @@ import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
 import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { avatarTheme } from '../shared/avatarTheme'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, credential, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
@@ -80,13 +81,15 @@ const stack = ref<HTMLElement | null>(null)
 // A menu opened from a row is portalled out of the stack; picking from it must not close the card.
 onClickOutside(stack, () => close(), { ignore: ['.menu-content'] })
 const { height } = useElementSize(stack, { width: 0, height: 0 }, { box: 'border-box' })
+const { width: pillW } = useElementSize(pill, { width: 0, height: 0 }, { box: 'border-box' })
 // On a phone the stack sits above the page's MobileNav bar, when it has one, so the annotate button and the toasts rise with it.
 const navH = ref(0)
 // With a bar the stack sits 4.75rem (76px) from the bottom, as the original did; a taller bar lifts it further.
 const lift = computed(() => {
   const bar = navH.value ? Math.max(navH.value + 6, 64) : 0
   // The open toolbar on a phone sits at the bottom edge; the pill rides above it (the stack is 0.75rem, 12px, up already).
-  return Math.max(bar, bridge.toolbarLift - 12)
+  const inTheWay = bridge.toolbarLift > 0 && bridge.toolbarRight + 8 > window.innerWidth - 12 - pillW.value
+  return Math.max(bar, inTheWay ? bridge.toolbarLift - 12 : 0)
 })
 function measureNav() {
   const bar = window.matchMedia('(max-width: 767px)').matches ? document.querySelector<HTMLElement>('[data-slot="mobile-nav"]') : null
@@ -213,6 +216,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
                 <Avatar
                   class="shrink-0 ring-1 ring-outline-gray-2"
                   size="xs"
+                  :theme="avatarTheme(authorOf(s as VSet)!)"
                   :image="people[authorOf(s as VSet)!]?.image || undefined"
                   :label="personName(authorOf(s as VSet)!)"
                 />
@@ -227,7 +231,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
             <span class="flex min-w-0 max-w-[20rem] items-center gap-2">
               <span class="truncate" :title="item.label">{{ item.label }}</span>
               <span v-if="item.author" class="flex h-4 shrink-0 items-center gap-1 text-p-sm leading-4 text-ink-gray-5" :title="`Made by ${personName(item.author)}`">
-                <Avatar size="xs" :image="people[item.author]?.image || undefined" :label="personName(item.author)" />Made by {{ shortName(item.author) }}
+                <Avatar size="xs" :theme="avatarTheme(item.author)" :image="people[item.author]?.image || undefined" :label="personName(item.author)" />Made by {{ shortName(item.author) }}
               </span>
             </span>
           </template>
@@ -282,7 +286,7 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
     <div
       v-if="open"
       id="sketch-demo-card"
-      class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[12px] bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2"
+      class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[16px] bg-surface-elevation-2 p-2 shadow-lg ring-1 ring-outline-gray-2"
     >
       <div
         class="grid grid-cols-[auto_minmax(0,max-content)_auto] items-center gap-x-2"

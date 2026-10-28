@@ -15,6 +15,10 @@
  * there. A new invite lands right under the owner's row, flashes once and
  * scrolls into view, so twenty people never hide it.
  *
+ * Under the Public link switch, while it is off, a line names the people who
+ * commented and are not invited: they lose access with the link, and their
+ * comments stay for the owner and the editors, marked "No access".
+ *
  * Removing is immediate: it can be undone with one click, so there is no
  * confirm. The variants a removed person made stay in the prototype.
  *
@@ -35,6 +39,7 @@ import {
   toast,
   useCall,
 } from 'frappe-ui'
+import { avatarTheme } from '../../../runtime/shared/avatarTheme'
 import { copyText, method } from '../store'
 import type { Prototype, SharePerson, ShareState } from '../types'
 
@@ -121,6 +126,17 @@ async function load(): Promise<void> {
 /** Newest invite first, so a new person is right under the owner. */
 const editors = computed(() => [...(state.value?.editors ?? [])].reverse())
 const owner = computed(() => state.value?.owner ?? null)
+/** "Faris who commented will lose access.", "Faris and 2 others who commented will lose access." */
+const loseAccess = computed(() => {
+  const list = state.value?.commenters ?? []
+  if (state.value?.is_public || !list.length) return ''
+  const first = (p: { full_name: string; username: string }) => p.full_name.split(/\s+/)[0] || p.username
+  const names =
+    list.length <= 2
+      ? list.map(first).join(' and ')
+      : `${first(list[0])} and ${list.length - 1} others`
+  return `${names} who commented will lose access.`
+})
 const busy = computed(() => invite.loading || withdraw.loading || access.loading)
 
 async function add(): Promise<void> {
@@ -247,9 +263,11 @@ async function copyLink(): Promise<void> {
             aria-label="People"
           >
             <li class="-mx-1 flex items-center gap-3 px-1 py-2">
-              <Avatar :image="owner.user_image" :label="owner.full_name" size="md" />
-              <span class="min-w-0 flex-1 truncate text-p-base text-ink-gray-8" :title="`${owner.full_name} (you)`">
-                {{ owner.full_name }} (you)
+              <Avatar :image="owner.user_image" :label="owner.full_name" :theme="avatarTheme(owner.username)" size="md" />
+              <!-- "(you)" is the one word this row exists for, so it never gives way to a long name. -->
+              <span class="flex min-w-0 flex-1 items-baseline text-p-base text-ink-gray-8" :title="`${owner.full_name} (you)`">
+                <span class="min-w-0 truncate">{{ owner.full_name }}</span>
+                <span class="shrink-0 whitespace-pre"> (you)</span>
               </span>
               <span class="shrink-0 text-p-sm text-ink-gray-5">Owner</span>
             </li>
@@ -259,14 +277,14 @@ async function copyLink(): Promise<void> {
               class="-mx-1 flex items-center gap-3 rounded-4 px-1 py-2 transition-colors duration-[1500ms] ease-out motion-reduce:transition-none"
               :class="fresh === person.username ? 'bg-surface-gray-3' : ''"
             >
-              <Avatar :image="person.user_image" :label="person.full_name" size="md" />
-              <!-- On a phone the handle goes under the name, so neither is cut to a few letters. -->
-              <span class="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-1.5">
+              <Avatar :image="person.user_image" :label="person.full_name" :theme="avatarTheme(person.username)" size="md" />
+              <!-- Name and handle share one line at every width, so every row is as tall as the owner's. -->
+              <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
                 <span class="min-w-0 truncate text-p-base text-ink-gray-8" :title="person.full_name">
                   {{ person.full_name }}
                 </span>
                 <span
-                  class="truncate text-p-sm text-ink-gray-5 sm:max-w-[40%] sm:shrink-0"
+                  class="max-w-[40%] shrink-0 truncate text-p-sm text-ink-gray-5"
                   :title="`@${person.username}`"
                 >
                   @{{ person.username }}
@@ -303,6 +321,7 @@ async function copyLink(): Promise<void> {
           :disabled="access.loading"
           @update:model-value="setPublic"
         />
+        <p v-if="loseAccess" class="-mt-3 text-p-sm text-ink-gray-6" role="status">{{ loseAccess }}</p>
 
         <div>
           <Button label="Copy link" icon-left="lucide-link" variant="subtle" @click="copyLink" />

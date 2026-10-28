@@ -19,7 +19,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import api, badges, comments, signature
+from sketch import api, badges, comments, editor_variants, signature
 from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.viewer import SketchViewerRenderer
@@ -337,8 +337,91 @@ class TestGalleryCard(BadgeCase):
 
 	def test_nothing_is_new_for_the_author_of_everything(self):
 		self.invite(self.ed)
+		badges.opened(self.name, self.ed)
 		self.add_variant(self.ed)
 		self.say(self.ed)
+		self.assertIsNone(self.card(self.ed))
+
+
+class TestInvitedAndAdoptedNews(BadgeCase):
+	"""Two more lines on the card of someone invited to edit (decision 44)."""
+
+	def open_page(self, user):
+		with set_user(user):
+			renderer = SketchViewerRenderer(path=f"u/{self.username(self.owner)}/{self.doc.slug}")
+			self.assertTrue(renderer.can_render())
+			return renderer.render()
+
+	def adopt(self, user, label="Compact"):
+		"""The owner makes the editor's option the default: the file moves into the owner's tree and the registry says whose."""
+		path = f"src/components/{label}.vue"
+		self.agent(self.owner, "write_files", files=[{"path": path, "content": variant(label)}])
+		registry = editor_variants.read_registry(self.name)
+		registry[path] = {"author": self.username(user), "default": True, "at": str(frappe.utils.now_datetime())}
+		editor_variants.write_registry(self.name, registry)
+		return path
+
+	def test_an_invited_editor_is_told_who_invited_them_until_they_open_it(self):
+		self.invite(self.ed)
+		news = self.card(self.ed)
+		self.assertEqual(news["invited"]["by"]["username"], self.username(self.owner))
+		self.assertEqual((news["variants"], news["comments"]), (0, 0), "the invitation is news on its own")
+		self.open_page(self.ed)
+		self.assertIsNone(self.card(self.ed))
+
+	def test_the_owner_and_a_reader_are_never_invited(self):
+		self.invite(self.ed)
+		self.assertIsNone(self.card(self.owner))
+		self.say(self.reader)
+		self.assertIsNone(self.card(self.reader))
+
+	def test_someone_else_opening_it_is_not_the_editor_opening_it(self):
+		self.invite(self.ed)
+		self.open_page(self.stranger)
+		self.assertIsNotNone(self.card(self.ed)["invited"])
+		badges.opened(self.name, self.stranger)
+		self.assertIsNotNone(self.card(self.ed)["invited"])
+
+	def test_the_invitation_shows_in_shared_with_me(self):
+		self.invite(self.ed)
+		with set_user(self.ed):
+			row = next(r for r in api.shared_prototypes() if r["name"] == self.name)
+		self.assertEqual(row["new"]["invited"]["by"]["username"], self.username(self.owner))
+
+	def test_making_an_editors_option_the_default_is_news_to_that_editor_only(self):
+		self.invite(self.ed, self.ed2)
+		self.open_page(self.ed)
+		self.add_variant(self.ed)
+		path = self.adopt(self.ed)
+		news = self.card(self.ed)
+		self.assertEqual(news["adopted"]["label"], "Compact")
+		self.assertEqual(news["adopted"]["by"]["username"], self.username(self.owner))
+		self.assertIsNone(self.card(self.owner)["adopted"], "the owner made it")
+		self.open_page(self.ed2)
+		self.assertIsNone((self.card(self.ed2) or {}).get("adopted"), "another editor's option was not the one")
+		self.assertTrue(path)
+
+	def test_opening_the_prototype_clears_it_and_the_next_default_brings_it_back(self):
+		self.invite(self.ed)
+		self.open_page(self.ed)
+		self.adopt(self.ed, "Compact")
+		self.assertIsNotNone(self.card(self.ed)["adopted"])
+		self.open_page(self.ed)
+		self.assertIsNone(self.card(self.ed))
+		frappe.db.set_value(
+			"Sketch Seen",
+			{"prototype": self.name, "user": self.ed, "kind": "Opened"},
+			"seen_at",
+			frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-5),
+		)
+		self.adopt(self.ed, "Roomy")
+		self.assertEqual(self.card(self.ed)["adopted"]["label"], "Roomy", "the newest default leads")
+
+	def test_a_default_that_names_no_time_is_not_news(self):
+		self.invite(self.ed)
+		self.open_page(self.ed)
+		registry = {"src/components/Old.vue": {"author": self.username(self.ed), "default": True}}
+		editor_variants.write_registry(self.name, registry)
 		self.assertIsNone(self.card(self.ed))
 
 
@@ -356,6 +439,7 @@ class TestMentions(BadgeCase):
 		card = self.card(self.owner)
 		self.assertEqual(card["mention"]["by"]["username"], "d2tbged")
 		self.assertEqual(card["mention"]["thread"], thread)
+		badges.opened(self.name, self.ed)
 		self.assertIsNone(self.card(self.ed))
 
 	def test_the_mention_stays_on_the_card_until_the_thread_is_opened(self):
@@ -433,9 +517,9 @@ class TestMentions(BadgeCase):
 	def test_a_mention_reads_as_a_name_in_a_note(self):
 		thread = self.say(self.ed, f"{self.token(self.owner)} look")
 		actor = comments.Actor("d2tbgown", self.owner, True)
-		note = comments.add_to_notes(self.name, actor, thread)
-		self.assertNotIn("@[", note["note"])
-		self.assertIn("@Sketch Test bgown", note["note"])
+		draft = comments.note_draft(self.name, actor, thread)
+		self.assertNotIn("@[", draft["note"])
+		self.assertIn("@Sketch Test bgown", draft["note"])
 
 	def test_the_names_of_people_mentioned_reach_the_page(self):
 		self.say(self.ed, f"{self.token(self.owner)} look")

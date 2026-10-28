@@ -17,12 +17,16 @@ const PENDING = 'sketch:variant-undo:'
 const UNDO_MS = 10000
 const GONE = "Can't undo anymore: the page changed since. Ask your agent instead."
 
+// The option a write has just put in place (Make default, Keep only this, or their Undo): the canvas rings its tile once it
+// is drawn, so the option you picked is still under your eye after the page reloads.
+export const landed = shallowRef<{ set: string; option: string } | null>(null)
+
 type Credential = { name: string; exp: string; sig: string }
 export const credential = shallowRef<Credential | null>(null)
 
 // What a failed Make default tells the owner. A refused fetch is a TypeError with the browser's own words.
 export const makeFailure = (e: Error) =>
-  e instanceof TypeError ? "Couldn't make it the default. Check your connection and try again." : `Couldn't change the default. ${e.message}`
+  e instanceof TypeError ? "Couldn't make it the default. Check your connection and try again." : `Couldn't make it the default. ${e.message}`
 
 type Undo = { option: string; label: string; sequence: number }
 type Note = {
@@ -75,7 +79,7 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
   try {
     const note = JSON.parse(raw.slice((pending ? PENDING : MARK).length)) as Note | Flash
     window.name = ''
-    if ('error' in note) return void toast.error(`Couldn't change the default. ${note.error}`)
+    if ('error' in note) return void toast.error(`Couldn't make it the default. ${note.error}`)
     if (!pending) return announce(note, data.files)
     if (!note.until || note.until <= Date.now()) return
     // The reload came from a write while the toast was up. Undo is only safe if that write left the file alone.
@@ -90,6 +94,7 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
 const others = (n = 0) => (n ? `, removed ${n} other${n === 1 ? '' : 's'}` : '')
 
 function announce(note: Note, files?: Record<string, string>) {
+  landed.value = { set: note.set, option: note.option }
   const message = note.kept
     ? note.restored ? 'Options restored' : `Kept ${note.replaced ? `${note.set} · ` : ''}${note.label}${others(note.removed)}`
     : note.restored ? 'Default restored' : `${note.label} is now the default for ${note.set}`
@@ -115,7 +120,7 @@ function announce(note: Note, files?: Record<string, string>) {
           option: note.option,
         })
           .then(() => reload({ file: note.file, set: note.set, option: back.option, label: back.label, restored: true, kept: note.kept }))
-          .catch((e: Error) => toast.error(`Couldn't undo: ${e.message}`))
+          .catch((e: Error) => toast.error(`Couldn't undo. ${e.message}`))
       },
     },
   })
@@ -197,4 +202,4 @@ export async function keepOnly(set: { name: string; file: string }, option: stri
 }
 
 export const keepFailure = (e: Error) =>
-  e instanceof TypeError ? "Couldn't keep it. Check your connection and try again." : `Couldn't keep only this. ${e.message}`
+  e instanceof TypeError ? "Couldn't keep only this. Check your connection and try again." : `Couldn't keep only this. ${e.message}`

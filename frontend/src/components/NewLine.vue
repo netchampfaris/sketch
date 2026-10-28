@@ -4,14 +4,17 @@
  *
  * "2 new variants · 3 new comments", leaving out any part that is 0, and no line at all when nothing is new. When
  * someone mentioned this person the line leads with "Arohi mentioned you" in normal ink, and opens the prototype on
- * that thread. Counts over 99 read "99+". Opening the prototype does not clear them: what has been looked at does,
- * on the server (`sketch/badges.py`).
+ * that thread. An invited editor's line leads with "Sadiq invited you" until they open it, or "Sadiq made your Compact
+ * the default". One lead, the most personal first: a mention, then the invitation, then the default. Counts over 99
+ * read "99+". Opening the prototype does not clear them: what has been looked at does, on the server
+ * (`sketch/badges.py`).
  *
  * `h-6` and no button, so it is the one row on the card that is not a button's height.
  */
 import { computed } from 'vue'
 import { Avatar } from 'frappe-ui'
-import type { PrototypeNew } from '../types'
+import { avatarTheme } from '../../../runtime/shared/avatarTheme'
+import type { NewPerson, PrototypeNew } from '../types'
 
 const props = defineProps<{ news?: PrototypeNew | null; href: string }>()
 
@@ -23,9 +26,15 @@ const counts = computed(() => {
   if (!n) return ''
   return [n.variants && count(n.variants, 'variant'), n.comments && count(n.comments, 'comment')].filter(Boolean).join(' · ')
 })
+const first = (p: NewPerson) => p.name.split(/\s+/)[0] || p.username
+/** The line's lead: the most personal news, in normal ink. */
 const mention = computed(() => {
-  const m = props.news?.mention
-  return m ? `${m.by.name.split(/\s+/)[0] || m.by.username} mentioned you` : ''
+  const n = props.news
+  if (!n) return ''
+  if (n.mention) return `${first(n.mention.by)} mentioned you`
+  if (n.invited) return `${first(n.invited.by)} invited you`
+  if (n.adopted) return `${first(n.adopted.by)} made your ${n.adopted.label} the default`
+  return ''
 })
 const label = computed(() => [mention.value, counts.value].filter(Boolean).join(' · '))
 const link = computed(() =>
@@ -55,6 +64,7 @@ const link = computed(() =>
         :class="i ? '-ml-1' : ''"
         class="ring-2 ring-outline-base"
         size="xs"
+        :theme="avatarTheme(p.username)"
         :image="p.image || undefined"
         :label="p.name"
       />

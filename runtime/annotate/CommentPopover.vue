@@ -4,7 +4,8 @@
 // under the composer, with a Retry.
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useElementSize } from '@vueuse/core'
-import { Button, Dropdown, Textarea, Tooltip, toast } from 'frappe-ui'
+import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget } from 'frappe-ui'
+import { applyPicks, picksShown, picksWords } from 'sketch:variants'
 import { host } from './host'
 import {
 	MAX_BYTES,
@@ -15,14 +16,13 @@ import {
 	edit,
 	reply,
 	remove,
+	noteDraft,
 	setResolved,
-	toNote,
 	whenOf,
 	type Anchor,
 	type Reply,
 	type Thread,
 } from './comments'
-import type { Note } from './annotate'
 import AuthorAvatar from './AuthorAvatar.vue'
 import ComposerInput from './ComposerInput.vue'
 import MentionField from './MentionField.vue'
@@ -41,16 +41,21 @@ const props = defineProps<{
 	avoid: { left: number; right: number; top: number; bottom: number } | null
 	// The open comments panel: the popover flips to the left of the point rather than cover it.
 	panel: { left: number; right: number; top: number; bottom: number } | null
+	// Where this box's own menus open. The canvas draws its overlays in a layer below the box, so a menu opened from the
+	// box would sit behind it; this layer is above it.
+	menuHost?: HTMLElement | null
 }>()
 const emit = defineEmits<{
 	'update:modelValue': [text: string]
 	created: [thread: Thread]
 	gone: []
-	noted: [note: Note]
+	// The owner's "Add to notes": the thread as words, and its anchor, for the note composer to open on.
+	noted: [draft: { note: string; anchor: Anchor }]
 	close: []
 }>()
 
 const root = ref<HTMLElement | null>(null)
+providePortalTarget(() => props.menuHost ?? undefined)
 const { height } = useElementSize(root, { width: 0, height: 220 }, { box: 'border-box' })
 const WIDTH = 300
 const GAP = 12
@@ -110,15 +115,23 @@ const commentMenu = (c: Reply) => {
 	const first = c.id === props.thread?.id
 	return [
 		canEdit(c) && { label: 'Edit', icon: 'lucide-pencil', onClick: () => startEdit(c) },
-		owner && { label: 'Add to notes', icon: 'lucide-sticky-note', onClick: () => addToNotes(c) },
 		canDelete(c) && !first && { label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = c.id) },
 	].filter((o) => !!o) as any[]
 }
-const threadMenu = computed<any[]>(() =>
-	props.thread && canDelete(props.thread)
-		? [{ label: owner ? 'Delete thread' : 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = props.thread!.id) }]
-		: [],
-)
+// Add to notes takes the whole thread, so it sits with the thread's own actions.
+const threadMenu = computed<any[]>(() => {
+	const t = props.thread
+	if (!t) return []
+	return [
+		owner && { label: 'Add to notes', icon: 'lucide-sticky-note', onClick: addToNotes },
+		canDelete(t) && { label: owner ? 'Delete thread' : 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = t.id) },
+	].filter((o) => !!o) as any[]
+})
+
+// What the Demo showed when the thread was made. Said only when it was not the defaults; a click puts the page back that way.
+const picks = computed(() => props.thread?.anchor.picks)
+const picksWhere = computed(() => picksWords(picks.value))
+const picksNow = computed(() => picksShown(picks.value))
 
 // ---- Saving: one run at a time; a failure leaves the words where they are and offers a retry ----
 const busy = ref(false)
@@ -199,12 +212,10 @@ function toggleResolved() {
 	})
 }
 
-function addToNotes(c: Reply) {
-	void run(async () => {
-		const row = await toNote(c.id)
-		emit('noted', row)
-		toast.success('Added to notes')
-	})
+function addToNotes() {
+	const t = props.thread
+	if (!t) return
+	void run(async () => emit('noted', await noteDraft(t.id)))
 }
 
 // Enter sends from the words box itself (ComposerInput); here only an edit in place has keys of its own.
@@ -233,7 +244,16 @@ function onKey(e: KeyboardEvent) {
 	>
 		<!-- A thread: its title on the left, the few things you can do to it as quiet icons on the right. -->
 		<div v-if="thread" class="flex h-6 items-center gap-0.5">
-			<p class="min-w-0 flex-1 truncate text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
+			<div class="flex min-w-0 flex-1 items-center gap-2">
+				<p class="shrink-0 text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
+				<!-- Made on other options than the defaults: the words, and when the page is not showing them, the way back to them. -->
+				<Tooltip v-if="picksWhere && !picksNow" text="Show the page this was made on" :hover-delay="600">
+					<button type="button" class="min-w-0 rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3" @click="applyPicks(picks, host.router)">
+						<Badge theme="gray" size="sm" class="max-w-full cursor-pointer hover:bg-surface-gray-3"><span class="truncate">On {{ picksWhere }}</span></Badge>
+					</button>
+				</Tooltip>
+				<Badge v-else-if="picksWhere" theme="gray" size="sm" class="min-w-0"><span class="truncate" :title="`On ${picksWhere}`">On {{ picksWhere }}</span></Badge>
+			</div>
 			<Tooltip v-if="canResolve" :text="thread.resolved ? 'Reopen' : 'Resolve'" :hover-delay="600">
 				<Button size="xs" :variant="thread.resolved ? 'subtle' : 'ghost'" icon="lucide-check" :aria-label="thread.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
 			</Tooltip>
@@ -258,6 +278,7 @@ function onKey(e: KeyboardEvent) {
 						<AuthorAvatar :username="c.author" size="sm" />
 						<p class="flex min-w-0 flex-1 items-center gap-1 text-p-sm">
 							<span class="min-w-0 truncate font-medium text-ink-gray-8">{{ c.name || c.author }}</span>
+							<span v-if="c.noAccess" class="shrink-0 text-ink-gray-5">No access</span>
 							<span class="shrink-0 text-ink-gray-5" aria-hidden="true">·</span>
 							<span class="shrink-0 text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
 							<span v-if="c.edited" class="shrink-0 text-ink-gray-4">(edited)</span>
@@ -279,7 +300,7 @@ function onKey(e: KeyboardEvent) {
 							<div data-editing>
 								<MentionField v-model="editing.text"><Textarea v-model="editing.text" :rows="3" class="w-full resize-none" /></MentionField>
 							</div>
-							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
+							<p v-if="tooLong(editing.text)" class="mt-1 text-p-sm text-ink-red-7">Over the 4 KB limit</p>
 							<div class="mt-2 flex justify-end gap-2">
 								<Button variant="ghost" label="Cancel" @click="editing = null" />
 								<Button variant="solid" theme="gray" label="Save" :disabled="!ready(editing.text) || busy" @click="saveEdit" />
@@ -300,19 +321,19 @@ function onKey(e: KeyboardEvent) {
 			</div>
 
 			<ComposerInput v-model="replyText" class="mt-3" placeholder="Reply…" send-label="Reply" :can-send="ready(replyText) && !busy" @send="sendReply" />
-			<p v-if="tooLong(replyText)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
+			<p v-if="tooLong(replyText)" class="mt-1 text-p-sm text-ink-red-7">Over the 4 KB limit</p>
 		</template>
 
 		<!-- A new thread. -->
 		<template v-else>
 			<p v-if="extra" class="mb-1 text-p-sm tabular-nums text-ink-gray-5">On this and {{ extra }} more</p>
 			<ComposerInput :model-value="modelValue" placeholder="Add a comment…" send-label="Comment" :can-send="canStart && !busy" @update:model-value="emit('update:modelValue', $event)" @send="start" />
-			<p v-if="tooLong(modelValue)" class="mt-1 text-p-sm text-ink-red-3">Over the 4 KB limit</p>
+			<p v-if="tooLong(modelValue)" class="mt-1 text-p-sm text-ink-red-7">Over the 4 KB limit</p>
 		</template>
 
-		<p v-if="failed" role="alert" class="mt-2 flex items-center gap-1 text-p-sm text-ink-red-3">
+		<p v-if="failed" role="alert" class="mt-2 flex items-center gap-1 text-p-sm text-ink-red-7">
 			<span class="lucide-triangle-alert size-3.5 shrink-0" aria-hidden="true" />
-			Couldn't save ·
+			Couldn't save.
 			<Button variant="ghost" size="sm" label="Retry" :disabled="busy" @click="failed()" />
 		</p>
 	</div>
