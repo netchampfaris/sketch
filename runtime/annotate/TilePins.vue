@@ -4,11 +4,12 @@
 // world; each pin undoes the zoom (`--inv`), so it keeps its size on screen. Comment pins show in Comment mode,
 // note pins in Note mode, and none while browsing.
 // Pins that land on each other fan out sideways, so every one of them stays reachable by pointer.
-// While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button.
+// While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
+// typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
 import { computed } from 'vue'
 import { bridge, sameTile, spotOf, type TileSpot } from 'sketch:variants'
 import { noteNumber, notes, type Note } from './annotate'
-import { matching, openThread, plain, spotOfThread, type Thread } from './comments'
+import { heldDrafts, matching, openThread, plain, spotOfThread, type Thread } from './comments'
 import { host } from './host'
 import { canvasUi, handlers } from './tiles'
 import PinShape from './PinShape.vue'
@@ -19,7 +20,7 @@ const props = defineProps<{ tiles: any[]; zoom: number; view: string }>()
 const PILE = 20
 const STEP = 22
 
-type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean }
+type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean; held?: boolean }
 const items = computed<Item[]>(() => {
 	const d = canvasUi.draft
 	if (bridge.tool === 'comment') {
@@ -27,6 +28,8 @@ const items = computed<Item[]>(() => {
 			const spot = spotOfThread(t)
 			return spot ? [{ id: t.id, kind: 'comment' as const, spot, fx: t.anchor.offset.x, fy: t.anchor.offset.y, thread: t }] : []
 		})
+		for (const h of heldDrafts.value)
+			if (h.anchor.tile) list.push({ id: h.id, kind: 'comment', spot: { route: h.anchor.route, tile: h.anchor.tile }, fx: h.anchor.offset.x, fy: h.anchor.offset.y, held: true })
 		return d ? [...list, { id: 'draft', kind: 'comment', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
 	}
 	if (bridge.tool === 'note') {
@@ -67,9 +70,12 @@ function open(p: Item & { k: number }, e: MouseEvent) {
 	const x = r.left + p.k * STEP
 	if (p.thread) handlers.thread?.(p.thread, x, r.top)
 	else if (p.note) handlers.note?.(p.note, x, r.top)
+	else if (p.held) handlers.draft?.(p.id, x, r.top)
 }
 const label = (p: Item) =>
-	p.thread
+	p.held
+		? `Draft comment: ${heldDrafts.value.find((h) => h.id === p.id)?.text.slice(0, 80) ?? ''}`
+		: p.thread
 		? `Comment from ${p.thread.name}${p.thread.replies.length ? `, ${p.thread.replies.length} ${p.thread.replies.length === 1 ? 'reply' : 'replies'}` : ''}: ${plain(p.thread.text).slice(0, 80)}`
 		: `Note ${noteNumber(p.note!)}: ${p.note!.note.slice(0, 80)}`
 </script>
@@ -99,10 +105,11 @@ const label = (p: Item) =>
 				>
 					<PinShape
 						:kind="p.kind"
-						:username="p.draft ? host.me : p.thread?.author"
+						:username="p.draft || p.held ? host.me : p.thread?.author"
 						:number="p.draft ? draftNumber : p.note ? noteNumber(p.note) : undefined"
 						:muted="p.thread ? p.thread.resolved : !!p.note?.sent"
 						:selected="p.draft || (p.thread ? openThread === p.id : canvasUi.noteId === p.id)"
+						:draft="p.held"
 					/>
 				</component>
 			</div>

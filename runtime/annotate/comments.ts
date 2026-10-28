@@ -37,6 +37,10 @@ export const showResolved = ref(false)
 export const query = ref('')
 // A reply typed and not sent, by thread, so closing the box (a click outside) never loses it.
 export const replyDrafts = new Map<string, string>()
+// A new comment typed and not sent, left on the page as a Draft pin when its box closes. It lasts until the page
+// reloads; the server never sees it. `state` is the toolbar's own box state, so the pin reopens the box as it was.
+export type HeldDraft = { id: string; anchor: Anchor; text: string; state: unknown }
+export const heldDrafts = ref<HeldDraft[]>([])
 // The thread whose popover is open, so its pin can wear a ring.
 export const openThread = ref<string | null>(null)
 
