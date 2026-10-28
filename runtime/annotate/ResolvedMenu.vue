@@ -4,6 +4,7 @@
 // Its menu and dialog open in the toolbar's own layer: above the canvas, and outside the page the picking swallows.
 import { computed, ref } from 'vue'
 import { Button, Dialog, Dropdown, providePortalTarget, toast } from 'frappe-ui'
+import { menuBind } from 'sketch:variants'
 import { deleteResolved, resolvedCount, showResolved } from './comments'
 import { isOwner } from './host'
 
@@ -41,7 +42,7 @@ const actions = computed(() => [
 </script>
 
 <template>
-	<Dropdown :options="options" align="end">
+	<Dropdown v-bind="menuBind('comments-panel')" :options="options" align="end">
 		<Button variant="ghost" icon="lucide-ellipsis" aria-label="Comment options" />
 		<template #item-prefix="{ item }">
 			<span class="size-4 shrink-0" :class="item.key === 'show' && showResolved ? 'lucide-check' : ''" aria-hidden="true" />

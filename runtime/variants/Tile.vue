@@ -10,6 +10,7 @@ import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { canDelete, deleteFailure, deleteVariant } from './edit'
 import { isNew } from './badges'
+import { menuBind } from './menus'
 import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
@@ -148,7 +149,7 @@ watch(
             <span :class="saving ? 'sr-only' : ''">Make default</span>
           </Button>
           <Button :class="canDefault && !bridge.tool ? '' : '-ml-1.5'" variant="ghost" size="xs" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
-          <Dropdown v-if="menu.length" :options="menu" placement="bottom-end">
+          <Dropdown v-if="menu.length" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
             <Button variant="ghost" size="xs" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
           </Dropdown>
         </template>

@@ -205,13 +205,14 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 	restore can be undone by restoring the version before it. Changes still
 	pending are committed first, so work the agent had not filed is not lost.
 
-	Invited editors' folders (`src/variants/@name/`) are not part of a restore.
-	An editor's variant added after the version stays, and one the version held
-	is not put back over what the editor has since changed: the restore touches
-	the owner's files only. The new version's tree is the target with the
-	editors' files as they are now, so restoring the version before it brings
-	the owner's files back the same way. The result names how many editor files
-	were kept (`kept_editor_files`).
+	Every file the version held comes back, invited editors' folders
+	(`src/variants/@name/`) included: an option Keep only this removed, or an
+	editor's file changed since, goes back as it was. The owner is the one
+	restoring, so writing there is allowed. An editor's file the version never
+	held, one added after it, stays: a restore never deletes an editor's work.
+	The new version's tree is the target plus those files, so restoring the
+	version before it brings everything back the same way. The result names how
+	many editor files stayed (`kept_editor_files`).
 
 	Raises frappe.ValidationError for a version that does not exist or that was
 	recorded before manifests did. With `dry_run` it only reports the files
@@ -221,14 +222,9 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 	target = _manifest_of(doc.name, sequence)
 	if dry_run:
 		current = snapshots.manifest(doc.name)
-		target = keep_editors(current, target)
-		changes = diff(current, target)
-		return {
-			"sequence": sequence,
-			"changes": changes,
-			**_counts(changes),
-			"kept_editor_files": count_editor_files(current),
-		}
+		kept = count_newer_editor_files(current, target)
+		changes = diff(current, keep_newer_editor_files(current, target))
+		return {"sequence": sequence, "changes": changes, **_counts(changes), "kept_editor_files": kept}
 
 	lock(doc.name)
 	if pending(doc.name):
@@ -236,14 +232,10 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 
 	# Stored now, so the tree being replaced can always be put back.
 	current = snapshots.capture(doc.name)
-	target = keep_editors(current, target)
+	kept = count_newer_editor_files(current, target)
+	target = keep_newer_editor_files(current, target)
 	changes = diff(current, target)
-	result = {
-		"sequence": sequence,
-		"changes": changes,
-		**_counts(changes),
-		"kept_editor_files": count_editor_files(current),
-	}
+	result = {"sequence": sequence, "changes": changes, **_counts(changes), "kept_editor_files": kept}
 	if not changes:
 		return {**result, "recorded": False}
 
@@ -374,24 +366,23 @@ def _set_pending(name: str, changes: list[dict]) -> None:
 	)
 
 
-def keep_editors(current: dict, target: dict) -> dict:
-	"""`target` with every editor file as it is in `current`.
+def keep_newer_editor_files(current: dict, target: dict) -> dict:
+	"""`target` plus the editor files in `current` that it does not hold.
 
-	A restore is about the owner's files. An editor's variants are theirs: the
-	tree after a restore holds the ones that are there now, whether or not the
-	restored version knew them.
+	A restore puts every file of the version back, an editor's included. What it
+	never does is delete an editor's file the version predates: that work was
+	not in the version, and the new version's tree keeps it.
 	"""
 	from sketch import sharing
 
-	kept = {path: sha for path, sha in target.items() if not sharing.is_editor_path(path)}
-	kept.update({path: sha for path, sha in current.items() if sharing.is_editor_path(path)})
-	return kept
+	return {**{p: sha for p, sha in current.items() if sharing.is_editor_path(p)}, **target}
 
 
-def count_editor_files(tree: dict) -> int:
+def count_newer_editor_files(current: dict, held: dict) -> int:
+	"""How many editor files the restore left alone because the version never held them."""
 	from sketch import sharing
 
-	return sum(1 for path in tree if sharing.is_editor_path(path))
+	return sum(1 for p in current if sharing.is_editor_path(p) and p not in held)
 
 
 def _fold(changes: list[dict], path: str, action: str, by: str | None = None) -> None:

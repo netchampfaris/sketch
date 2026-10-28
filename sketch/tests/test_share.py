@@ -11,7 +11,7 @@ The rules this file holds:
 - An editor never changes the default or the owner's files. Their notes are their own, both ways.
 - A private Prototype is for the owner and the invited. A removed editor is out at once,
   and their variants stay.
-- A restore keeps editors' variants. An editor's commit carries their name.
+- A restore brings editors' variants back and never deletes one added since. An editor's commit carries their name.
 """
 
 import json
@@ -685,7 +685,7 @@ class TestRestore(ShareCase):
 		self.assertEqual(tree["src/pages/Home.vue"], HOME, "the owner's file went back")
 		self.assertEqual(tree[self.folder + "compact.vue"], COMPACT, "the editor's variant stayed")
 
-	def test_an_editor_file_changed_since_is_not_put_back_either(self):
+	def test_an_editor_file_changed_since_goes_back_as_the_version_held_it(self):
 		self.add_variant()
 		v_with = versions.history(self.doc.name)[0]["sequence"]
 		self.ok(self.agent(self.ed, "edit_file", path=self.folder + "compact.vue", old_string="Compact</p>", new_string="Newer</p>"))
@@ -693,7 +693,7 @@ class TestRestore(ShareCase):
 		with set_user(self.owner):
 			api.restore_version(self.doc.slug, v_with)
 
-		self.assertIn("Newer", self.tree()[self.folder + "compact.vue"])
+		self.assertEqual(self.tree()[self.folder + "compact.vue"], COMPACT)
 
 	def test_restoring_back_forward_leaves_the_editor_alone_too(self):
 		self._first()
@@ -830,6 +830,17 @@ class TestKeepOnly(ShareCase):
 				set_name=name,
 				option=option,
 			)
+
+	def test_a_restore_brings_back_an_editors_option_that_keep_only_this_deleted(self):
+		self.add_variant()
+		v_with = versions.history(self.doc.name)[0]["sequence"]
+		self.keep_as_page("tall")
+		self.assertNotIn(self.folder + "compact.vue", self.tree(), "Keep only this removed the editor's option")
+		with set_user(self.owner):
+			done = api.restore_version(self.doc.slug, v_with)
+
+		self.assertEqual(self.tree()[self.folder + "compact.vue"], COMPACT, "the owner's restore wrote in the editor's folder")
+		self.assertEqual(done["kept_editor_files"], 0)
 
 	def test_keep_only_cuts_the_other_slots_and_every_editor_variant(self):
 		self.add_variant()
