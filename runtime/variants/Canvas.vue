@@ -259,11 +259,17 @@ const liveTile = computed(() => layout.value.tiles.find((t) => t.id === liveId.v
 const liveSandbox = computed(() => (liveTile.value ? makeSandbox(liveTile.value, true) : undefined))
 watch([lensStr, () => pickValue.value], () => (liveId.value = null))
 // A write that reloaded the page (Make default, Keep only this, Undo) leaves the option it landed on ringed once it is drawn.
+// Only once its own frame has measured it: until then the live tile shows the slice the default option measured, which on
+// another option is the wrong part of the page.
+const landedTile = computed(() => {
+  const l = landed.value
+  const t = l && layout.value.tiles.find((x) => x.kind === 'set' && x.setName === l.set && x.option === l.option)
+  return t && cache[keyOf(t.cacheId)] ? t : null
+})
 watch(
-  [() => layout.value.tiles, landed, pickValue],
+  [landedTile, pickValue],
   () => {
-    const l = landed.value
-    const t = l && layout.value.tiles.find((x) => x.kind === 'set' && x.setName === l.set && x.option === l.option)
+    const t = landedTile.value
     if (!t) return
     liveId.value = t.id
     landed.value = null

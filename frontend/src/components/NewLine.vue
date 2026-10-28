@@ -4,8 +4,8 @@
  *
  * "2 new variants · 3 new comments", leaving out any part that is 0, and no line at all when nothing is new. When
  * someone mentioned this person the line leads with "Arohi mentioned you" in normal ink, and opens the prototype on
- * that thread. An invited editor's line leads with "Sadiq invited you" until they open it, or "Sadiq made your Compact
- * the default". One lead, the most personal first: a mention, then the invitation, then the default. Counts over 99
+ * that thread. An invited editor's line leads with "Sadiq made your Compact the default", or "Sadiq invited you" until
+ * they open it. One lead, the newest and most personal first: a mention, then the default, then the invitation. Counts over 99
  * read "99+". Opening the prototype does not clear them: what has been looked at does, on the server
  * (`sketch/badges.py`).
  *
@@ -32,8 +32,8 @@ const mention = computed(() => {
   const n = props.news
   if (!n) return ''
   if (n.mention) return `${first(n.mention.by)} mentioned you`
-  if (n.invited) return `${first(n.invited.by)} invited you`
   if (n.adopted) return `${first(n.adopted.by)} made your ${n.adopted.label} the default`
+  if (n.invited) return `${first(n.invited.by)} invited you`
   return ''
 })
 const label = computed(() => [mention.value, counts.value].filter(Boolean).join(' · '))

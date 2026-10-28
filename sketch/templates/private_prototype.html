@@ -1,0 +1,30 @@
+{#
+  What a former commenter sees when the owner made the Prototype private. It is Frappe's own "Page not found"
+  (`frappe/www/404.html`), word for word in structure, so both read as one family: the same centred heading,
+  the same rule and the same muted link. `viewer.py` renders it with `PrivatePage`.
+#}
+{% extends "templates/web.html" %}
+
+{%- block title -%}{{ heading }}{%- endblock -%}
+
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block page_content %}
+<style>
+	body {
+		background-color: var(--subtle-accent);
+		font-size: var(--text-base);
+	}
+</style>
+
+<div class="error-page">
+	<div>
+		<h4>{{ heading }}</h4>
+		<div class="details">
+			<p>{{ detail }}</p>
+			<a href="/" class="text-muted">{{ _("Back to Sketch") }}</a>
+		</div>
+	</div>
+</div>
+{% endblock %}

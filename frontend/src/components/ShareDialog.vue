@@ -126,16 +126,20 @@ async function load(): Promise<void> {
 /** Newest invite first, so a new person is right under the owner. */
 const editors = computed(() => [...(state.value?.editors ?? [])].reverse())
 const owner = computed(() => state.value?.owner ?? null)
-/** "Faris who commented will lose access.", "Faris and 2 others who commented will lose access." */
+/**
+ * Said while the link is still on, before the switch is turned off: "Turning this off removes access for Arohi and
+ * Faris, who commented." With three or more, "for Arohi, Faris and 2 others, who commented." Nothing once it is off.
+ */
 const loseAccess = computed(() => {
   const list = state.value?.commenters ?? []
-  if (state.value?.is_public || !list.length) return ''
+  if (!state.value?.is_public || !list.length) return ''
   const first = (p: { full_name: string; username: string }) => p.full_name.split(/\s+/)[0] || p.username
+  const rest = list.length - 2
   const names =
     list.length <= 2
       ? list.map(first).join(' and ')
-      : `${first(list[0])} and ${list.length - 1} others`
-  return `${names} who commented will lose access.`
+      : `${first(list[0])}, ${first(list[1])} and ${rest} ${rest === 1 ? 'other' : 'others'}`
+  return `Turning this off removes access for ${names}, who commented.`
 })
 const busy = computed(() => invite.loading || withdraw.loading || access.loading)
 

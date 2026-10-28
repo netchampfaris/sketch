@@ -269,7 +269,10 @@ async function onNoteDraft(d: { note: string; anchor: PinAnchor }) {
 	// Changing tool closes the open box; the new one opens once that has happened.
 	await nextTick()
 	text.value = d.note
-	draft.value = { ...at, editing: undefined, anchor: d.anchor }
+	// The box's header names the thread's place, as every other note's does: its tile on the canvas, else its element.
+	const a = d.anchor
+	const place = a.tile ? tileLabel(a.tile) : a.component || a.element.split(/[.\s]/)[0]
+	draft.value = { ...at, editing: undefined, anchor: a, component: place || at.component }
 	draftKey.value++
 }
 // The thread is gone (deleted here, or by its author or the owner in another tab).
