@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { FrappeUIProvider, useColorScheme } from 'frappe-ui'
+import { Dialog, FrappeUIProvider, useColorScheme } from 'frappe-ui'
 import AppTopBar from './components/AppTopBar.vue'
 import { toSpaPath } from './router'
 import {
@@ -9,6 +9,8 @@ import {
   prototypes,
   session,
   sessionSettled,
+  signedOut,
+  SIGNED_OUT,
   takeAfterLogin,
 } from './store'
 
@@ -109,5 +111,16 @@ function goBackToWhereTheyWere(): void {
         <router-view />
       </div>
     </div>
+    <!-- The session ended while the gallery was open: one place says so, over whatever dialog is up. Mounted only then,
+         so it teleports after any open dialog and stacks above it (every frappe-ui Dialog is z-50). -->
+    <Dialog
+      v-if="signedOut"
+      :open="true"
+      :title="SIGNED_OUT"
+      size="sm"
+      :dismissible="false"
+      :show-close-button="false"
+      :actions="[{ label: 'Sign in', variant: 'solid', onClick: goToLogin }]"
+    />
   </FrappeUIProvider>
 </template>

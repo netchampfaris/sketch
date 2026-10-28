@@ -35,6 +35,8 @@ export const bridge = shallowReactive({
   zoom: 1,
   panelOpen: true,
   reserve: 0,
+  // How much of the bottom-right corner the zoom pill takes, with its gap.
+  corner: 0,
   model: null as PageModel[] | null,
   tiles: [] as TileBox[],
   // Asked of the canvas: bring a tile into view and give its point on the screen; leave the canvas.

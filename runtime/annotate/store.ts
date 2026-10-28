@@ -44,6 +44,8 @@ let timer = 0
 function post(body: string, keepalive = false) {
   // A form body is a "simple" request, so the sandboxed page needs no CORS preflight.
   const form = new URLSearchParams({ name: host.name, exp: host.exp, sig: host.sig, data: body, epoch: String(host.epoch) })
+  // An editor's signature is over their name too, and their notes are kept apart from the owner's.
+  if (host.editor) form.set('username', host.editor)
   return fetch(SAVE_URL, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store', keepalive })
 }
 

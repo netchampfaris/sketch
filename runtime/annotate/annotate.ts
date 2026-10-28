@@ -164,8 +164,9 @@ export function writeAnchor(a: Anchor) {
 
 // ---- Our own UI is never a target ------------------------------------------------------
 export const UI_ATTR = 'data-annotate-ui'
-// Tooltips and menus from the component library are portalled out of our markup; treat them as ours too.
-const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"],[role="menu"]`
+// Tooltips, menus and toasts (an Undo is pressed while picking) from the component library are portalled out of our
+// markup; treat them as ours too.
+const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"],[role="menu"],[data-sonner-toaster]`
 export const isOurs = (el: Node | null | undefined) => {
   const e = el instanceof Element ? el : el?.parentElement
   return !!e?.closest(OURS)

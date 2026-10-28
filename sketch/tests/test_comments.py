@@ -235,6 +235,55 @@ class TestThreads(CommentCase):
 		left = self.call(api.comment_delete, self.other_name, comment=after["replies"][0]["id"])
 		self.assertEqual((left["id"], left["replies"]), (thread["id"], []))
 
+	def test_a_delete_comes_back_whole_for_the_deleter_once(self):
+		thread = self.start(self.reader_name, "keep me")
+		self.call(api.comment_reply, self.other_name, thread=thread["id"], text="reply")
+		self.call(api.comment_delete, self.owner_name, comment=thread["id"])
+		self.assertEqual(self.rows(), [])
+
+		for stranger in (self.reader_name, self.other_name):
+			with self.subTest(who=stranger), self.assertRaises(frappe.DoesNotExistError):
+				self.call(api.comment_restore, stranger, comment=thread["id"])
+
+		back = self.call(api.comment_restore, self.owner_name, comment=thread["id"])
+		self.assertEqual((back["id"], back["text"], back["author"]), (thread["id"], "keep me", self.reader_name))
+		self.assertEqual([r["text"] for r in back["replies"]], ["reply"])
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(api.comment_restore, self.owner_name, comment=thread["id"])
+		self.assertEqual(len(self.rows()), 2, "a second undo adds nothing")
+
+	def test_a_reply_cannot_come_back_once_its_thread_has_gone(self):
+		thread = self.start(self.reader_name)
+		after = self.call(api.comment_reply, self.reader_name, thread=thread["id"], text="reply")
+		self.call(api.comment_delete, self.reader_name, comment=after["replies"][0]["id"])
+		self.call(api.comment_delete, self.reader_name, comment=thread["id"])
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(api.comment_restore, self.reader_name, comment=after["replies"][0]["id"])
+		self.assertEqual(self.rows(), [])
+
+	def test_only_the_owner_deletes_the_resolved_threads(self):
+		done = self.start(self.reader_name, "done")
+		self.call(api.comment_reply, self.other_name, thread=done["id"], text="reply")
+		self.call(api.comment_resolve, self.reader_name, thread=done["id"])
+		open_ = self.start(self.reader_name, "open")
+		gone = self.start(self.other_name, "on a removed tile")
+
+		for who in (self.reader_name, self.other_name):
+			with self.subTest(who=who), self.assertRaises(frappe.PermissionError):
+				self.call(api.comments_delete_resolved, who)
+		self.assertEqual(len(self.rows()), 4)
+
+		answer = self.call(api.comments_delete_resolved, self.owner_name, also=json.dumps([gone["id"]]))
+		self.assertEqual(answer, {"deleted": 2})
+		self.assertEqual(self.rows(), [open_["id"]], "open threads stay; resolved ones take their replies")
+
+	def test_delete_resolved_touches_only_this_prototype(self):
+		other = utils.make_prototype(self.owner, "d2t-comments-two", files=FILES, is_public=True)
+		self.addCleanup(utils.drop_prototype, other.name)
+		elsewhere = comments.add_thread(other.name, comments.Actor(self.reader_name, self.reader, False), ANCHOR, "elsewhere")
+		self.call(api.comments_delete_resolved, self.owner_name, also=json.dumps([elsewhere]))
+		self.assertTrue(frappe.db.exists("Sketch Comment", elsewhere))
+
 	def test_resolving_is_for_the_starter_and_the_owner(self):
 		thread = self.start(self.reader_name)
 		with self.assertRaises(frappe.PermissionError):
@@ -270,7 +319,7 @@ class TestThreads(CommentCase):
 
 		allowed = {"name", "username", "exp", "sig", "anchor", "text", "thread", "comment", "resolved"}
 		doors = [n for n in dir(api) if n.startswith("comment_") and n != "comment_pass"]
-		self.assertEqual(len(doors), 6)
+		self.assertEqual(len(doors), 7)
 		for name in doors:
 			self.assertLessEqual(set(inspect.signature(getattr(api, name)).parameters), allowed, name)
 

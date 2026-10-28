@@ -169,6 +169,37 @@ export function takeAfterLogin(): string {
 }
 
 /** Send a signed-out visitor to the login page and back again. */
+/**
+ * The session ended while the gallery was open (signed out in another tab, or
+ * it expired). Every call after that is refused with the server's own words,
+ * "...is not whitelisted", which mean nothing to a person. `watchSession`
+ * notices it once, for every call, and App.vue shows "You're signed out." with
+ * a Sign in button. Each screen's error text goes through `errorText`, so no
+ * dialog shows the refusal underneath it.
+ */
+export const signedOut = ref(false)
+export const SIGNED_OUT = "You're signed out."
+
+/** Frappe sets `user_id` to Guest when a session ends; a signed-out browser may have none at all. */
+const guestCookie = () => !/(?:^|;\s*)user_id=(?!Guest(?:;|$))[^;]+/.test(document.cookie)
+
+/** Wraps `fetch` once, at boot: a refused API call from a browser whose session has ended marks it signed out. */
+export function watchSession(): void {
+  const original = window.fetch.bind(window)
+  window.fetch = async (...args: Parameters<typeof fetch>) => {
+    const res = await original(...args)
+    const url = String(args[0] instanceof Request ? args[0].url : args[0])
+    if ((res.status === 401 || res.status === 403) && url.includes('/api/') && session.data && guestCookie()) signedOut.value = true
+    return res
+  }
+}
+
+/** What to say when a call fails: "You're signed out." once the session is gone, else the server's message without its exception name. */
+export function errorText(error: unknown): string {
+  if (signedOut.value) return SIGNED_OUT
+  return ((error as Error)?.message ?? '').replace(/^\w*(Error|Exception):\s*/, '') || 'Something went wrong. Try again.'
+}
+
 export function goToLogin(): void {
   rememberAfterLogin(window.location.pathname + window.location.search)
   window.location.href = '/login'

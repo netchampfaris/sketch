@@ -7,7 +7,7 @@
 // renewed while the person is active; leaving Comment mode drops it. The Viewer is sandboxed and sends
 // no cookie, so every call carries the pass and nothing else.
 import { computed, ref } from 'vue'
-import { readThread, setUnread } from 'sketch:variants'
+import { bridge, readThread, setUnread, tileExists } from 'sketch:variants'
 import type { DemoPick, TileSpot } from 'sketch:variants'
 import { host } from './host'
 import type { Note } from './annotate'
@@ -35,18 +35,26 @@ export const mentionable = ref<Mentionable[]>([])
 export const status = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 export const showResolved = ref(false)
 export const query = ref('')
+// A reply typed and not sent, by thread, so closing the box (a click outside) never loses it.
+export const replyDrafts = new Map<string, string>()
 // The thread whose popover is open, so its pin can wear a ring.
 export const openThread = ref<string | null>(null)
 
+// A thread on a canvas tile whose option or state has gone (Keep only this, a deleted variant) counts as resolved. It is
+// only how the screen shows it: nothing is written, so an Undo brings the tile back and the thread is open again.
+// Only the open canvas knows its tiles; elsewhere a thread is what the server says.
+export const isGone = (t: Thread) => !!t.anchor.tile && tileExists(bridge.model, { route: t.anchor.route, tile: t.anchor.tile }) === false
+export const isClosed = (t: Thread) => t.resolved || isGone(t)
+
 // How many threads still need an answer: the server's count until the first read, then ours.
-export const openCount = computed(() => (status.value === 'ready' ? threads.value.filter((t) => !t.resolved).length : host.openCount))
+export const openCount = computed(() => (status.value === 'ready' ? threads.value.filter((t) => !isClosed(t)).length : host.openCount))
 
 const byNewest = (a: Thread, b: Thread) => b.ts - a.ts || (a.id < b.id ? 1 : -1)
-export const resolvedCount = computed(() => threads.value.filter((t) => t.resolved).length)
-// Newest unresolved first; resolved ones follow only when asked for.
+export const resolvedCount = computed(() => threads.value.filter(isClosed).length)
+// Newest unresolved first; resolved ones (and those whose tile has gone) follow only when asked for.
 export const sorted = computed(() => {
-  const open = threads.value.filter((t) => !t.resolved).sort(byNewest)
-  return showResolved.value ? [...open, ...threads.value.filter((t) => t.resolved).sort(byNewest)] : open
+  const open = threads.value.filter((t) => !isClosed(t)).sort(byNewest)
+  return showResolved.value ? [...open, ...threads.value.filter(isClosed).sort(byNewest)] : open
 })
 // Search matches the words of any comment in a thread, or the name or username of anyone who took part.
 export const matching = computed(() => {
@@ -155,9 +163,24 @@ export async function reply(thread: string, text: string) {
 export async function edit(thread: string, comment: string, text: string) {
   take(await call<Thread | null>('comment_edit', { comment, text }), thread)
 }
-// Deleting the first comment deletes the thread; the server answers with null then.
+// Deleting the first comment deletes the thread; the server answers with null then. The server keeps what went for a
+// short while, so Undo puts it back as it was (`restore`).
 export async function remove(thread: string, comment: string) {
   take(await call<Thread | null>('comment_delete', { comment }), thread)
+}
+// Undo of a delete: the comment (a thread's first one brings its replies) comes back with its id and time.
+export async function restore(comment: string) {
+  take(await call<Thread>('comment_restore', { comment }))
+}
+// The owner's "Delete resolved": every resolved thread and every one whose canvas tile has gone, with their replies.
+// For good: the menu asks first. Returns how many threads went.
+export async function deleteResolved() {
+  const gone = threads.value.filter((t) => !t.resolved && isGone(t)).map((t) => t.id)
+  const r = await call<{ deleted: number }>('comments_delete_resolved', { also: JSON.stringify(gone) })
+  const ids = new Set([...gone, ...threads.value.filter((t) => t.resolved).map((t) => t.id)])
+  threads.value = threads.value.filter((t) => !ids.has(t.id))
+  showResolved.value = false
+  return r.deleted
 }
 export async function setResolved(thread: string, resolved: boolean) {
   take(await call<Thread | null>('comment_resolve', { thread, resolved: resolved ? '1' : '0' }), thread)
@@ -210,9 +233,6 @@ export function pieces(text: string): Piece[] {
   if (at < text.length) out.push({ text: text.slice(at) })
   return out
 }
-
-// The first line of a comment, for the list.
-export const firstLine = (text: string) => plain(text).split('\n').find((l) => l.trim())?.trim() ?? ''
 
 
 // A page's name for the list: the router's name for it, else its last path segment ("/" is Home).

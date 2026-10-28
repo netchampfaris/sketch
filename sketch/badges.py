@@ -158,7 +158,8 @@ def _invited(name: str, who: Standing, seen: dict, owner: dict | None) -> dict |
 	if who.role != "editor" or OPENED in seen or not owner:
 		return None
 
-	return {"by": owner}
+	invite = frappe.db.get_value(sharing.EDITOR, {"prototype": name, "user": who.user}, "creation")
+	return {"by": owner, "at": invite}
 
 
 def _adopted(name: str, who: Standing, seen: dict, owner: dict | None) -> dict | None:
@@ -182,7 +183,8 @@ def _adopted(name: str, who: Standing, seen: dict, owner: dict | None) -> dict |
 	if not found:
 		return None
 
-	return {"label": _label_of(name, max(found)[1]), "by": owner}
+	when, path = max(found)
+	return {"label": _label_of(name, path), "by": owner, "at": when}
 
 
 def _mentions(row) -> list[str]:
@@ -290,7 +292,7 @@ def decorate(name: str, user: str, threads: list[dict]) -> list[dict]:
 def card(name: str, user: str, files: list | None = None) -> dict | None:
 	"""The gallery card's line for this person, or None when nothing is new.
 
-	{"variants": n, "comments": n, "by": [the first three people], "more": how many
+	{"ago": when the newest of it happened, as "2 hours ago", "variants": n, "comments": n, "by": [the first three people], "more": how many
 	others, "mention": {"by": person, "thread": id} or None, "invited": {"by": person} or None,
 	"adopted": {"label": option, "by": person} or None}.
 	"""
@@ -327,7 +329,12 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 		if by:
 			mention = {"by": {"username": row.author, **by}, "thread": row.thread or row.name}
 
+	# When the newest of it happened, for the card's " · 2 hours ago". The moments stay on the server.
+	moments = [at for at, _author in activity] + [n.pop("at") for n in (invited, adopted) if n]
+	newest = max((frappe.utils.get_datetime(m) for m in moments if m), default=None)
+
 	return {
+		"ago": frappe.utils.pretty_date(newest) if newest else "",
 		"variants": len(variants),
 		"comments": len(fresh),
 		"by": people[:CARD_PEOPLE],

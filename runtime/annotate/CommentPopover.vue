@@ -2,9 +2,9 @@
 // The comment box that opens beside a clicked element (a new thread) or an avatar pin (a thread).
 // Every change is its own call (comments.ts). A save that fails keeps what was typed and says so
 // under the composer, with a Retry.
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
-import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget } from 'frappe-ui'
+import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import { applyPicks, picksShown, picksWords } from 'sketch:variants'
 import { host } from './host'
 import {
@@ -16,6 +16,8 @@ import {
 	edit,
 	reply,
 	remove,
+	replyDrafts,
+	restore,
 	noteDraft,
 	setResolved,
 	whenOf,
@@ -58,40 +60,47 @@ const root = ref<HTMLElement | null>(null)
 providePortalTarget(() => props.menuHost ?? undefined)
 const { height } = useElementSize(root, { width: 0, height: 220 }, { box: 'border-box' })
 const WIDTH = 300
+// How long the toast after a delete offers Undo.
+const UNDO_MS = 10000
 const GAP = 12
 const EDGE = 12
 
-// Right and below the point; flips above or left when it would run off the viewport or onto the open panel.
-// Under 640px it spans the screen, less an edge on each side.
-const pos = computed(() => {
+// Right and below its pin; above or left of it when it would run off the screen, onto the toolbar or onto the open
+// panel. The side is chosen when the box opens (and again when it grows), then kept, so the box rides with its pin as
+// the page scrolls or the canvas pans. Nothing holds it on screen: a pin that leaves the view takes the box with it.
+// Under 640px it spans the screen, less an edge on each side, and only follows up and down.
+type Side = { left: boolean; above: boolean }
+const side = ref<Side | null>(null)
+function choose(): Side {
 	const vw = window.innerWidth
 	const vh = window.innerHeight
 	const W = vw < 640 ? vw - 2 * EDGE : WIDTH
 	const h = height.value || 220
-	const a = props.avoid
-	const topFor = (left: number) => {
-		let lo = EDGE
-		let hi = vh - EDGE - h
-		if (a && left < a.right && left + W > a.left) {
-			if (a.top > vh / 2) hi = a.top - EDGE - h
-			else lo = a.bottom + EDGE
-		}
-		const top = props.y + GAP
-		return Math.max(lo, Math.min(top > hi ? props.y - GAP - h : top, Math.max(lo, hi)))
+	const overlaps = (r: { left: number; right: number; top: number; bottom: number } | null, left: number, top: number) =>
+		!!r && left < r.right && left + W > r.left && top < r.bottom && top + h > r.top
+	let left = props.x + GAP + W > vw - EDGE
+	let x = left ? props.x - GAP - W : props.x + GAP
+	if (vw >= 640 && overlaps(props.panel, x, props.y + GAP)) {
+		left = true
+		x = props.x - GAP - W
 	}
-	let left = props.x + GAP
-	if (left + W > vw - EDGE) left = props.x - GAP - W
-	left = Math.max(EDGE, Math.min(left, vw - W - EDGE))
-	let top = topFor(left)
-	const p = props.panel
-	if (p && left + W > p.left && left < p.right && top < p.bottom && top + h > p.top) {
-		left = Math.max(EDGE, Math.min(props.x - GAP - W, p.left - EDGE - W))
-		top = topFor(left)
-	}
+	const fitsBelow = props.y + GAP + h <= vh - EDGE && !overlaps(props.avoid, x, props.y + GAP)
+	const fitsAbove = props.y - GAP - h >= EDGE && !overlaps(props.avoid, x, props.y - GAP - h)
+	return { left, above: !fitsBelow && fitsAbove }
+}
+watch(height, () => (side.value = choose()))
+const pos = computed(() => {
+	const vw = window.innerWidth
+	const W = vw < 640 ? vw - 2 * EDGE : WIDTH
+	const h = height.value || 220
+	const s = side.value ?? choose()
+	const left = vw < 640 ? EDGE : s.left ? props.x - GAP - W : props.x + GAP
+	const top = s.above ? props.y - GAP - h : props.y + GAP
 	return { left: `${left}px`, top: `${top}px`, width: `${W}px`, transformOrigin: `${props.x - left}px ${props.y - top}px` }
 })
 
 onMounted(async () => {
+	side.value = choose()
 	await nextTick()
 	const ta = root.value?.querySelector('textarea')
 	ta?.focus()
@@ -111,11 +120,17 @@ function startEdit(c: Reply) {
 	// The menu hands focus back to its button as it closes; take it after that.
 	setTimeout(() => root.value?.querySelector<HTMLTextAreaElement>('[data-editing] textarea')?.focus(), 50)
 }
+// One menu open at a time: opening the thread's ⋯ or a comment's ⋯ closes the other.
+const menuOpen = ref<string | null>(null)
+const menuModel = (id: string) => ({
+	open: menuOpen.value === id,
+	'onUpdate:open': (o: boolean) => (menuOpen.value = o ? id : menuOpen.value === id ? null : menuOpen.value),
+})
 const commentMenu = (c: Reply) => {
 	const first = c.id === props.thread?.id
 	return [
 		canEdit(c) && { label: 'Edit', icon: 'lucide-pencil', onClick: () => startEdit(c) },
-		canDelete(c) && !first && { label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = c.id) },
+		canDelete(c) && !first && { label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => del(c) },
 	].filter((o) => !!o) as any[]
 }
 // Add to notes takes the whole thread, so it sits with the thread's own actions.
@@ -124,7 +139,7 @@ const threadMenu = computed<any[]>(() => {
 	if (!t) return []
 	return [
 		owner && { label: 'Add to notes', icon: 'lucide-sticky-note', onClick: addToNotes },
-		canDelete(t) && { label: owner ? 'Delete thread' : 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => (confirming.value = t.id) },
+		canDelete(t) && { label: owner ? 'Delete thread' : 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => del(t) },
 	].filter((o) => !!o) as any[]
 })
 
@@ -166,8 +181,9 @@ function start() {
 	})
 }
 
-// A reply.
-const replyText = ref('')
+// A reply. What is typed and not sent stays with the thread, and comes back when it opens again.
+const replyText = ref(props.thread ? (replyDrafts.get(props.thread.id) ?? '') : '')
+watch(replyText, (t) => props.thread && (t ? replyDrafts.set(props.thread.id, t) : replyDrafts.delete(props.thread.id)))
 function sendReply() {
 	const t = props.thread
 	const text = replyText.value.trim()
@@ -192,15 +208,18 @@ function saveEdit() {
 	})
 }
 
-// Deleting is for good, so it asks first, in place.
-const confirming = ref<string | null>(null)
+// Deleting happens at once; the toast offers Undo, which the server honours for a while (comments.ts restore).
 function del(c: Reply) {
 	const t = props.thread
 	if (!t) return
+	const thread = c.id === t.id
 	void run(async () => {
 		await remove(t.id, c.id)
-		confirming.value = null
-		if (c.id === t.id) emit('gone')
+		if (thread) emit('gone')
+		toast.success(thread ? 'Thread deleted' : 'Comment deleted', {
+			duration: UNDO_MS,
+			action: { label: 'Undo', onClick: () => void restore(c.id).catch(() => toast.error("Couldn't undo the delete.")) },
+		})
 	})
 }
 
@@ -236,14 +255,17 @@ function onKey(e: KeyboardEvent) {
 	<div
 		ref="root"
 		data-annotate-ui
+		data-comment-popover
 		role="dialog"
 		aria-label="Comment"
 		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1.5rem)] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
 		:style="pos"
 		@keydown="onKey"
 	>
-		<!-- A thread: its title on the left, the few things you can do to it as quiet icons on the right. -->
-		<div v-if="thread" class="flex h-6 items-center gap-0.5">
+		<!-- A thread: its title on the left, the few things you can do to it as quiet icons on the right. The row is as tall as
+			its icon buttons and sits 5px into the padding, as the last one does on the right, so the icons keep the same 12px
+			from the top and right edges that the words keep from the left. -->
+		<div v-if="thread" class="-mt-[5px] flex h-6 items-center gap-0.5">
 			<div class="flex min-w-0 flex-1 items-center gap-2">
 				<p class="shrink-0 text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
 				<!-- Made on other options than the defaults: the words, and when the page is not showing them, the way back to them. -->
@@ -257,7 +279,7 @@ function onKey(e: KeyboardEvent) {
 			<Tooltip v-if="canResolve" :text="thread.resolved ? 'Reopen' : 'Resolve'" :hover-delay="600">
 				<Button size="xs" :variant="thread.resolved ? 'subtle' : 'ghost'" icon="lucide-check" :aria-label="thread.resolved ? 'Reopen' : 'Resolve'" :disabled="busy" @click="toggleResolved" />
 			</Tooltip>
-			<Dropdown v-if="threadMenu.length" :options="threadMenu" align="end">
+			<Dropdown v-if="threadMenu.length" v-bind="menuModel('thread')" :options="threadMenu" align="end">
 				<Button size="xs" variant="ghost" icon="lucide-ellipsis" aria-label="Thread menu" />
 			</Dropdown>
 			<Tooltip text="Close" :hover-delay="600">
@@ -265,7 +287,7 @@ function onKey(e: KeyboardEvent) {
 			</Tooltip>
 		</div>
 		<!-- A new comment has no header; on touch, with no Escape, it keeps a way out. -->
-		<div v-else class="mb-1 hidden h-6 items-center justify-end [@media(hover:none)]:flex">
+		<div v-else class="-mt-[5px] mb-1 hidden h-6 items-center justify-end [@media(hover:none)]:flex">
 			<Button class="-mr-[5px]" size="xs" variant="ghost" icon="lucide-x" aria-label="Close" @click="emit('close')" />
 		</div>
 
@@ -283,7 +305,7 @@ function onKey(e: KeyboardEvent) {
 							<span class="shrink-0 text-ink-gray-5" :title="whenOf(c.ts)">{{ ago(c.ts) }}</span>
 							<span v-if="c.edited" class="shrink-0 text-ink-gray-4">(edited)</span>
 						</p>
-						<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" :options="commentMenu(c)" align="end">
+						<Dropdown v-if="commentMenu(c).length && editing?.id !== c.id" v-bind="menuModel(c.id)" :options="commentMenu(c)" align="end">
 							<Button
 								class="-mr-[5px] shrink-0 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
 								variant="ghost"
@@ -308,13 +330,6 @@ function onKey(e: KeyboardEvent) {
 						</template>
 						<template v-else>
 							<p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7"><template v-for="(piece, i) in pieces(c.text)" :key="i"><span v-if="piece.mention" class="text-ink-blue-6">{{ piece.text }}</span><template v-else>{{ piece.text }}</template></template></p>
-							<div v-if="confirming === c.id" class="mt-2">
-								<p class="text-p-sm text-ink-gray-6">{{ c.id === thread.id ? 'Delete this thread?' : 'Delete this reply?' }}</p>
-								<div class="mt-2 flex justify-end gap-2">
-									<Button variant="ghost" label="Cancel" @click="confirming = null" />
-									<Button variant="subtle" theme="red" label="Delete" :disabled="busy" @click="del(c)" />
-								</div>
-							</div>
 						</template>
 					</div>
 				</div>

@@ -3,10 +3,9 @@
 // The grid is laid out once per view (see layout.ts); zoom and pan only transform it.
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
+import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { Button, Dropdown, Popover, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
-import LensMenu from './LensMenu.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, spotOf, tileExists } from './bridge'
@@ -45,7 +44,7 @@ const phone = useMediaQuery('(max-width: 767px)')
 // The page the canvas opened over, for the pick it falls back to.
 const openedOn = route.path
 
-// App-wide states are the lenses.
+// App-wide states (Role) are the lenses. There is no picker here: the tiles follow what the Demo pill has, live.
 const appStates = computed(() => Object.values(states).filter((s) => s.path === ''))
 const lens = () => Object.fromEntries(appStates.value.map((s) => [idOf(s.path, s.key), stateOf(s)]))
 const lensStr = computed(() => Object.values(lens()).join('+'))
@@ -89,6 +88,13 @@ watch(
   { immediate: true },
 )
 const summary = computed(() => (pick.value && model.value ? pickSummary(pick.value, model.value) : ''))
+// Beside the name in the top-left pill: a set's option count ("12 options"), without the page it is on; else the summary.
+const countText = computed(() => {
+  const p = pick.value
+  if (p?.kind !== 'set') return summary.value
+  const n = p.page.sets.find((s) => s.key === p.key)?.options.length ?? 0
+  return `${n} ${n === 1 ? 'option' : 'options'}`
+})
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
@@ -110,7 +116,7 @@ const vp = ref<HTMLElement | null>(null)
 const root = ref<HTMLElement | null>(null)
 // The canvas fills the window and the panel floats over it. Fit and columns use only the room left of the
 // panel, so at fit nothing sits under it; panned or zoomed, tiles slide under it whole.
-const fullSize = ref({ w: win.w, h: win.h - (phone.value ? 96 : 48) })
+const fullSize = ref({ w: win.w, h: win.h })
 useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
@@ -127,6 +133,10 @@ const layout = computed(() =>
   }),
 )
 const pz = usePanZoom(() => vp.value)
+// The zoom pill's width, so the toolbar parked bottom right stands left of it (Annotate.vue).
+const zoomPill = ref<HTMLElement | null>(null)
+const { width: zoomW } = useElementSize(zoomPill, { width: 0, height: 0 }, { box: 'border-box' })
+watch(zoomW, (w) => (bridge.corner = w ? w + 8 : 0), { immediate: true })
 const { view } = pz
 // Captions never grow past their size at the fit zoom, so the room the layout gave them always holds.
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
@@ -385,6 +395,7 @@ onBeforeUnmount(() => {
   bridge.model = null
   bridge.tiles = []
   bridge.reserve = 0
+  bridge.corner = 0
   document.documentElement.style.removeProperty('--sketch-panel-w')
   bridge.view = ''
   alive = false
@@ -501,58 +512,6 @@ watch(
     tabindex="-1"
     class="fixed inset-0 z-[60] flex flex-col bg-surface-gray-1 outline-none"
   >
-    <div v-if="!phone" data-ui class="flex h-12 shrink-0 items-center gap-1 border-b border-outline-gray-1 bg-surface-base px-3">
-      <Tooltip text="Close (Esc)">
-        <Button variant="ghost" icon="lucide-x" aria-label="Close canvas" @click="closeCanvas(router)" />
-      </Tooltip>
-      <div class="ml-2 flex min-w-0 items-baseline gap-2">
-        <span class="truncate text-base font-medium text-ink-gray-8">{{ triggerLabel }}</span>
-        <span v-if="summary" class="truncate text-p-sm text-ink-gray-5">{{ summary }}</span>
-      </div>
-      <div class="ml-auto flex items-center gap-3">
-        <span v-if="drawing" class="text-p-sm tabular-nums text-ink-gray-5">Drawing {{ drawn }} of {{ total }}</span>
-        <LensMenu v-for="s in appStates" :key="s.key" :state="s" />
-        <div class="flex items-center gap-1">
-          <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
-          <Dropdown :options="zoomOptions">
-            <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
-          </Dropdown>
-          <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
-        </div>
-      </div>
-    </div>
-
-    <div v-else data-ui class="flex shrink-0 flex-col gap-1 border-b border-outline-gray-1 bg-surface-base px-2 py-1">
-      <div class="flex items-center gap-1">
-        <Tooltip text="Close (Esc)">
-          <Button variant="ghost" icon="lucide-x" aria-label="Close canvas" @click="closeCanvas(router)" />
-        </Tooltip>
-        <Popover v-model:open="pickerOpen" side="bottom" align="start" :offset="4" :collision-padding="8" match-trigger-width class="min-w-0 flex-1">
-          <template #trigger>
-            <div class="min-w-0 flex-1">
-              <Button variant="subtle" class="w-full justify-between" aria-label="Show on the canvas">
-                <span class="flex w-full min-w-0 items-center justify-between gap-2">
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    <span class="text-ink-gray-5">Show</span>
-                    <span class="truncate">{{ triggerLabel }}</span>
-                  </span>
-                  <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
-                </span>
-              </Button>
-            </div>
-          </template>
-          <Panel embedded :items="items" :selected="pickValue" @choose="choose" />
-        </Popover>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="min-w-0 flex-1 truncate pl-4 text-p-sm text-ink-gray-5">{{ summary }}</span>
-        <LensMenu v-for="s in appStates" :key="s.key" :state="s" />
-        <Dropdown :options="zoomOptions">
-          <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
-        </Dropdown>
-      </div>
-    </div>
-
     <div class="relative min-h-0 flex-1">
       <div
         ref="vp"
@@ -578,7 +537,6 @@ watch(
             :sandbox="liveId === t.id ? liveSandbox : undefined"
             :app="app"
             :win="win"
-            :narrow="t.w * view.z < 280"
             @activate="(e) => activate(t, e)"
             @open-page="openPage(t)"
             @near="(n: boolean) => onNear(t.id, n)"
@@ -590,6 +548,53 @@ watch(
         <div v-if="nothing" data-ui class="absolute inset-0 flex items-center justify-center text-center">
           <p class="text-base text-ink-gray-7">Nothing to show yet. Add a state or a variant set to a page.</p>
         </div>
+      </div>
+
+      <!-- Top left: the way back, and what the canvas shows. On a phone the name opens the Show list. It sits above the
+           tiles and pins (z-10 is the panel's; a box or menu opens in a layer above the canvas). -->
+      <div
+        data-ui
+        data-canvas-title
+        class="absolute left-3 top-3 z-10 flex h-9 min-w-0 items-center gap-1 rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        :style="{ maxWidth: `calc(100% - ${panelShown ? PANEL_W + 12 : 24}px)` }"
+      >
+        <Tooltip text="Back (Esc)">
+          <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="closeCanvas(router)" />
+        </Tooltip>
+        <Popover v-if="phone" v-model:open="pickerOpen" side="bottom" align="start" :offset="8" :collision-padding="12" class="min-w-0 flex-1">
+          <template #trigger>
+            <div class="min-w-0">
+            <Button variant="ghost" class="w-full max-w-full justify-start" aria-label="Show on the canvas">
+              <span class="flex w-full min-w-0 items-center gap-1.5">
+                <span class="truncate text-ink-gray-8">{{ triggerLabel }}</span>
+                <span v-if="countText" class="shrink-0 text-p-sm text-ink-gray-5">{{ countText }}</span>
+                <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
+              </span>
+            </Button>
+            </div>
+          </template>
+          <Panel embedded :items="items" :selected="pickValue" style="width: calc(100vw - 24px)" @choose="choose" />
+        </Popover>
+        <div v-else class="flex min-w-0 items-center gap-1.5 pl-1 pr-2">
+          <span class="truncate text-base text-ink-gray-8">{{ triggerLabel }}</span>
+          <span v-if="countText" class="shrink-0 text-p-sm text-ink-gray-5">{{ countText }}</span>
+          <span v-if="drawing" class="shrink-0 pl-1.5 text-p-sm tabular-nums text-ink-gray-5">Drawing {{ drawn }} of {{ total }}</span>
+        </div>
+      </div>
+
+      <!-- Bottom right: zoom, left of the panel when it is open. -->
+      <div
+        ref="zoomPill"
+        data-ui
+        data-canvas-zoom
+        class="absolute bottom-3 z-10 flex h-9 items-center rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
+      >
+        <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
+        <Dropdown :options="zoomOptions">
+          <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
+        </Dropdown>
+        <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
       </div>
 
       <Panel v-if="panelShown" :items="items" :selected="pickValue" @choose="choose" @hide="setPanel(false)" />

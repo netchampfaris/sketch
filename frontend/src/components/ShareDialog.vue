@@ -40,7 +40,7 @@ import {
   useCall,
 } from 'frappe-ui'
 import { avatarTheme } from '../../../runtime/shared/avatarTheme'
-import { copyText, method } from '../store'
+import { copyText, errorText, method, signedOut } from '../store'
 import type { Prototype, SharePerson, ShareState } from '../types'
 
 const props = defineProps<{ prototype: Prototype }>()
@@ -80,11 +80,10 @@ const access = useCall<Prototype, { slug: string; is_public: boolean }>({
 
 const NETWORK = "Couldn't reach Sketch. Check your connection and try again."
 
-/** A refused fetch has the browser's own words. Say what happened instead. */
+/** A refused fetch has the browser's own words. Say what happened instead; a signed-out session says so (store.ts). */
 function words(error: unknown): string {
-  // The server's own words come after the exception name: "ValidationError: No Sketch user ...".
-  const message = ((error as Error)?.message ?? '').replace(/^\w*(Error|Exception):\s*/, '')
-  if (!message || /failed to fetch|network|load failed|timed out/i.test(message)) return NETWORK
+  const message = errorText(error)
+  if (!signedOut.value && /failed to fetch|network|load failed|timed out/i.test(message)) return NETWORK
   return message
 }
 
@@ -233,7 +232,7 @@ async function copyLink(): Promise<void> {
             <FormControl
               v-model="typed"
               class="min-w-0 flex-1"
-              label="Invite by Sketch username"
+              label="Invite by GitHub username"
               autocomplete="off"
               autocapitalize="off"
               spellcheck="false"

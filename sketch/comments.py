@@ -13,7 +13,9 @@ the anchor and the resolved mark, a reply points at it through `thread`. Every
 write names one row (create, reply, edit, delete, resolve), so a page that has
 been open for a day can only ever do what its person could do now. It cannot
 bring a deleted comment back, because there is no whole-set save to bring it
-back with.
+back with. The one way back is Undo (`restore`): for a few minutes after a
+delete the server holds the deleted rows, for the person who deleted them only,
+and puts them back once.
 
 The writer is the Viewer page, which runs the Prototype's own JavaScript, and
 a fork means that code is a stranger's. So who is speaking is never taken from
@@ -50,6 +52,10 @@ MAX_MENTIONS = 10
 MENTION = re.compile(r"@\[([a-z][a-z0-9-]{2,29})\]")
 #: The anchor describes one spot on the page; it is small.
 MAX_ANCHOR_BYTES = 8 * 1024
+#: How long a delete can be undone. The toast offers Undo for 10 seconds; this is the server's margin.
+UNDO_TTL_SECONDS = 10 * 60
+#: How many threads one "Delete resolved" may name besides the resolved ones (threads on tiles that have gone).
+MAX_DELETE_ALSO = 200
 #: How long a pass lasts. The toolbar renews it while the person is active.
 PASS_TTL_SECONDS = 15 * 60
 #: How long a page's right to ask for a pass lasts: as long as the owner's live tab.
@@ -418,11 +424,68 @@ def delete(name: str, actor: Actor, comment: str) -> str:
 	if row.author != actor.username and not actor.is_owner:
 		raise frappe.PermissionError
 
+	gone = _full_rows(name, comment, with_replies=not row.thread)
 	if not row.thread:
 		frappe.db.delete(COMMENT, {"prototype": name, "thread": comment})
 
 	frappe.db.delete(COMMENT, {"name": comment})
+	frappe.cache.set_value(_undo_key(name, comment), {"by": actor.username, "rows": gone}, expires_in_sec=UNDO_TTL_SECONDS)
 	return row.thread or row.name
+
+
+def restore(name: str, actor: Actor, comment: str) -> str:
+	"""Undo a delete: the comment comes back with its id, author, words and time, a thread with its replies.
+
+	Only the person who deleted it, only once, and only while the server still holds it
+	(UNDO_TTL_SECONDS). A reply whose thread has gone since cannot come back. Returns the thread id.
+	"""
+	_lock(name)
+	key = _undo_key(name, comment)
+	held = frappe.cache.get_value(key)
+	if not held or held.get("by") != actor.username:
+		raise frappe.DoesNotExistError
+
+	rows = held["rows"]
+	first = rows[0]
+	if first.get("thread"):
+		_root(name, first["thread"])
+
+	frappe.cache.delete_value(key)
+	fields = list(first.keys())
+	frappe.db.bulk_insert(COMMENT, fields, [tuple(r[f] for f in fields) for r in rows])
+	return first.get("thread") or first["name"]
+
+
+def delete_resolved(name: str, actor: Actor, also=None) -> int:
+	"""The owner's "Delete resolved": every resolved thread with its replies, for good. Returns how many threads went.
+
+	`also` names more threads to go with them: the ones the page shows as resolved because their canvas
+	tile has gone. Only threads of this Prototype are touched, whatever is named.
+	"""
+	if not actor.is_owner:
+		raise frappe.PermissionError
+
+	if not isinstance(also, list) or len(also) > MAX_DELETE_ALSO or not all(isinstance(i, str) for i in also):
+		also = []
+
+	_lock(name)
+	roots = frappe.get_all(
+		COMMENT, filters={"prototype": name, "thread": ["is", "not set"], "resolved": 1}, pluck="name", limit_page_length=0
+	)
+	if also:
+		roots += frappe.get_all(
+			COMMENT,
+			filters={"prototype": name, "thread": ["is", "not set"], "name": ["in", also]},
+			pluck="name",
+			limit_page_length=0,
+		)
+
+	roots = list(dict.fromkeys(roots))
+	if roots:
+		frappe.db.delete(COMMENT, {"prototype": name, "thread": ["in", roots]})
+		frappe.db.delete(COMMENT, {"prototype": name, "name": ["in", roots]})
+
+	return len(roots)
 
 
 def set_resolved(name: str, actor: Actor, thread: str, resolved: bool) -> str:
@@ -664,6 +727,19 @@ def _row(name: str, comment: str):
 		raise frappe.DoesNotExistError
 
 	return row
+
+
+def _full_rows(name: str, comment: str, with_replies: bool) -> list[dict]:
+	"""A comment's rows exactly as stored, a thread's replies after it, for Undo to insert again."""
+	rows = frappe.get_all(COMMENT, filters={"prototype": name, "name": comment}, fields=["*"])
+	if with_replies:
+		rows += frappe.get_all(COMMENT, filters={"prototype": name, "thread": comment}, fields=["*"], order_by="creation asc")
+
+	return [{k: v for k, v in r.items()} for r in rows]
+
+
+def _undo_key(name: str, comment: str) -> str:
+	return f"sketch:comment-undo:{name}:{comment}"
 
 
 def _replies(name: str, thread: str) -> list:

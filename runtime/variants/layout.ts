@@ -4,9 +4,11 @@ import type { Opt } from './state'
 import type { Pick } from './picker'
 
 export const GAP = 48
-// The caption (and Open page button) under a tile, in on-screen px at the fit zoom.
-export const CAPTION = 36
+// The caption under a tile, in on-screen px at the fit zoom: 8 above, the name row (20), 4 between, the actions row (24).
+export const CAPTION = 56
 export const PAD = 32
+// The top keeps clear of the floating title pill (12 inset, 36 tall, 12 below it).
+export const TOP = 60
 // A set tile shows the set's own box with this much tile background around it.
 export const MARGIN = 16
 const MIN_Z = 0.05
@@ -122,12 +124,13 @@ function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; h: number }, co
 
 function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): Fit {
   const { vp } = ctx
-  if (ctx.phone) return { x: 16, y: 16, z: Math.max(MIN_Z, Math.min(1, (vp.w - 32) / b.w)) }
+  if (ctx.phone) return { x: 16, y: TOP, z: Math.max(MIN_Z, Math.min(1, (vp.w - 32) / b.w)) }
+  const room = vp.h - TOP - PAD
   let z = Math.min(1, (vp.w - PAD * 2) / b.w)
-  if (!byWidth) z = Math.min(z, (vp.h - PAD * 2) / b.h)
+  if (!byWidth) z = Math.min(z, room / b.h)
   z = Math.max(MIN_Z, z)
-  const fitsHeight = b.h * z <= vp.h - PAD * 2
-  return { x: (vp.w - b.w * z) / 2, y: fitsHeight ? (vp.h - b.h * z) / 2 : PAD, z }
+  const fitsHeight = b.h * z <= room
+  return { x: (vp.w - b.w * z) / 2, y: fitsHeight ? TOP + (room - b.h * z) / 2 : TOP, z }
 }
 
 export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx): Layout {

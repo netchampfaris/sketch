@@ -413,6 +413,11 @@ class SketchViewerRenderer(BaseRenderer):
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
 		commenter = self.commenter()
 		ticket = comments.mint_ticket(self.doc.name, commenter) if commenter else {}
+		# An invited editor gets Note and Tweak for their own agent: their own notes, and a signature over their name
+		# that writes those and nothing else. The owner's notes never reach their page, nor theirs the owner's.
+		noting = commenter if commenter and self.role() == "editor" else ""
+		if noting:
+			mark = signature.mint(annotations.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
 		# Make default writes the source, so it has a scope of its own: neither
 		# the poll nor the toolbar signature can reorder a slot.
 		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
@@ -449,8 +454,16 @@ class SketchViewerRenderer(BaseRenderer):
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"exp": stamp.get("exp", ""),
 			"sig": stamp.get("sig", ""),
-			"annotations": annotations.read(self.doc.name) if live else None,
-			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
+			"annotations": annotations.read(self.doc.name, editor=frappe.session.user)
+			if noting
+			else annotations.read(self.doc.name)
+			if live
+			else None,
+			"annotations_epoch": annotations.epoch(self.doc.name, frappe.session.user)
+			if noting
+			else annotations.epoch(self.doc.name)
+			if live
+			else 0,
 			"annotate_exp": mark.get("exp", ""),
 			"annotate_sig": mark.get("sig", ""),
 			"commenter": commenter,

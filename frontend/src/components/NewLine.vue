@@ -1,21 +1,19 @@
 <script setup lang="ts">
 /**
- * What is new on a prototype since this person last looked: one muted line under the title, and who made it.
+ * A gallery card's second row: what is new on the prototype since this person last looked, or, when nothing is, the
+ * meta in the `#default` slot ("16 files · Updated 1 day ago"). One `h-7` line either way, so the card never changes
+ * height and cards in a grid row line up.
  *
- * "2 new variants · 3 new comments", leaving out any part that is 0, and no line at all when nothing is new. When
- * someone mentioned this person the line leads with "Arohi mentioned you" in normal ink, and opens the prototype on
- * that thread. An invited editor's line leads with "Sadiq made your Compact the default", or "Sadiq invited you" until
- * they open it. One lead, the newest and most personal first: a mention, then the default, then the invitation. Counts over 99
- * read "99+". Opening the prototype does not clear them: what has been looked at does, on the server
- * (`sketch/badges.py`).
- *
- * `h-6` and no button, so it is the one row on the card that is not a button's height.
+ * News reads "• 1 new comment · 2 hours ago": the unread dot, the news in normal ink, then when the newest of it
+ * happened in gray. "2 new variants · 3 new comments" leaves out any part that is 0. When someone mentioned this person
+ * the line leads with "Arohi mentioned you", and opens the prototype on that thread. An invited editor's line leads
+ * with "Sadiq made your Compact the default", or "Sadiq invited you" until they open it. One lead, the newest and most
+ * personal first: a mention, then the default, then the invitation. Counts over 99 read "99+". No faces: the line is
+ * what happened, and the card's avatar stack already says who it is shared with. Opening the prototype does not clear
+ * it: what has been looked at does, on the server (`sketch/badges.py`).
  */
 import { computed } from 'vue'
-import { Avatar } from 'frappe-ui'
-import { avatarTheme } from '../../../runtime/shared/avatarTheme'
 import type { NewPerson, PrototypeNew } from '../types'
-
 const props = defineProps<{ news?: PrototypeNew | null; href: string }>()
 
 const MAX = 99
@@ -37,6 +35,7 @@ const mention = computed(() => {
   return ''
 })
 const label = computed(() => [mention.value, counts.value].filter(Boolean).join(' · '))
+const title = computed(() => [label.value, props.news?.ago].filter(Boolean).join(' · '))
 const link = computed(() =>
   props.news?.mention ? `${props.href}?comment=${encodeURIComponent(props.news.mention.thread)}` : props.href,
 )
@@ -48,27 +47,16 @@ const link = computed(() =>
     :href="link"
     target="_blank"
     rel="noopener"
-    class="flex h-6 min-w-0 items-center gap-2 text-xs text-ink-gray-5 hover:text-ink-gray-7"
-    :title="label"
+    class="group flex h-7 min-w-0 items-center gap-1.5 text-xs text-ink-gray-5"
+    :title="title"
   >
-    <!-- The mention gives way first when the card is narrow; the counts and the faces after it keep their room. -->
-    <span class="flex min-w-0 items-baseline gap-1">
-      <span v-if="mention" class="min-w-0 truncate text-ink-gray-8">{{ mention }}</span>
-      <span v-if="mention && counts" class="shrink-0" aria-hidden="true">&middot;</span>
-      <span v-if="counts" class="whitespace-nowrap" :class="mention ? 'shrink-0' : 'truncate'">{{ counts }}</span>
-    </span>
-    <span v-if="news.by.length" class="flex shrink-0 items-center" :title="news.by.map((p) => p.name).join(', ')">
-      <Avatar
-        v-for="(p, i) in news.by"
-        :key="p.username"
-        :class="i ? '-ml-1' : ''"
-        class="ring-2 ring-outline-base"
-        size="xs"
-        :theme="avatarTheme(p.username)"
-        :image="p.image || undefined"
-        :label="p.name"
-      />
-      <span v-if="news.more" class="ml-1.5 tabular-nums">+{{ news.more }}</span>
+    <span class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" aria-hidden="true" />
+    <span class="min-w-0 truncate">
+      <span class="text-ink-gray-8 group-hover:underline">{{ label }}</span>
+      <template v-if="news.ago"> &middot; {{ news.ago }}</template>
     </span>
   </a>
+  <div v-else class="flex h-7 min-w-0 items-center gap-2 text-xs text-ink-gray-5">
+    <slot />
+  </div>
 </template>

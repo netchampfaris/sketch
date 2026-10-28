@@ -38,6 +38,8 @@ export interface NewPerson {
  * making their variant the default is still unseen.
  */
 export interface PrototypeNew {
+  /** When the newest of it happened, as "2 hours ago". */
+  ago: string
   variants: number
   comments: number
   by: NewPerson[]
