@@ -43,6 +43,8 @@ export const bridge = shallowReactive({
   // ---- Set by the toolbar
   // On a phone, how far from the bottom the open toolbar's top edge (plus a gap) is: the Demo pill rides above it.
   toolbarLift: 0,
+  // Where that toolbar ends sideways, so the pill lifts only when it is really in the way.
+  toolbarRight: 0,
   // What a person may do here, and the tool picking tiles ('' while browsing).
   canComment: false,
   canNote: false,

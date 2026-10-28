@@ -43,7 +43,7 @@ function announce(note: Note) {
       onClick: () => {
         post('undo_delete_variant_signed', { option: note.option, sequence: String(sequence) })
           .then(() => reload({ option: note.option, label: note.label, restored: true }))
-          .catch((e: Error) => toast.error(`Couldn't undo: ${e.message}`))
+          .catch((e: Error) => toast.error(`Couldn't undo. ${e.message}`))
       },
     },
   })

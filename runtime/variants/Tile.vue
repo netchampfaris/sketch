@@ -5,6 +5,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { createReusableTemplate, useIntersectionObserver } from '@vueuse/core'
 import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
+import { avatarTheme } from '../shared/avatarTheme'
 import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { canDelete, deleteFailure, deleteVariant } from './edit'
@@ -134,7 +135,7 @@ watch(
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
         <span v-if="tile.author" class="flex min-w-0 shrink-[3] items-center gap-1 text-ink-gray-4" :title="`Made by ${personName(tile.author)}`">
-          <Avatar class="shrink-0 ring-1 ring-outline-gray-2" size="xs" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
+          <Avatar class="shrink-0 ring-1 ring-outline-gray-2" size="xs" :theme="avatarTheme(tile.author)" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
           <span class="truncate">{{ narrow ? '' : 'Made by ' }}{{ shortName(tile.author) }}</span>
         </span>
       </DefineFacts>

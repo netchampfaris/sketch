@@ -156,6 +156,48 @@ class TestLoginPage(IntegrationTestCase):
 		self.assertIn("Sign-in is not set up yet", body)
 		self.assertNotIn("Continue with", body)
 
+	# ------------------------------------------- why you are here
+
+	def sent_from(self, doc, query="commenting=1", frag="#/requests?s=requests.loading"):
+		"""Press "Sign in to comment" on a Prototype and carry the cookie it sets to /login, as a browser would."""
+		back = f"/u/{utils.username_of(doc.owner)}/{doc.slug}?{query}{frag}"
+		bounce = utils.request("GET", "/api/method/sketch.api.sign_in_to_comment", params={"back": back})
+		self.assertIn(bounce.status_code, (301, 302, 303, 307))
+		cookie = re.search(r"sketch_after_login=[^;]*", bounce.headers["Set-Cookie"]).group(0)
+		return self.get_login(headers={"Cookie": cookie})
+
+	def test_a_guest_sent_from_a_prototype_is_told_what_for(self):
+		owner = utils.make_user("loginown", "d2tloginown")
+		self.addCleanup(utils.drop_user, owner)
+		doc = utils.make_prototype(owner, "d2t-login-reason", is_public=True)
+		self.addCleanup(utils.drop_prototype, doc.name)
+		body = self.sent_from(doc)
+		self.assertIn(f"Sign in to comment on {doc.title}", body)
+
+	def test_the_page_they_were_on_survives_the_trip_in_the_cookie(self):
+		owner = utils.make_user("loginown", "d2tloginown")
+		self.addCleanup(utils.drop_user, owner)
+		doc = utils.make_prototype(owner, "d2t-login-hash", is_public=True)
+		self.addCleanup(utils.drop_prototype, doc.name)
+		back = f"/u/{utils.username_of(owner)}/{doc.slug}?commenting=1#/requests?s=requests.loading"
+		bounce = utils.request("GET", "/api/method/sketch.api.sign_in_to_comment", params={"back": back})
+		self.assertIn("sketch_after_login=", bounce.headers["Set-Cookie"])
+		self.assertIn("requests", bounce.headers["Set-Cookie"], "the hash is part of where they come back to")
+
+	def test_a_plain_visit_to_login_says_only_sign_in(self):
+		body = self.get_login()
+		self.assertIn("<h1 class=\"text-2xl-semibold\">Sign in</h1>", body)
+		self.assertNotIn("Sign in to comment", body)
+
+	def test_a_private_prototype_is_never_named_to_a_guest(self):
+		owner = utils.make_user("loginown", "d2tloginown")
+		self.addCleanup(utils.drop_user, owner)
+		doc = utils.make_prototype(owner, "d2t-login-private", is_public=False)
+		self.addCleanup(utils.drop_prototype, doc.name)
+		body = self.sent_from(doc)
+		self.assertNotIn(doc.title, body)
+		self.assertNotIn("Sign in to comment", body)
+
 	# ------------------------------------------- what core still decides
 
 	def test_a_signed_in_visitor_is_sent_where_they_were_going(self):

@@ -93,8 +93,8 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 				</div>
 			</div>
 
-			<p v-else-if="status === 'error'" class="flex items-center gap-1 px-2 py-2 text-p-sm text-ink-red-3" role="alert">
-				Couldn't load comments ·
+			<p v-else-if="status === 'error'" class="flex items-center gap-1 px-2 py-2 text-p-sm text-ink-red-7" role="alert">
+				Couldn't load comments.
 				<Button variant="ghost" size="sm" label="Retry" @click="load()" />
 			</p>
 
@@ -102,7 +102,7 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 				<p class="text-p-sm font-medium text-ink-gray-8">No comments yet</p>
 				<p class="mt-0.5 text-p-sm text-ink-gray-5">{{ touch ? 'Tap' : 'Click' }} {{ onCanvas ? 'a tile' : 'anything on the page' }} to start a thread.</p>
 			</div>
-			<p v-else-if="empty === 'search'" class="break-words px-2 py-2 text-p-sm text-ink-gray-5">No comments match “{{ query.trim() }}”</p>
+			<p v-else-if="empty === 'search'" class="break-words px-2 py-2 text-p-sm text-ink-gray-5">Nothing matches “{{ query.trim() }}”</p>
 			<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
 			<template v-else-if="status === 'ready'">

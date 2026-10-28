@@ -693,7 +693,10 @@ class TestDeleteAndDefault(ShareCase):
 		self.assertNotIn(self.folder + "compact.vue", tree)
 		self.assertEqual(tree["src/variants/adopted/compact.vue"], COMPACT)
 		registry = json.loads(tree["src/variants/adopted.json"])
-		self.assertEqual(registry, {"src/variants/adopted/compact.vue": {"author": "d2tshed", "default": True}})
+		self.assertEqual(list(registry), ["src/variants/adopted/compact.vue"])
+		# `at` is when the owner adopted it: the editor's card says so until they next open the prototype.
+		self.assertEqual({k: v for k, v in registry["src/variants/adopted/compact.vue"].items() if k != "at"}, {"author": "d2tshed", "default": True})
+		self.assertTrue(registry["src/variants/adopted/compact.vue"]["at"])
 		self.assertEqual(done["option"], "adopted/compact")
 		self.assertEqual(tree["src/pages/Home.vue"], HOME, "the page's source is not rewritten")
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Made “Compact” the default for KPI strip")
@@ -834,10 +837,9 @@ class TestKeepOnly(ShareCase):
 		self.assertEqual(done["option"], "adopted/compact")
 		self.assertEqual(done["removed"], 2, "wide and tall")
 		self.assertEqual(tree["src/variants/adopted/compact.vue"], COMPACT)
-		self.assertEqual(
-			json.loads(tree["src/variants/adopted.json"]),
-			{"src/variants/adopted/compact.vue": {"author": "d2tshed", "default": True}},
-		)
+		entry = json.loads(tree["src/variants/adopted.json"])["src/variants/adopted/compact.vue"]
+		self.assertEqual((entry["author"], entry["default"]), ("d2tshed", True))
+		self.assertTrue(entry["at"], "when it was adopted")
 		self.assertEqual([p for p in tree if p.startswith(self.folder)], [])
 		# One version holds the adoption and the cut: the history has no half step.
 		history = versions.history(self.doc.name)

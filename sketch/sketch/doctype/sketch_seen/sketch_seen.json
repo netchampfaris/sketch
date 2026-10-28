@@ -35,11 +35,11 @@
    "description": "The person's User id. Data and not Link, so removing a user never waits on these rows."
   },
   {
-   "description": "Variant: the item is an option value such as @arohi/compact. Thread: the item is the first comment's id.",
+   "description": "Variant: the item is an option value such as @arohi/compact. Thread: the item is the first comment's id. Opened: an invited editor opened the Prototype (item: prototype).",
    "fieldname": "kind",
    "fieldtype": "Select",
    "label": "Kind",
-   "options": "Variant\nThread",
+   "options": "Variant\nThread\nOpened",
    "read_only": 1,
    "reqd": 1
   },

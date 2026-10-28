@@ -6,7 +6,7 @@
 They are not notes. Notes and tweaks are the owner's instructions to their own
 agent (sketch/annotations.py); a comment is somebody's words to somebody else,
 and nothing here is ever handed to an agent unless the owner copies one into
-their notes (`add_to_notes`).
+their notes (`note_draft`, which saves nothing: the owner edits the draft and saves it).
 
 Each comment is one `Sketch Comment` row: the first comment of a thread carries
 the anchor and the resolved mark, a reply points at it through `thread`. Every
@@ -29,12 +29,11 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import frappe
 
-from sketch import annotations, badges, sharing, signature
+from sketch import badges, sharing, signature
 
 PROTOTYPE = "Sketch Prototype"
 COMMENT = "Sketch Comment"
@@ -68,6 +67,12 @@ ANCHOR_TEXT = {
 	"state": 200,
 }
 
+
+#: The Demo picks a live-page comment was made on: one entry per variant set or page state.
+PICK_KINDS = ("set", "state")
+#: Strings in a pick, and how long each may be.
+PICK_TEXT = {"path": 512, "key": 200, "label": 200, "option": 200, "optionLabel": 200}
+MAX_PICKS = 24
 
 #: What a canvas tile is: a variant option, a page state, or a page's default.
 TILE_KINDS = ("set", "state", "default")
@@ -185,6 +190,61 @@ def full_names(usernames) -> dict:
 	return {u: found.get(u) or u for u in names}
 
 
+def without_access(name: str, usernames) -> set:
+	"""Of these usernames, who cannot open the Prototype now: nobody while it is public, else everyone but the owner and the editors.
+
+	Their comments stay for the owner and the editors to read (decision 46), marked so.
+	"""
+	row = frappe.db.get_value(PROTOTYPE, name, ["owner", "is_public"], as_dict=True)
+	if not row or row.is_public:
+		return set()
+
+	allowed = {sharing.username_of(row.owner), *(e["username"] for e in sharing.editors(name))}
+	return {u for u in usernames if u and u not in allowed}
+
+
+def outsiders(name: str) -> list[dict]:
+	"""The people who commented here and are neither the owner nor an editor, first to comment first: [{username, full_name}].
+
+	They keep their access only while the Prototype is public, so the Share dialog names them when the owner turns the link off.
+	"""
+	authors = list(
+		dict.fromkeys(
+			frappe.get_all(
+				COMMENT, filters={"prototype": name}, pluck="author", order_by="creation asc, name asc", limit_page_length=0
+			)
+		)
+	)
+	owner = sharing.username_of(sharing.owner_of(name) or "")
+	editors = {e["username"] for e in sharing.editors(name)}
+	names = full_names(authors)
+	return [{"username": u, "full_name": names[u]} for u in authors if u != owner and u not in editors]
+
+
+def conversations(username: str, user: str) -> list[str]:
+	"""The Prototypes this person commented on or was mentioned in, newest talk first.
+
+	Only ones they neither own nor edit and can still open: those have a card of their own.
+	"""
+	if not username:
+		return []
+
+	rows = frappe.get_all(
+		COMMENT,
+		or_filters=[["author", "=", username], ["mentions", "like", f'%"{username}"%']],
+		fields=["prototype"],
+		order_by="creation desc, name desc",
+		limit_page_length=0,
+	)
+	found = []
+	for prototype in dict.fromkeys(row.prototype for row in rows):
+		owner = sharing.owner_of(prototype)
+		if owner and owner != user and not sharing.is_editor(prototype, user) and sharing.can_view(prototype, user):
+			found.append(prototype)
+
+	return found
+
+
 def list_threads(name: str) -> list[dict]:
 	"""Every thread with its replies, oldest reply first. The page sorts threads.
 
@@ -198,6 +258,7 @@ def list_threads(name: str) -> list[dict]:
 		limit_page_length=0,
 	)
 	names = full_names(row.author for row in rows)
+	gone = without_access(name, {row.author for row in rows})
 	threads, by_id = [], {}
 	for row in rows:
 		if not row.thread:
@@ -209,6 +270,7 @@ def list_threads(name: str) -> list[dict]:
 				"ts": _ts(row.creation),
 				"edited": bool(row.edited),
 				"resolved": bool(row.resolved),
+				"noAccess": row.author in gone,
 				"anchor": _load(row.anchor),
 				"replies": [],
 			}
@@ -226,6 +288,7 @@ def list_threads(name: str) -> list[dict]:
 					"text": row.text or "",
 					"ts": _ts(row.creation),
 					"edited": bool(row.edited),
+					"noAccess": row.author in gone,
 				}
 			)
 
@@ -373,26 +436,22 @@ def set_resolved(name: str, actor: Actor, thread: str, resolved: bool) -> str:
 	return thread
 
 
-def add_to_notes(name: str, actor: Actor, comment: str) -> dict:
-	"""Copy a comment into a new owner note on the same element. Owner only.
+def note_draft(name: str, actor: Actor, comment: str) -> dict:
+	"""The note a thread would make: its words, one line per comment, and where it sits. Owner only.
 
-	The text is quoted and credited, so the agent can tell whose words they are.
-	The comment stays where it is.
+	Nothing is saved. The toolbar opens the note box with the words and the owner edits them into an
+	instruction (decision 47), so the agent gets a decision and not a question. The anchor is the
+	thread's own, so the note sits on the same element or tile.
 	"""
 	if not actor.is_owner:
 		raise frappe.PermissionError
 
-	_lock(name)
 	row = _row(name, comment)
 	root = _root(name, row.thread or row.name)
-	anchor = _load(root.anchor)
-	note = {
-		**anchor,
-		"id": _note_id(),
-		"note": f"{full_names([row.author])[row.author]}: “{plain_mentions((row.text or '').strip())}”",
-		"createdAt": int(datetime.now(UTC).timestamp() * 1000),
-	}
-	return annotations.add_note(name, note)
+	rows = [root, *_replies(name, root.name)]
+	names = full_names(r.author for r in rows)
+	lines = [f"{names[r.author]}: {' '.join(plain_mentions(r.text or '').split())}" for r in rows]
+	return {"note": "\n".join(lines), "anchor": _load(root.anchor)}
 
 
 # ------------------------------------------------------------------ validation
@@ -446,8 +505,38 @@ def clean_anchor(anchor) -> dict:
 		if key in anchor and _plain(anchor[key]):
 			out[key] = anchor[key]
 
+	picks = clean_picks(anchor.get("picks"))
+	if picks:
+		out["picks"] = picks
+
 	if len(json.dumps(out).encode()) > MAX_ANCHOR_BYTES:
 		frappe.throw(frappe._("That element description is too large"), CommentTooLarge)
+
+	return out
+
+
+def clean_picks(picks) -> list[dict]:
+	"""The Demo picks a live-page comment was made on, reduced to what a page can show again.
+
+	Each is a variant set or a page state: where it sits (`path`, `key`), its words, the option picked
+	by its value and its label, and whether that option is the set's default. A bad entry is dropped.
+	"""
+	if not isinstance(picks, list):
+		return []
+
+	out = []
+	for pick in picks[:MAX_PICKS]:
+		if not isinstance(pick, dict) or pick.get("kind") not in PICK_KINDS:
+			continue
+
+		named = {"kind": pick["kind"]}
+		for key, limit in PICK_TEXT.items():
+			value = pick.get(key, "")
+			named[key] = value[:limit] if isinstance(value, str) else ""
+
+		if named["key"] and named["option"]:
+			named["default"] = bool(pick.get("default"))
+			out.append(named)
 
 	return out
 
@@ -577,6 +666,16 @@ def _row(name: str, comment: str):
 	return row
 
 
+def _replies(name: str, thread: str) -> list:
+	return frappe.get_all(
+		COMMENT,
+		filters={"prototype": name, "thread": thread},
+		fields=["name", "author", "text"],
+		order_by="creation asc, name asc",
+		limit_page_length=0,
+	)
+
+
 def _root(name: str, thread: str):
 	row = _row(name, thread)
 	if row.thread:
@@ -616,7 +715,3 @@ def _ts(creation) -> int:
 	"""Unix seconds. Frappe stores a naive time in the system time zone."""
 	when = frappe.utils.get_datetime(creation)
 	return int(when.replace(tzinfo=ZoneInfo(frappe.utils.get_system_timezone())).timestamp())
-
-
-def _note_id() -> str:
-	return f"c{frappe.generate_hash(length=10)}"

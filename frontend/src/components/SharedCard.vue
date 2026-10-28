@@ -6,19 +6,22 @@
  * the same facts. Row two leads with the owner, an Avatar and a name, because
  * the card is theirs and the address is theirs. The menu holds reads only:
  * the invited person adds variants through their own agent, and the owner
- * decides everything else.
+ * decides everything else. An editor's menu also has "Copy prompt", the words
+ * to hand their agent. The same card draws "Conversations", prototypes the
+ * user only talked on: they are not editors, so it has no prompt.
  *
  * Both rows are `h-7`, the height of a `sm` Button, so the card never moves.
  */
 import { computed, ref } from 'vue'
 import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { avatarTheme } from '../../../runtime/shared/avatarTheme'
 import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
-import { copyText, downloadPrototypeZip } from '../store'
+import { copyText, downloadPrototypeZip, session } from '../store'
 import type { SharedPrototype } from '../types'
 
-const props = defineProps<{ prototype: SharedPrototype }>()
+const props = defineProps<{ prototype: SharedPrototype; conversation?: boolean }>()
 
 const filesOpen = ref(false)
 const exporting = ref(false)
@@ -37,6 +40,32 @@ async function copyLink(): Promise<void> {
   toast.success('Link copied')
 }
 
+/** What an editor hands their agent: where to work, and the one folder it may write in. */
+function promptFor(): string {
+  const { owner, slug } = props.prototype
+  const address = `${owner.username}/${slug}`
+  return [
+    `In Sketch, add a variant to ${address}.`,
+    '',
+    `- Use the prototype "${address}". I'm an invited editor there, not the owner.`,
+    `- Write only in src/variants/@${session.data?.username ?? 'your-username'}/. Sketch refuses any other path, and the owner's files stay as they are.`,
+    '- Start the file with a <variant set="…" name="…" /> tag. Call get_skill first for the format.',
+    "- Read the owner's file for that part first, and match its look.",
+    '- Commit when you are done.',
+    '',
+    'What to add: ',
+  ].join('\n')
+}
+
+async function copyPrompt(): Promise<void> {
+  try {
+    await copyText(promptFor())
+  } catch {
+    return
+  }
+  toast.success('Prompt copied')
+}
+
 async function exportZip(): Promise<void> {
   exporting.value = true
   try {
@@ -47,6 +76,9 @@ async function exportZip(): Promise<void> {
 }
 
 const menuOptions = computed(() => [
+  ...(props.conversation
+    ? []
+    : [{ label: 'Copy prompt', icon: 'lucide-message-square-text', onClick: copyPrompt }]),
   { label: 'Files', icon: 'lucide-file-code', onClick: () => (filesOpen.value = true) },
   {
     label: 'Export as zip',
@@ -89,7 +121,12 @@ const menuOptions = computed(() => [
     <NewLine :news="prototype.new" :href="prototype.viewer_path" />
 
     <div class="mt-auto flex h-7 items-center gap-2">
-      <Avatar :image="prototype.owner.user_image" :label="prototype.owner.full_name" size="xs" />
+      <Avatar
+        :image="prototype.owner.user_image"
+        :label="prototype.owner.full_name"
+        :theme="avatarTheme(prototype.owner.username)"
+        size="xs"
+      />
       <span class="min-w-0 truncate text-xs text-ink-gray-5">
         <span :title="prototype.owner.full_name">{{ prototype.owner.username }}</span>
         &middot; {{ prototype.description }} &middot; Updated {{ prototype.updated }}

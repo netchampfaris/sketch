@@ -141,19 +141,6 @@ def save(name: str, raw: str, seen_epoch: int) -> dict:
 	return doc
 
 
-def add_note(name: str, row: dict) -> dict:
-	"""Append one owner note, under the row lock, and return it.
-
-	The owner's "Add to notes" on a comment: the comment itself is untouched.
-	"""
-	stored = read(name, for_update=True)
-	notes = _rows(stored.get("notes"))
-	notes.append(row)
-	stored.update(notes=notes, tweaks=stored.get("tweaks") or [], prompt="", updated=_now())
-	_write(name, stored)
-	return row
-
-
 def clear(name: str, ids: list[str] | None = None) -> dict:
 	"""Remove the listed note and tweak ids, or every one when `ids` is None.
 

@@ -8,14 +8,15 @@
 // no cookie, so every call carries the pass and nothing else.
 import { computed, ref } from 'vue'
 import { readThread, setUnread } from 'sketch:variants'
-import type { TileSpot } from 'sketch:variants'
+import type { DemoPick, TileSpot } from 'sketch:variants'
 import { host } from './host'
 import type { Note } from './annotate'
 
 // `author` is the username; `name` the full name the server sends with it (the username when there is none).
-export type Reply = { id: string; author: string; name: string; text: string; ts: number; edited: boolean }
-// Where a thread sits: a note's anchor without the words.
-export type Anchor = Omit<Note, 'id' | 'note' | 'createdAt' | 'sent'>
+// `noAccess` marks someone who can no longer open the prototype (it went private); only the owner and editors are sent it.
+export type Reply = { id: string; author: string; name: string; text: string; ts: number; edited: boolean; noAccess?: boolean }
+// Where a thread sits: a note's anchor without the words, and on the live page what the Demo showed.
+export type Anchor = Omit<Note, 'id' | 'note' | 'createdAt' | 'sent'> & { picks?: DemoPick[] }
 // `unread` is how many comments by others this person has not seen; `mentioned` says one of them names this person.
 export type Thread = Reply & { resolved: boolean; anchor: Anchor; replies: Reply[]; unread: number; mentioned: boolean }
 export type Person = { name?: string; image?: string }
@@ -168,8 +169,8 @@ export function read(id: string) {
   if (t?.unread) threads.value = threads.value.map((x) => (x.id === id ? { ...x, unread: 0 } : x))
   readThread(id)
 }
-// The owner copies a comment into a note of their own; the comment stays. The row is the new note.
-export const toNote = (comment: string) => call<Note>('comment_to_note', { comment })
+// The owner's "Add to notes": the whole thread as one line per comment, and where it sits. Nothing is saved until they save the note.
+export const noteDraft = (comment: string) => call<{ note: string; anchor: Anchor }>('comment_note_draft', { comment })
 
 // Where a canvas thread sits, or null for a thread on the live page.
 export const spotOfThread = (t: Thread): TileSpot | null => (t.anchor.tile ? { route: t.anchor.route, tile: t.anchor.tile } : null)

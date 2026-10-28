@@ -12,7 +12,14 @@ against the request host, which the tunnel rewrites. `sketch/www/sketch.py`
 carries the wanted path in a cookie instead.
 """
 
+import re
+from urllib.parse import unquote
+
+import frappe
 from frappe.www.login import get_context as get_core_context
+
+from sketch import prototype
+from sketch.www.sketch import AFTER_LOGIN_COOKIE
 
 no_cache = True
 
@@ -43,5 +50,24 @@ def get_context(context):
 
 	context.title = "Sign in"
 	context.signup_form_template = None
+	context.reason = reason()
 
 	return context
+
+
+COMMENTING = re.compile(r"^/u/([^/?#]+)/([^/?#]+)\?(?:[^#]*&)?commenting=1(?:&|#|$)")
+
+
+def reason() -> str:
+	"""Why this visitor is here, when a Prototype's "Sign in to comment" sent them.
+
+	The path to come back to rides in a cookie (sketch/www/sketch.py). Only a public
+	Prototype is named: a guest who was sent here from one is not learning a title
+	they could not already read.
+	"""
+	path = unquote(frappe.request.cookies.get(AFTER_LOGIN_COOKIE) or "")
+	found = COMMENTING.match(path)
+	doc = prototype.resolve_public(*found.groups()) if found else None
+	if not doc or not doc.is_public:
+		return ""
+	return f"Sign in to comment on {doc.title}"

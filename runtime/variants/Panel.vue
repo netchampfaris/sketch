@@ -107,7 +107,7 @@ const countClass = (i: PickItem) =>
       <!-- A fixed width: the scroll area sizes its content to the widest row, which would push long names out of the card. -->
       <div :style="{ width: embedded ? 'calc(var(--reka-popover-trigger-width) - 1rem)' : '16.5rem' }" class="min-w-0">
         <p v-if="!groups.length" class="px-2 py-2 text-p-sm text-ink-gray-5">Nothing matches “{{ query.trim() }}”</p>
-        <section v-for="(g, gi) in groups" :key="g.key" class="flex flex-col gap-0.5" :class="gi ? 'mt-1 border-t border-outline-gray-2 pt-1' : ''">
+        <section v-for="(g, gi) in groups" :key="g.key" class="flex flex-col gap-0.5" :class="gi ? 'mt-1' : ''">
           <button
             type="button"
             class="group flex h-7 w-full items-center gap-1 px-2 text-left text-xs font-medium text-ink-gray-5"

@@ -6,6 +6,7 @@
 import { computed, ref } from 'vue'
 import { UI_ATTR, hoverEl, hoverFrac, hoverLabel, resolve, tagOf } from './annotate'
 import { clearHover, usePinTracking } from './pinTracking'
+import { picksShown } from 'sketch:variants'
 import { matching, openThread, plain, type Thread } from './comments'
 import AuthorAvatar from './AuthorAvatar.vue'
 
@@ -74,7 +75,7 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 			type="button"
 			:aria-label="label(t)"
 			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[62] hover:scale-110 focus-visible:z-[62] motion-reduce:transition-none motion-reduce:hover:scale-100"
-			:class="[openThread === t.id ? 'z-[62]' : 'z-[60]', pos[t.id]?.found === false && 'opacity-50', t.resolved && 'opacity-60']"
+			:class="[openThread === t.id ? 'z-[62]' : 'z-[60]', (pos[t.id]?.found === false || !picksShown(t.anchor.picks)) && 'opacity-50', t.resolved && 'opacity-60']"
 			:style="{ left: `${pos[t.id].x}px`, top: `${pos[t.id].y}px` }"
 			@mouseenter="enter(t)"
 			@mouseleave="clearHover"

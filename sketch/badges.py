@@ -18,6 +18,9 @@ What a person has seen is kept on the server, per Prototype (`Sketch Seen`, writ
   after that makes it unread again. The person's own comment in a thread counts as
   seeing everything before it.
 
+Two things are news to an invited editor only, until they first open the Prototype (`opened`):
+that they were invited, and that the owner made their variant the default of its set.
+
 Who gets what (`standing`):
 
 - A Guest gets nothing.
@@ -33,7 +36,7 @@ zone, so a comparison here never mixes clocks.
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import frappe
 
@@ -42,6 +45,7 @@ from sketch import sharing
 PROTOTYPE = "Sketch Prototype"
 COMMENT = "Sketch Comment"
 SEEN = "Sketch Seen"
+OPENED = ("Opened", "prototype")
 STAMP = "Sketch Variant Stamp"
 
 #: How many things one call may mark seen. A page marks a set or a thread at a time.
@@ -103,8 +107,14 @@ def standing(name: str, user: str, rows: list | None = None) -> Standing | None:
 		since = frappe.db.get_value(sharing.EDITOR, {"prototype": name, "user": user}, "creation")
 		return Standing(user, username, role, since or LONG_AGO)
 
-	own = [r.creation for r in (rows if rows is not None else _rows(name)) if r.author == username]
-	return Standing(user, username, "reader", min(own)) if own else None
+	rows = rows if rows is not None else _rows(name)
+	own = [r.creation for r in rows if r.author == username]
+	if own:
+		return Standing(user, username, "reader", min(own))
+
+	# Named in a comment but never wrote one (they took it back, or were mentioned first): the mention is where they start.
+	named = [r.creation for r in rows if username in _mentions(r)]
+	return Standing(user, username, "reader", min(named) - timedelta(microseconds=1)) if named else None
 
 
 def _rows(name: str) -> list:
@@ -123,6 +133,56 @@ def _seen(name: str, user: str) -> dict:
 		SEEN, filters={"prototype": name, "user": user}, fields=["kind", "item", "seen_at"], limit_page_length=0
 	)
 	return {(r.kind, r.item): r.seen_at for r in rows}
+
+
+def opened(name: str, user: str) -> None:
+	"""This invited editor has now opened the Prototype: the invitation and any default made of their variant are no longer news."""
+	if sharing.is_editor(name, user):
+		_record(name, user, *OPENED, frappe.utils.now_datetime())
+
+
+def _label_of(name: str, path: str) -> str:
+	"""The `<variant name>` of an adopted file, or its file name."""
+	from sketch import prototype_files
+
+	try:
+		meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
+	except frappe.ValidationError:
+		meta = None
+
+	return (meta or {}).get("name") or path.rsplit("/", 1)[-1].removesuffix(".vue")
+
+
+def _invited(name: str, who: Standing, seen: dict, owner: dict | None) -> dict | None:
+	"""{"by": the owner} while this editor has never opened the Prototype."""
+	if who.role != "editor" or OPENED in seen or not owner:
+		return None
+
+	return {"by": owner}
+
+
+def _adopted(name: str, who: Standing, seen: dict, owner: dict | None) -> dict | None:
+	"""{"label", "by"} for the newest variant of this editor's that the owner made the default since they last opened it."""
+	from sketch import editor_variants
+
+	if who.role != "editor" or not owner:
+		return None
+
+	looked = seen.get(OPENED)
+	found = []
+	for path, row in editor_variants.read_registry(name).items():
+		at = row.get("at") if isinstance(row, dict) else None
+		if not at or row.get("author") != who.username or not row.get("default"):
+			continue
+
+		when = frappe.utils.get_datetime(at)
+		if not looked or when > looked:
+			found.append((when, path))
+
+	if not found:
+		return None
+
+	return {"label": _label_of(name, max(found)[1]), "by": owner}
 
 
 def _mentions(row) -> list[str]:
@@ -231,7 +291,8 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 	"""The gallery card's line for this person, or None when nothing is new.
 
 	{"variants": n, "comments": n, "by": [the first three people], "more": how many
-	others, "mention": {"by": person, "thread": id} or None}.
+	others, "mention": {"by": person, "thread": id} or None, "invited": {"by": person} or None,
+	"adopted": {"label": option, "by": person} or None}.
 	"""
 	rows = _rows(name)
 	who = standing(name, user, rows)
@@ -242,7 +303,15 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 	variants = new_variants(name, who, seen, files)
 	state = threads_state(rows, who, seen)
 	fresh = [r for s in state.values() for r in s["fresh"]]
-	if not variants and not fresh:
+	owner = None
+	if who.role == "editor":
+		handle = sharing.username_of(sharing.owner_of(name) or "")
+		found = sharing.people([handle])
+		owner = {"username": handle, **found[handle]} if handle in found else None
+
+	invited = _invited(name, who, seen, owner)
+	adopted = _adopted(name, who, seen, owner)
+	if not variants and not fresh and not invited and not adopted:
 		return None
 
 	# Newest first, one entry per person.
@@ -264,6 +333,8 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 		"by": people[:CARD_PEOPLE],
 		"more": max(0, len(people) - CARD_PEOPLE),
 		"mention": mention,
+		"invited": invited,
+		"adopted": adopted,
 	}
 
 

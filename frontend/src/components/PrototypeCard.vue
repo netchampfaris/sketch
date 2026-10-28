@@ -24,6 +24,7 @@
  */
 import { computed, ref } from 'vue'
 import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import { avatarTheme } from '../../../runtime/shared/avatarTheme'
 import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
@@ -282,6 +283,7 @@ const menuOptions = computed(() => [
                 :key="person.username"
                 class="ring-1 ring-outline-gray-2"
                 size="xs"
+                :theme="avatarTheme(person.username)"
                 :image="person.user_image"
                 :label="person.full_name"
               />

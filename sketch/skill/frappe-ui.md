@@ -733,7 +733,11 @@ What you can do there:
 
 One variant is one `.vue` component with a `<variant>` tag. The tag says where the
 option goes. Sketch adds it next to the owner's options and labels it "Made by
-you". It is never the default, and a mistake in it shows in its own option only.
+you". It starts as an extra option, and a mistake in it shows in its own option only.
+
+When the owner makes your variant the default, it moves into their files
+(`src/variants/adopted/`) and is no longer in your folder. Only they can change it
+from then on. To try another take, add a new variant.
 
 ```vue
 <!-- src/variants/@arohi/kpi-strip-compact.vue -->

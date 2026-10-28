@@ -74,6 +74,7 @@ and the bench running on port 8007.
 | `tailwind/` | The browser Tailwind engine with the frappe-ui preset |
 | `annotate/`, `vite.annotate.config.js` | The comment and tweak toolbar. One ES module, `annotate.js`, that `boot.js` imports for the owner's live tab. vue, vue-router, frappe-ui and vueuse are external |
 | `variants/` | `<Variants>`, the design-option switcher, `useDemoState` (personas and phases), and their two stacked pills. Built as `variants.js` by the same config. `sketch:variants` is a Prototype import, and annotate imports it too (external) to share its Keep handler |
+| `shared/` | Small pure helpers both the runtime and the gallery import, so one person is one colour everywhere (`avatarTheme.ts`). Part of every build's stamp |
 | `internals.css`, `internals.tailwind.config.js` | Layer 1: precompiled frappe-ui CSS |
 | `fonts/inter.css` | Inter, roman only |
 | `viewer/viewer.html` | The document: stylesheets, import map, the data slot |

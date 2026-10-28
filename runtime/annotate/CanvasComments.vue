@@ -17,6 +17,6 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement] }>()
 				<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 			</template>
 		</TextInput>
-		<CommentsList :route="route" width="16.5rem" max="calc(100dvh - 13rem)" @choose="(t, el) => emit('choose', t, el)" />
+		<CommentsList :route="route" width="16.5rem" max="100%" @choose="(t, el) => emit('choose', t, el)" />
 	</div>
 </template>

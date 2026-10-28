@@ -15,6 +15,8 @@ export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnr
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { closeCanvas, openCanvas } from './state'
+export { applyPicks, currentPicks, picksAvailable, picksShown, picksWords } from './picks'
+export type { DemoPick } from './picks'
 
 // A demo value (a persona, a workflow phase). The first option is the default.
 export function useDemoState<T extends string>(name: string, options: readonly T[]) {
