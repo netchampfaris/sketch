@@ -836,6 +836,9 @@ class TestFormerCommenter(CommentCase):
 		self.assertEqual(response.status_code, 403)
 		page = response.get_data(as_text=True)
 		self.assertIn("Sketch made this prototype private", page.replace("Sketch Test", "Sketch"))
+		self.assertIn("Ask Sketch for access if you need it.", page.replace("Sketch Test", "Sketch"))
+		self.assertIn('class="error-page"', page, "the same styled page as Page not found")
+		self.assertRegex(page, r'<a href="/"[^>]*>Back to Sketch</a>')
 		self.assertNotIn("hello", page)
 		self.assertNotIn("sketch-data", page)
 

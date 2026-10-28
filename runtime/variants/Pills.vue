@@ -84,16 +84,17 @@ const { height } = useElementSize(stack, { width: 0, height: 0 }, { box: 'border
 const { width: pillW } = useElementSize(pill, { width: 0, height: 0 }, { box: 'border-box' })
 // On a phone the stack sits above the page's MobileNav bar, when it has one, so the annotate button and the toasts rise with it.
 const navH = ref(0)
-// With a bar the stack sits 4.75rem (76px) from the bottom, as the original did; a taller bar lifts it further.
+// The stack rides the bar's height plus its own 12px, the same as the annotate toolbar (Annotate.vue), so the two end at one line.
 const lift = computed(() => {
-  const bar = navH.value ? Math.max(navH.value + 6, 64) : 0
+  const bar = navH.value
   // The open toolbar on a phone sits at the bottom edge; the pill rides above it (the stack is 0.75rem, 12px, up already).
   const inTheWay = bridge.toolbarLift > 0 && bridge.toolbarRight + 8 > window.innerWidth - 12 - pillW.value
   return Math.max(bar, inTheWay ? bridge.toolbarLift - 12 : 0)
 })
 function measureNav() {
   const bar = window.matchMedia('(max-width: 767px)').matches ? document.querySelector<HTMLElement>('[data-slot="mobile-nav"]') : null
-  navH.value = bar ? Math.floor(bar.getBoundingClientRect().height) : 0
+  // offsetHeight, like the toolbar's own measure, so a bar of 58.8px is 59 for both.
+  navH.value = bar ? bar.offsetHeight : 0
 }
 measureNav()
 useEventListener(window, 'resize', measureNav)

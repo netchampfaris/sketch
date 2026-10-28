@@ -369,6 +369,18 @@ class TestInvitedAndAdoptedNews(BadgeCase):
 		self.open_page(self.ed)
 		self.assertIsNone(self.card(self.ed))
 
+	def test_the_open_is_saved_by_the_page_load_and_the_invitation_stays_cleared(self):
+		self.invite(self.ed)
+		frappe.db.commit()
+		self.open_page(self.ed)
+		# A page load is a GET and Frappe commits nothing on a GET: what survives a rollback is what the viewer saved.
+		frappe.db.rollback()
+		self.assertTrue(
+			frappe.db.exists("Sketch Seen", {"prototype": self.name, "user": self.ed, "kind": "Opened"}),
+			"the open was rolled back",
+		)
+		self.assertIsNone(self.card(self.ed), "'invited you' clears once the editor has opened it")
+
 	def test_the_owner_and_a_reader_are_never_invited(self):
 		self.invite(self.ed)
 		self.assertIsNone(self.card(self.owner))

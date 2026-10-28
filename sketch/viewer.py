@@ -21,6 +21,7 @@ import os
 import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
+from frappe.website.page_renderers.template_page import TemplatePage
 
 from sketch import (
 	annotations,
@@ -226,7 +227,8 @@ class SketchViewerRenderer(BaseRenderer):
 		# the same headers as the document: one rule for the whole renderer is
 		# one rule to check.
 		if self.former_commenter:
-			return self.build_response(private_html(self.doc.owner), 403, self.response_headers())
+			# No Prototype source here, so no sandbox: the page loads core's own styles and font.
+			return self.build_response(private_html(self.doc.owner), 403, dict(HEADERS))
 
 		path = runtime_html_path(self.doc.pin)
 		if not path or not os.path.isfile(path):
@@ -256,6 +258,9 @@ class SketchViewerRenderer(BaseRenderer):
 		if not frappe.form_dict.get("sig"):
 			# An invited editor who opens it has seen the invitation and any default made of their variant.
 			badges.opened(self.doc.name, frappe.session.user)
+			# A page load is a GET, which Frappe never commits. Without this the mark is rolled back and the
+			# invitation stays news for ever.
+			frappe.db.commit()
 
 		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
 		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
@@ -495,11 +500,38 @@ def bad_slot_html(pin: str, count: int) -> str:
 def private_html(owner: str) -> str:
 	"""What a person who commented before the owner made the Prototype private is shown instead of a bare 404."""
 	name = (frappe.db.get_value("User", owner, "full_name") or "").split()
-	who = escape_html(name[0] if name else sharing.username_of(owner) or "The owner")
-	return _error_html(
-		f"{who} made this prototype private",
-		"Only they and the people they invite can open it.",
-	)
+	who = name[0] if name else sharing.username_of(owner) or "The owner"
+	page = PrivatePage(f"{who} made this prototype private", f"Ask {who} for access if you need it.")
+	return page.get_html()
+
+
+class PrivatePage(TemplatePage):
+	"""Core's "Page not found" look for the made-private page: the same template shell, with its own words.
+
+	The template sits in `sketch/templates`, outside `www` and `templates/pages`, so no URL reaches it.
+	"""
+
+	def __init__(self, heading: str, detail: str):
+		super().__init__(path="private-prototype", http_status_code=403)
+		self.heading = heading
+		self.detail = detail
+
+	def set_template_path(self):
+		self.app = "sketch"
+		self.app_path = frappe.get_app_path("sketch")
+		self.file_dir = "templates"
+		self.template_path = os.path.join("templates", "private_prototype.html")
+		self.basepath = os.path.join(self.app_path, "templates")
+		self.filename = os.path.basename(self.template_path)
+		self.name = "private_prototype"
+		self.basename = os.path.join(self.basepath, self.name)
+
+	def init_context(self):
+		super().init_context()
+		# Not `title`: core stamps the site name onto that one.
+		self.context.heading = self.heading
+		self.context.detail = self.detail
+		self.context.no_cache = 1
 
 
 def _error_html(title: str, detail: str, action: str = "") -> str:
