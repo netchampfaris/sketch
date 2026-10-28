@@ -8,7 +8,7 @@ The rules this file holds:
 - Invite by exact username only; the three refusals read as the dialog prints them.
 - An editor writes under `src/variants/@<own username>/` and nowhere else.
 - "Made by" is the folder the token could write, never a name in the file.
-- An editor never changes the default, the notes or the owner's files.
+- An editor never changes the default or the owner's files. Their notes are their own, both ways.
 - A private Prototype is for the owner and the invited. A removed editor is out at once,
   and their variants stay.
 - A restore keeps editors' variants. An editor's commit carries their name.
@@ -19,7 +19,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import api, comments, editor_variants, prototype, prototype_files, sharing, signature, versions
+from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, versions
 from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.viewer import SketchViewerRenderer, sharing_subject
@@ -379,8 +379,6 @@ class TestEditorsCannotDecide(ShareCase):
 			("set_public", {"is_public": True}),
 			("set_name", {"name": "Mine now"}),
 			("set_runtime", {"version": utils.newest_runtime()}),
-			("get_annotations", {}),
-			("clear_annotations", {}),
 			("restore_version", {"sequence": 1}),
 		):
 			with self.subTest(tool=tool):
@@ -415,11 +413,83 @@ class TestEditorsCannotDecide(ShareCase):
 
 		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME)
 
-	def test_an_editor_has_no_notes_and_cannot_save_any(self):
+
+
+class TestEditorNotes(ShareCase):
+	"""An editor keeps notes of their own. Theirs and the owner's never meet, by any door."""
+
+	NOTE = {"id": "n1", "route": "/", "note": "owner's", "offset": {"x": 0, "y": 0}, "rect": {}}
+
+	def body(self, note: str, id: str = "n1") -> str:
+		return json.dumps({"notes": [{**self.NOTE, "id": id, "note": note}], "tweaks": [], "prompt": ""})
+
+	def save_as_editor(self, page: dict, note: str, id: str = "e1"):
+		with set_user("Guest"):
+			return api.save_annotations(
+				self.doc.name,
+				str(page["annotate_exp"]),
+				page["annotate_sig"],
+				self.body(note, id),
+				str(page["annotations_epoch"]),
+				username="d2tshed",
+			)
+
+	def setUp(self):
+		super().setUp()
 		self.invite()
+		annotations.save(self.doc.name, self.body("owner's"), 0)
+
+	def notes(self, reply) -> list[str]:
+		return [n["note"] for n in self.ok(reply)["structuredContent"]["notes"]]
+
+	def test_the_editors_page_carries_their_own_notes_and_a_signature_for_them(self):
 		page = self.page_data_for(self.ed)
-		self.assertEqual(page["annotate_sig"], "")
-		self.assertIsNone(page["annotations"])
+		self.assertTrue(page["annotate_sig"])
+		self.assertEqual(page["annotations"]["notes"], [])
+		self.assertTrue(
+			signature.verify(annotations.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
+		)
+		self.assertFalse(
+			signature.verify(self.doc.name, page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE),
+			"an editor's signature never writes the owner's notes",
+		)
+
+	def test_an_editor_saves_their_own_and_the_owner_never_sees_them(self):
+		self.save_as_editor(self.page_data_for(self.ed), "editor's")
+		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), ["owner's"])
+		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), ["editor's"])
+		self.assertEqual(self.page_data_for(self.owner)["annotations"]["notes"][0]["note"], "owner's")
+		self.assertEqual(self.page_data_for(self.ed)["annotations"]["notes"][0]["note"], "editor's")
+
+	def test_clearing_touches_only_the_callers_notes(self):
+		self.save_as_editor(self.page_data_for(self.ed), "editor's")
+		self.ok(self.agent(self.ed, "clear_annotations"))
+		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), [])
+		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), ["owner's"])
+
+		self.save_as_editor(self.page_data_for(self.ed), "again")
+		self.ok(self.agent(self.owner, "clear_annotations"))
+		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), [])
+		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), ["again"])
+
+	def test_the_owners_signature_cannot_write_as_an_editor(self):
+		owner_page = self.page_data_for(self.owner)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.save_as_editor(owner_page, "forged")
+		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), [])
+
+	def test_a_removed_editors_signature_saves_nothing(self):
+		page = self.page_data_for(self.ed)
+		with set_user(self.owner):
+			api.remove_editor(self.doc.slug, "d2tshed")
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.save_as_editor(page, "late")
+
+	def test_a_reader_and_a_stranger_get_no_notes(self):
+		for user in (self.reader, self.other):
+			with self.subTest(user=user):
+				self.refused(self.agent(user, "get_annotations"))
+				self.refused(self.agent(user, "clear_annotations"))
 
 
 class TestStamping(ShareCase):
@@ -543,7 +613,7 @@ class TestPrivate(ShareCase):
 		slot = utils.data_slot(editor.text)
 		self.assertEqual(slot["role"], "editor")
 		self.assertFalse(slot["is_owner"])
-		self.assertEqual(slot["annotate_sig"], "")
+		self.assertTrue(slot["annotate_sig"], "an editor keeps notes of their own")
 		self.assertEqual(slot["variant_sig"], "")
 		self.assertTrue(slot["edit_sig"], "an editor may delete their own variants")
 

@@ -8,7 +8,9 @@
  "engine": "InnoDB",
  "field_order": [
   "prototype",
-  "user"
+  "user",
+  "annotations",
+  "annotations_epoch"
  ],
  "fields": [
   {
@@ -31,12 +33,29 @@
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "description": "This editor's own notes and tweaks for their agent (sketch/annotations.py). Never shown to the owner.",
+   "fieldname": "annotations",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Annotations",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "How many times this editor's agent has cleared their notes.",
+   "fieldname": "annotations_epoch",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Annotations Epoch",
+   "read_only": 1
   }
  ],
  "in_create": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-28 00:00:00.000000",
+ "modified": "2026-10-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sketch",
  "name": "Sketch Prototype Editor",

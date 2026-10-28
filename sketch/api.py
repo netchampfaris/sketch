@@ -718,7 +718,9 @@ def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "") -> dict:
+def save_annotations(
+	name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "", username: str = ""
+) -> dict:
 	"""Save the owner's notes and tweaks from the Viewer's toolbar.
 
 	The same door as `signed_revision`, for the same reason: the Viewer is in an
@@ -739,6 +741,19 @@ def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", ep
 	escaped text by the toolbar and handed to the agent as data, never as HTML.
 	"""
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if username:
+		# An invited editor's own notes: their signature covers the Prototype and their name together, and they
+		# must still be invited. The owner's notes are never reachable this way (decision 29).
+		if not signature.verify(annotations.subject(name, username), exp, sig, signature.ANNOTATE):
+			raise frappe.DoesNotExistError
+
+		user = frappe.db.get_value("User", {"username": username}, "name")
+		if not user or not sharing.is_editor(name, user):
+			raise frappe.DoesNotExistError
+
+		saved = annotations.save(name, data, frappe.utils.cint(epoch), editor=user)
+		return {"updated": saved["updated"]}
+
 	if not signature.verify(name, exp, sig, signature.ANNOTATE):
 		raise frappe.DoesNotExistError
 
@@ -829,6 +844,25 @@ def comment_delete(name: str, username: str = "", exp: str = "", sig: str = "", 
 	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
 	actor = _commenter(name, username, exp, sig)
 	return comments.one_thread(name, comments.delete(name, actor, comment), actor.user)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comment_restore(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
+	"""Undo a delete, for the person who made it, within minutes. Returns the thread."""
+	actor = _commenter(name, username, exp, sig)
+	return comments.one_thread(name, comments.restore(name, actor, comment), actor.user)
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
+def comments_delete_resolved(name: str, username: str = "", exp: str = "", sig: str = "", also: str = "") -> dict:
+	"""The owner deletes every resolved thread with its replies, and the threads named in `also` (a JSON list of ids:
+	the ones on canvas tiles that have gone, which the page counts as resolved). Anyone else gets 403."""
+	actor = _commenter(name, username, exp, sig)
+	try:
+		extra = json.loads(also or "[]")
+	except ValueError:
+		extra = []
+	return {"deleted": comments.delete_resolved(name, actor, extra)}
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])

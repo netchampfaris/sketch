@@ -9,7 +9,7 @@
  */
 import { ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, LoadingText, useCall } from 'frappe-ui'
-import { method } from '../store'
+import { errorText, method } from '../store'
 import type { PrototypeVersion, PruneResult } from '../types'
 
 interface PruneParams {
@@ -51,7 +51,7 @@ async function loadPreview(): Promise<void> {
     const result = await dryRun.submit({ slug: props.slug, sequence: target.sequence, dry_run: 1 })
     if (props.version === target) preview.value = result
   } catch (error) {
-    failure.value = (error as Error).message
+    failure.value = errorText(error)
   }
 }
 
@@ -68,7 +68,7 @@ async function confirm(): Promise<void> {
     open.value = false
     if (result) emit('deleted', result)
   } catch (error) {
-    failure.value = (error as Error).message
+    failure.value = errorText(error)
   }
 }
 

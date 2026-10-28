@@ -59,6 +59,9 @@ def variant(label: str) -> str:
 	return f'<variant set="KPI strip" name="{label}" />\n<template><p>{label}</p></template>\n'
 
 
+# `pretty_date` of a moment ago.
+JUST_NOW = r"^(just now|\d+ seconds? ago)$"
+
 class BadgeCase(IntegrationTestCase):
 	"""An owner, two invited editors, a reader and a prototype with one set."""
 
@@ -323,6 +326,10 @@ class TestGalleryCard(BadgeCase):
 		# Newest first.
 		self.assertEqual(card["by"][0]["username"], "d2tbgmany9")
 
+	def test_the_card_says_when_the_newest_of_it_happened(self):
+		self.say(self.reader)
+		self.assertRegex(self.card(self.owner)["ago"], JUST_NOW)
+
 	def test_the_gallery_row_carries_the_card_for_the_owner_and_for_shared_with_me(self):
 		self.invite(self.ed)
 		self.add_variant(self.ed)
@@ -365,6 +372,8 @@ class TestInvitedAndAdoptedNews(BadgeCase):
 		self.invite(self.ed)
 		news = self.card(self.ed)
 		self.assertEqual(news["invited"]["by"]["username"], self.username(self.owner))
+		self.assertRegex(news["ago"], JUST_NOW, "an invitation is dated by when it was made")
+		self.assertNotIn("at", news["invited"], "the moment stays on the server")
 		self.assertEqual((news["variants"], news["comments"]), (0, 0), "the invitation is news on its own")
 		self.open_page(self.ed)
 		self.assertIsNone(self.card(self.ed))

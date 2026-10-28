@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// The canvas panel's Notes tab, for the owner: search, then every note, "This view" first, then a header per page.
-// A note on a tile that has gone sits last, under "Removed from canvas".
+// The canvas panel's Notes tab: search, then every note, "This view" first, then a header per page.
+// A note on a tile that has gone stays under its page, muted like a sent one: notes have no resolved state, and the
+// agent still reads it, so it is never hidden. Nothing is written, so an Undo of Keep only this brings the tile back.
 import { computed, ref } from 'vue'
 import { Button, ScrollArea, TextInput } from 'frappe-ui'
 import { bridge, findTile, tileExists, tileLabel } from 'sketch:variants'
@@ -17,22 +18,22 @@ const matches = computed(() => {
 	const q = query.value.trim().toLowerCase()
 	return notes.value.filter((n) => !q || [n.note, n.component, n.tile?.optionLabel ?? '', n.tile?.group ?? ''].some((w) => w.toLowerCase().includes(q)))
 })
-function placeOf(n: Note): 'here' | 'elsewhere' | 'removed' | 'page' {
+const isHere = (n: Note) => {
 	const spot = spotOf(n)
-	if (!spot) return 'page'
-	if (tileExists(bridge.model, spot) === false) return 'removed'
-	return findTile(bridge.tiles, spot, bridge.view) ? 'here' : 'elsewhere'
+	return !!spot && !!findTile(bridge.tiles, spot, bridge.view)
+}
+const isGone = (n: Note) => {
+	const spot = spotOf(n)
+	return !!spot && tileExists(bridge.model, spot) === false
 }
 const groups = computed(() => {
 	const list = matches.value
-	const here = list.filter((n) => placeOf(n) === 'here')
-	const gone = list.filter((n) => placeOf(n) === 'removed')
+	const here = list.filter(isHere)
 	const by = new Map<string, Note[]>()
-	for (const n of list) if (!here.includes(n) && !gone.includes(n)) by.set(n.route, [...(by.get(n.route) ?? []), n])
+	for (const n of list) if (!here.includes(n)) by.set(n.route, [...(by.get(n.route) ?? []), n])
 	return [
 		...(here.length ? [{ key: 'here', name: 'This view', notes: here }] : []),
 		...[...by].map(([r, ns]) => ({ key: r, name: ns[0].tile?.page || pageName(r), notes: ns })),
-		...(gone.length ? [{ key: 'gone', name: 'Removed from canvas', notes: gone }] : []),
 	]
 })
 const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.key === 'here') : n.component || n.element.split(/[.\s]/)[0] || 'Page')
@@ -62,7 +63,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 						type="button"
 						:aria-current="selected === n.id ? 'true' : undefined"
 						class="flex w-full shrink-0 items-start gap-2 rounded-[8px] px-2 py-1.5 text-left hover:bg-surface-gray-2"
-						:class="[selected === n.id && 'bg-surface-gray-3 hover:bg-surface-gray-3', n.sent && 'opacity-60']"
+						:class="[selected === n.id && 'bg-surface-gray-3 hover:bg-surface-gray-3', (n.sent || isGone(n)) && 'opacity-60']"
 						@click="emit('choose', n, $event.currentTarget as HTMLElement)"
 					>
 						<span

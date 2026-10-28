@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// The live page's comments panel: search, then the list. A floating card on the right on desktop, drawn like the
+// The live page's comments panel: search, the ⋯ menu (resolved threads), then the list. A floating card on the right on desktop, drawn like the
 // canvas panel; inside a bottom sheet on a phone (`embedded`). The canvas does not mount this: its panel has a
 // Comments tab that draws the same list (CommentsList.vue).
 import { Button, TextInput, Tooltip } from 'frappe-ui'
 import { query, type Thread } from './comments'
 import CommentsList from './CommentsList.vue'
+import ResolvedMenu from './ResolvedMenu.vue'
 
 defineProps<{ embedded?: boolean; route: string }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }>()
@@ -26,6 +27,7 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }
 					<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
 				</template>
 			</TextInput>
+			<ResolvedMenu />
 			<Tooltip v-if="!embedded" text="Hide panel">
 				<Button variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
 			</Tooltip>

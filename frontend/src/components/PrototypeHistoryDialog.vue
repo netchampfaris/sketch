@@ -32,7 +32,7 @@ import { Button, Dialog, Dropdown, ErrorMessage, LoadingText, TextInput, toast, 
 import PrototypeChangeList from './PrototypeChangeList.vue'
 import PrototypeDeleteVersionsDialog from './PrototypeDeleteVersionsDialog.vue'
 import PrototypeRestoreDialog from './PrototypeRestoreDialog.vue'
-import { method } from '../store'
+import { method, errorText } from '../store'
 import type { HistoryUsage, Prototype, PrototypeVersion, PruneResult, RestoreResult } from '../types'
 
 /** A prompt past this many lines or characters is clamped to two lines. */
@@ -224,7 +224,7 @@ async function undo(): Promise<void> {
       dry_run: 0,
     })
   } catch (error) {
-    toast.error((error as Error).message)
+    toast.error(errorText(error))
     return
   }
   await history.reload()
@@ -447,7 +447,7 @@ function fileLabel(count: number): string {
       <div class="-mx-3 h-96 overflow-y-auto px-3" :class="{ '!h-80': showSearch }">
         <LoadingText v-if="history.loading && !history.data?.length" />
 
-        <ErrorMessage v-else-if="history.error" :message="history.error.message" />
+        <ErrorMessage v-else-if="history.error" :message="errorText(history.error)" />
 
         <!--
           The one empty-state recipe the app uses: 48px circle, 24px glyph,

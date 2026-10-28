@@ -3,7 +3,7 @@
 // the view), a gray box while undrawn, an error box, or a live render. Sizes that stay on screen at any zoom
 // use `--ls`, so zooming only scales the layout.
 import { computed, nextTick, ref, watch } from 'vue'
-import { createReusableTemplate, useIntersectionObserver } from '@vueuse/core'
+import { useIntersectionObserver } from '@vueuse/core'
 import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
 import { avatarTheme } from '../shared/avatarTheme'
 import { bridge } from './bridge'
@@ -25,11 +25,7 @@ const props = defineProps<{
   app: any
   win: { w: number; h: number }
   sandbox?: Sandbox
-  // The tile is under ~280px on screen: its actions go on a second line under the label.
-  narrow?: boolean
 }>()
-// Default, New and Made by: after the name on a wide tile, on their own line under it on a narrow one.
-const [DefineFacts, Facts] = createReusableTemplate()
 const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; openPage: []; near: [near: boolean] }>()
 
 const box = ref<HTMLElement | null>(null)
@@ -44,9 +40,6 @@ useIntersectionObserver(
   { rootMargin: `${window.innerHeight}px ${window.innerWidth}px` },
 )
 
-// The label row wraps its actions under the name when the tile is narrow, and on a live tile that also says who made it:
-// there is no room for the name, the author and three actions on one line.
-const stacked = computed(() => !!props.narrow || (props.live && !!props.tile.author))
 const isSet = computed(() => props.tile.kind === 'set')
 // The part of the page this tile shows: the set's own box, or the whole window.
 const rect = computed(() => {
@@ -123,32 +116,29 @@ watch(
 <template>
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The caption sits under the tile. It is laid out at 1x and scaled to its on-screen size (never larger than at the
-         fit zoom), so the row wraps by what the eye sees. Number, name, Default, New and Made by on one line, in that
-         order: the author truncates first. The live tile adds Make default (owner) and Open page at the right end. On a
-         narrow tile the name has line 1 alone, Default, New and the author (a face and a first name) take line 2, and
-         the buttons line 3. On a stacked tile the buttons go under the name, so the name never truncates away. -->
+         fit zoom), so the row wraps by what the eye sees. Two rows, the same heights on every tile, so tiles in a row
+         line up. Row 1: number, name, Default and New on the left; on a teammate's option, their face and "by Arohi"
+         on the right (the owner's own options say nothing there). Row 2: the live tile's actions, left-aligned: Make
+         default (owner), Open page, ⋯. Other tiles keep the row empty. -->
     <div
       class="absolute left-0 top-full origin-top-left text-p-sm"
       :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
-      <DefineFacts>
+      <div data-tile-row="1" class="flex h-5 min-w-0 items-center gap-1.5 text-ink-gray-5">
+        <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
+        <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <span v-if="tile.author" class="flex min-w-0 shrink-[3] items-center gap-1 text-ink-gray-4" :title="`Made by ${personName(tile.author)}`">
-          <Avatar class="shrink-0 ring-1 ring-outline-gray-2" size="xs" :theme="avatarTheme(tile.author)" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
-          <span class="truncate">{{ narrow ? '' : 'Made by ' }}{{ shortName(tile.author) }}</span>
+        <span v-if="tile.author" class="ml-auto flex min-w-0 shrink-[3] items-center gap-1 pl-1.5 text-ink-gray-5">
+          <Avatar class="shrink-0" size="xs" :theme="avatarTheme(tile.author)" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
+          <span class="truncate">by {{ shortName(tile.author) }}</span>
         </span>
-      </DefineFacts>
-      <div class="flex items-center gap-x-1.5" :class="stacked ? 'flex-wrap gap-y-0.5' : ''">
-        <div class="flex min-w-0 items-center gap-1.5 text-ink-gray-5" :class="stacked ? 'w-full' : ''">
-          <span v-if="tile.n" class="tabular-nums text-ink-gray-4">{{ tile.n }}</span>
-          <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
-          <Facts v-if="!narrow" />
-        </div>
-        <div v-if="narrow && (tile.isDefault || tile.author)" class="flex w-full min-w-0 items-center gap-1.5 text-ink-gray-5"><Facts /></div>
-        <div v-if="live" data-ui class="flex shrink-0 items-center gap-1" :class="stacked ? '-ml-1.5 max-w-full flex-wrap gap-y-0.5' : '-my-1.5 ml-auto'">
+      </div>
+      <div data-tile-row="2" data-ui class="mt-1 flex h-6 min-w-0 items-center gap-1">
+        <template v-if="live">
           <Button
             v-if="canDefault && !bridge.tool"
+            class="-ml-1.5"
             variant="ghost"
             size="xs"
             :loading="saving"
@@ -157,11 +147,11 @@ watch(
           >
             <span :class="saving ? 'sr-only' : ''">Make default</span>
           </Button>
-          <Button :class="stacked ? '-ml-0.5' : ''" variant="ghost" size="xs" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
+          <Button :class="canDefault && !bridge.tool ? '' : '-ml-1.5'" variant="ghost" size="xs" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
           <Dropdown v-if="menu.length" :options="menu" placement="bottom-end">
             <Button variant="ghost" size="xs" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
           </Dropdown>
-        </div>
+        </template>
       </div>
     </div>
 

@@ -13,7 +13,7 @@
 import { computed, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, LoadingText, toast, useCall } from 'frappe-ui'
 import PrototypeChangeList from './PrototypeChangeList.vue'
-import { method } from '../store'
+import { errorText, method } from '../store'
 import type { PrototypeVersion, RestorePreview, RestoreResult } from '../types'
 
 interface RestoreParams {
@@ -84,7 +84,7 @@ async function loadPreview(): Promise<void> {
     // flight. The late answer is not for the dialog on screen.
     if (props.version === target) preview.value = result
   } catch (error) {
-    failure.value = (error as Error).message
+    failure.value = errorText(error)
   }
 }
 
@@ -103,7 +103,7 @@ async function confirm(): Promise<void> {
     // The tree changed between the dry run and the click, back to a match.
     else toast.info('Nothing to restore. This version matches the prototype.')
   } catch (error) {
-    failure.value = (error as Error).message
+    failure.value = errorText(error)
   }
 }
 

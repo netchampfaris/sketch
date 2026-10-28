@@ -10,10 +10,13 @@
  * to hand their agent. The same card draws "Conversations", prototypes the
  * user only talked on: they are not editors, so it has no prompt.
  *
- * Both rows are `h-7`, the height of a `sm` Button, so the card never moves.
+ * Row one is the name, a gray "Private" Badge when it is private, and ⋯; the
+ * preview and the name are the links in. Row two is what is new, or the owner
+ * and the meta when nothing is (`NewLine.vue`). Both rows are `h-7`, the height
+ * of a `sm` Button, so the card never moves.
  */
 import { computed, ref } from 'vue'
-import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
 import { avatarTheme } from '../../../runtime/shared/avatarTheme'
 import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
@@ -25,11 +28,6 @@ const props = defineProps<{ prototype: SharedPrototype; conversation?: boolean }
 
 const filesOpen = ref(false)
 const exporting = ref(false)
-
-/** A prototype always opens in a new tab, and `noopener` keeps the Viewer away from this window. */
-function openViewer(): void {
-  window.open(props.prototype.viewer_path, '_blank', 'noopener')
-}
 
 async function copyLink(): Promise<void> {
   try {
@@ -105,22 +103,15 @@ const menuOptions = computed(() => [
           >{{ prototype.title }}</a
         >
       </h2>
-      <Tooltip text="Open prototype">
-        <Button
-          aria-label="Open prototype"
-          icon="lucide-external-link"
-          variant="ghost"
-          @click="openViewer"
-        />
-      </Tooltip>
+      <Badge v-if="!prototype.is_public" label="Private" size="sm" theme="gray">
+        <template #prefix><span class="lucide-lock size-3" aria-hidden="true" /></template>
+      </Badge>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
 
-    <NewLine :news="prototype.new" :href="prototype.viewer_path" />
-
-    <div class="mt-auto flex h-7 items-center gap-2">
+    <NewLine :news="prototype.new" :href="prototype.viewer_path">
       <Avatar
         :image="prototype.owner.user_image"
         :label="prototype.owner.full_name"
@@ -131,7 +122,7 @@ const menuOptions = computed(() => [
         <span :title="prototype.owner.full_name">{{ prototype.owner.username }}</span>
         &middot; {{ prototype.description }} &middot; Updated {{ prototype.updated }}
       </span>
-    </div>
+    </NewLine>
 
     <PrototypeFilesDialog
       v-model:open="filesOpen"

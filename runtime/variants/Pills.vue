@@ -4,12 +4,10 @@
 import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
-import { Avatar, Button, Dropdown, Tooltip, toast } from 'frappe-ui'
-import { avatarTheme } from '../shared/avatarTheme'
+import { Button, Dropdown, Tooltip, toast } from 'frappe-ui'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, credential, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
-import { people, personName, shortName } from './extras'
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
@@ -118,12 +116,9 @@ watch(choices, () => nextTick(() => hovered.value && hover(setRows.value.find((s
 
 const isState = (s: VSet | DState): s is DState => 'count' in s
 const labelOf = (s: VSet) => s.options().find((o) => o.value === currentOf(s))?.label ?? ''
-// Who made the picked option, when a teammate did: the closed row says so, not only the open menu.
-const authorOf = (s: VSet) => s.options().find((o) => o.value === currentOf(s))?.author
 const menuOf = (s: VSet) =>
   s.options().map((o) => ({
     label: o.label,
-    author: o.author,
     selected: o.value === currentOf(s),
     onClick: () => (choices[idOf(s.path, s.key)] = o.value),
   }))
@@ -213,15 +208,6 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
           <Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as VSet)}`">
             <span class="flex items-center gap-1.5">
               <span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as VSet)">{{ labelOf(s as VSet) }}</span>
-              <Tooltip v-if="authorOf(s as VSet)" :text="`Made by ${personName(authorOf(s as VSet)!)}`">
-                <Avatar
-                  class="shrink-0 ring-1 ring-outline-gray-2"
-                  size="xs"
-                  :theme="avatarTheme(authorOf(s as VSet)!)"
-                  :image="people[authorOf(s as VSet)!]?.image || undefined"
-                  :label="personName(authorOf(s as VSet)!)"
-                />
-              </Tooltip>
               <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
             </span>
           </Button>
@@ -231,9 +217,6 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
           <template #item-label="{ item }">
             <span class="flex min-w-0 max-w-[20rem] items-center gap-2">
               <span class="truncate" :title="item.label">{{ item.label }}</span>
-              <span v-if="item.author" class="flex h-4 shrink-0 items-center gap-1 text-p-sm leading-4 text-ink-gray-5" :title="`Made by ${personName(item.author)}`">
-                <Avatar size="xs" :theme="avatarTheme(item.author)" :image="people[item.author]?.image || undefined" :label="personName(item.author)" />Made by {{ shortName(item.author) }}
-              </span>
             </span>
           </template>
         </Dropdown>

@@ -5,7 +5,7 @@
 // its router, which is what keeps `useRoute()` in the toolbar in step with the page.
 import { createApp } from 'vue'
 import Annotate from './Annotate.vue'
-import { initHost, isOwner, type Payload } from './host'
+import { canNote, initHost, type Payload } from './host'
 import { restore, startSaving } from './store'
 
 export function mountAnnotate(data: Payload) {
@@ -25,6 +25,6 @@ export function mountAnnotate(data: Payload) {
   // The toolbar is never worth breaking the Prototype for, and its errors are not the Prototype's.
   app.config.errorHandler = (err) => console.error('[sketch annotate]', err)
   app.mount(el)
-  // Only the owner has notes or tweaks to save.
-  if (isOwner()) startSaving()
+  // Only the owner and an invited editor have notes or tweaks to save, each their own.
+  if (canNote()) startSaving()
 }
