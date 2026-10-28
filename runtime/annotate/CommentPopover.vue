@@ -181,6 +181,14 @@ function start() {
 	})
 }
 
+// A thread you just posted stays open on itself, ready for the next word: focus goes to "Reply…".
+watch(
+	() => props.thread?.id,
+	(id, was) => {
+		if (id && !was) nextTick(() => root.value?.querySelector<HTMLTextAreaElement>('[data-reply] textarea')?.focus())
+	},
+)
+
 // A reply. What is typed and not sent stays with the thread, and comes back when it opens again.
 const replyText = ref(props.thread ? (replyDrafts.get(props.thread.id) ?? '') : '')
 watch(replyText, (t) => props.thread && (t ? replyDrafts.set(props.thread.id, t) : replyDrafts.delete(props.thread.id)))
@@ -335,7 +343,7 @@ function onKey(e: KeyboardEvent) {
 				</div>
 			</div>
 
-			<ComposerInput v-model="replyText" class="mt-3" placeholder="Reply…" send-label="Reply" :can-send="ready(replyText) && !busy" @send="sendReply" />
+			<ComposerInput v-model="replyText" data-reply class="mt-3" placeholder="Reply…" send-label="Reply" :can-send="ready(replyText) && !busy" @send="sendReply" />
 			<p v-if="tooLong(replyText)" class="mt-1 text-p-sm text-ink-red-7">Over the 4 KB limit</p>
 		</template>
 

@@ -8,6 +8,7 @@ import type { Anchor, Thread } from './comments'
 export const handlers = {
 	thread: null as ((t: Thread, x: number, y: number) => void) | null,
 	note: null as ((n: Note, x: number, y: number) => void) | null,
+	draft: null as ((id: string, x: number, y: number) => void) | null,
 }
 // The note whose box is open, so its pin can wear a ring.
 export const canvasUi = reactive({

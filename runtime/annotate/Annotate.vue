@@ -12,7 +12,7 @@ import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import { applyPicks, bridge, closeCanvas, currentPicks, hasUnreadThreads, openCanvas, picksShown, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
-import { openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { heldDrafts, openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { canNote, isGuest } from './host'
 import { saveState } from './store'
 import CommentPins from './CommentPins.vue'
@@ -170,7 +170,31 @@ watch(draft, (d) => {
 	}
 })
 
-const close = () => (draft.value = null)
+// Closing a new comment that has words keeps it as a Draft pin on the page (`heldDrafts`), whatever closed it: a click
+// outside, Escape, another tool. An empty one just goes. `as` is the tool the box was opened in, for a tool change.
+function close(as: Mode = mode.value) {
+	const d = draft.value
+	const words = text.value
+	const anchor = newAnchor.value
+	if (d && as === 'comment' && !d.editing && words.trim() && anchor) {
+		heldDrafts.value = [...heldDrafts.value, { id: `draft-${Date.now()}`, anchor, text: words, state: d }]
+		text.value = ''
+	}
+	draft.value = null
+}
+// A Draft pin reopens its box where the pin is now, with the words as they were.
+function reopenDraft(id: string, x: number, y: number) {
+	const h = heldDrafts.value.find((d) => d.id === id)
+	if (!h) return
+	close()
+	heldDrafts.value = heldDrafts.value.filter((d) => d.id !== id)
+	const a = h.anchor
+	draft.value = { ...(h.state as Draft), x, y }
+	text.value = h.text
+	draftKey.value++
+	const spot = a.tile ? { route: a.route, tile: a.tile } : null
+	followPin(spot ? tilePoint(spot, a.offset.x, a.offset.y) : elementPoint(() => resolve(a.selector), a.offset.x, a.offset.y), x, y)
+}
 // A new note may be re-aimed while nothing is typed; an edit never is.
 const canRetarget = () => !draft.value || (!draft.value.editing && !text.value.trim())
 
@@ -437,9 +461,10 @@ bridge.Pins = markRaw(TilePins)
 bridge.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
 handlers.thread = openThreadAt
 handlers.note = openEdit
+handlers.draft = reopenDraft
 onBeforeUnmount(() => {
 	Object.assign(bridge, { canComment: false, canNote: false, tool: '', pick: null, Pins: null, tabs: {}, tab: 'browse' })
-	handlers.thread = handlers.note = null
+	handlers.thread = handlers.note = handlers.draft = null
 })
 watch([openCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
 
@@ -686,9 +711,9 @@ watch(enabled, (on) => {
 		listOpen.value = false
 	}
 })
-watch(mode, () => {
+watch(mode, (_m, was) => {
 	listOpen.value = false
-	close()
+	close(was)
 })
 // The panel's tab and the tool follow each other. Comment mode is the Comments tab, Note mode the Notes tab, and
 // anything else Browse; picking a tab picks the tool, and Escape or the Browse tab puts the tool down.
@@ -819,9 +844,12 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 		if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return
 		if (dragging) resetDrag()
 		else if (draft.value) close()
-		else if (listOpen.value) listOpen.value = false
-		else if (active.value) active.value = false
-		else return
+		// The last Escape leaves the tool altogether: the tool goes off and its panel closes with it (on the canvas the
+		// panel's tab goes back to Browse), so nothing still looks on.
+		else if (active.value || listOpen.value) {
+			active.value = false
+			listOpen.value = false
+		} else return
 		e.preventDefault()
 		return
 	}
@@ -1066,7 +1094,7 @@ function openFromTrigger() {
 
 // The comments panel: a floating card on the right, collapsed from its own button; on a phone a bottom sheet.
 const panelOpen = ref(true)
-const showPanel = computed(() => enabled.value && mode.value === 'comment' && !guest)
+const showPanel = computed(() => enabled.value && active.value && mode.value === 'comment' && !guest)
 const togglePanel = () => (sheetMode.value ? (sheetOpen.value = !sheetOpen.value) : (panelOpen.value = !panelOpen.value))
 const panelShown = computed(() => (sheetMode.value ? sheetOpen.value : panelOpen.value))
 // The card starts below a typical page header (its action buttons sit top right), so it never covers them and the page never moves.
@@ -1254,7 +1282,7 @@ function revealTweak(id: string) {
 
 	<template v-if="enabled">
 		<Pins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
-		<CommentPins v-if="mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" />
+		<CommentPins v-if="active && mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" @draft="reopenDraft" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
@@ -1544,11 +1572,11 @@ function revealTweak(id: string) {
 				@pointercancel="barUp"
 				@click.capture="barClick"
 			>
-				<!-- Tool switch. The current tab stays lit; Escape or close is the way off. -->
+				<!-- Tool switch. The current tab stays lit while its tool is on; Escape or close is the way off, and then no tab is lit. -->
 				<Button v-if="guest" variant="subtle" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
 				<Tooltip v-else :text="noter ? tabTip : active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
 					<div class="inline-flex" @pointerover="onTabHover">
-						<TabButtons :options="tabOptions" :model-value="(canvasOpen || !noter) && !active ? undefined : mode">
+						<TabButtons :options="tabOptions" :model-value="active ? mode : undefined">
 							<template #suffix="{ button }">
 								<template v-if="button.value === 'comment'">
 									<template v-if="shownOpen">
