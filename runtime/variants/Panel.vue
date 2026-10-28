@@ -71,19 +71,16 @@ const countClass = (i: PickItem) =>
     :style="embedded ? { width: 'var(--reka-popover-trigger-width)' } : undefined"
     data-ui
   >
-    <!-- The tabs, with the hide button at the right; without tabs the hide button sits beside the search. -->
+    <!-- The tabs. The hide button sits at the end of the search row, on every tab, as it does in the live page's panel. -->
     <div v-if="tabbed" class="flex items-center gap-1">
       <TabButtons :options="tabOptions" :model-value="bridge.tab === 'browse' ? 'browse' : second">
         <template #suffix="{ button }">
           <span v-if="button.value !== 'browse' && bridge.counts[second]" class="tabular-nums text-ink-gray-5">{{ bridge.counts[second] }}</span>
         </template>
       </TabButtons>
-      <Tooltip text="Hide panel">
-        <Button class="ml-auto" variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
-      </Tooltip>
     </div>
 
-    <component :is="extra" v-if="extra" class="min-h-0 flex-1" :class="tabbed ? 'mt-2' : ''" />
+    <component :is="extra" v-if="extra" class="min-h-0 flex-1" :class="tabbed ? 'mt-2' : ''" @hide="emit('hide')" />
 
     <div v-show="!extra" class="flex items-center gap-1" :class="tabbed ? 'mt-2' : ''">
       <TextInput
@@ -98,7 +95,7 @@ const countClass = (i: PickItem) =>
       >
         <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
       </TextInput>
-      <Tooltip v-if="!embedded && !tabbed" text="Hide panel">
+      <Tooltip v-if="!embedded" text="Hide panel">
         <Button variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
       </Tooltip>
     </div>

@@ -5,7 +5,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget, toast } from 'frappe-ui'
-import { applyPicks, picksShown, picksWords } from 'sketch:variants'
+import { applyPicks, menuBind, picksShown, picksWords } from 'sketch:variants'
 import { host } from './host'
 import {
 	MAX_BYTES,
@@ -120,12 +120,8 @@ function startEdit(c: Reply) {
 	// The menu hands focus back to its button as it closes; take it after that.
 	setTimeout(() => root.value?.querySelector<HTMLTextAreaElement>('[data-editing] textarea')?.focus(), 50)
 }
-// One menu open at a time: opening the thread's ⋯ or a comment's ⋯ closes the other.
-const menuOpen = ref<string | null>(null)
-const menuModel = (id: string) => ({
-	open: menuOpen.value === id,
-	'onUpdate:open': (o: boolean) => (menuOpen.value = o ? id : menuOpen.value === id ? null : menuOpen.value),
-})
+// One menu open at a time, across the whole page: see menus.ts.
+const menuModel = (id: string) => menuBind(`comment:${id}`)
 const commentMenu = (c: Reply) => {
 	const first = c.id === props.thread?.id
 	return [

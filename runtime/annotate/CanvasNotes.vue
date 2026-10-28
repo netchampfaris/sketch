@@ -3,13 +3,13 @@
 // A note on a tile that has gone stays under its page, muted like a sent one: notes have no resolved state, and the
 // agent still reads it, so it is never hidden. Nothing is written, so an Undo of Keep only this brings the tile back.
 import { computed, ref } from 'vue'
-import { Button, ScrollArea, TextInput } from 'frappe-ui'
+import { Button, ScrollArea, TextInput, Tooltip } from 'frappe-ui'
 import { bridge, findTile, tileExists, tileLabel } from 'sketch:variants'
 import { pageName } from './comments'
 import { noteNumber, notes, type Note } from './annotate'
 
 defineProps<{ selected?: string }>()
-const emit = defineEmits<{ choose: [note: Note, el: HTMLElement] }>()
+const emit = defineEmits<{ choose: [note: Note, el: HTMLElement]; hide: [] }>()
 
 const query = ref('')
 
@@ -41,12 +41,17 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 
 <template>
 	<div data-annotate-ui class="flex min-h-0 flex-col">
-		<TextInput v-model="query" class="[&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search notes" autocomplete="off">
-			<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
-			<template #suffix>
-				<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
-			</template>
-		</TextInput>
+		<div class="flex items-center gap-1">
+			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search notes" autocomplete="off">
+				<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
+				<template #suffix>
+					<Button v-if="query" class="-mr-[5px]" variant="ghost" size="xs" icon="lucide-x" aria-label="Clear search" @click="query = ''" />
+				</template>
+			</TextInput>
+			<Tooltip text="Hide panel">
+				<Button variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
+			</Tooltip>
+		</div>
 		<ScrollArea class="mt-1 min-h-0 shrink" style="max-height: calc(100dvh - 13rem)">
 			<div class="w-[16.5rem] min-w-0">
 				<div v-if="!notes.length" class="px-2 py-3">

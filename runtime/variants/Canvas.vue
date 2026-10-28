@@ -14,6 +14,7 @@ import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
 import { lookAt } from './badges'
+import { menuBind } from './menus'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
@@ -591,7 +592,7 @@ watch(
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
         <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
-        <Dropdown :options="zoomOptions">
+        <Dropdown v-bind="menuBind('zoom')" :options="zoomOptions">
           <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
         </Dropdown>
         <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />

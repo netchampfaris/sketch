@@ -12,7 +12,7 @@ import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import { applyPicks, bridge, closeCanvas, currentPicks, hasUnreadThreads, openCanvas, picksShown, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
-import { heldDrafts, openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { canNote, isGuest } from './host'
 import { saveState } from './store'
 import CommentPins from './CommentPins.vue'
@@ -466,7 +466,11 @@ onBeforeUnmount(() => {
 	Object.assign(bridge, { canComment: false, canNote: false, tool: '', pick: null, Pins: null, tabs: {}, tab: 'browse' })
 	handlers.thread = handlers.note = handlers.draft = null
 })
-watch([openCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
+// The canvas reads the threads as it opens, and its tab shows no count until it knows both the threads and the tiles:
+// the server's number cannot know which tiles have gone, and a count that changes when the tab opens is wrong at first.
+watch(canvasOpen, (open) => open && !guest && void load(true), { immediate: true })
+const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !bridge.model) ? 0 : openCount.value))
+watch([tabCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
 
 // A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
 async function openNoteFromList(n: Note, row?: HTMLElement) {
