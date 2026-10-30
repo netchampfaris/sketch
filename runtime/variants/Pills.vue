@@ -4,7 +4,7 @@
 import { computed, nextTick, ref, shallowRef, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
-import { Button, Dropdown, Tooltip, toast } from 'frappe-ui'
+import { Button, Dropdown, toast } from 'frappe-ui'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { bridge } from './bridge'
 import { menuBind } from './menus'
@@ -136,10 +136,6 @@ const pageSlug = (path: string) => {
   const record = (router.options.routes as any[]).find((r) => r.path === path)
   return record ? slugOfRoute(record) : ''
 }
-// A State row opens the page's states; a Variants row opens that set.
-function compare(s: VSet | DState) {
-  go(isState(s) ? `page:${s.path}` : `set:${pageSlug(s.path)}/${s.key}`)
-}
 // The foot of the card: this page's first set, else its states, else the first thing the canvas has.
 const hereStates = computed(() => pageStateRows.value.length > 0)
 const canOpen = computed(() => setRows.value.some((s) => s.path !== '') || hereStates.value || !pagesModel.value || pagesModel.value.some(hasItems))
@@ -182,12 +178,11 @@ async function keepIt(s: VSet) {
 }
 const rowLabel = (s: VSet | DState) => (isState(s) && !role(s) ? 'State' : s.label)
 const role = (s: VSet | DState) => isState(s) && s.path === ''
-const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.label)
 </script>
 
 <template>
   <DefineRow v-slot="{ s, role }">
-    <!-- Each row is a subgrid of the card, so labels, controls and Compare line up across rows. -->
+    <!-- Each row is a subgrid of the card, so labels and controls line up across rows. -->
     <div
       class="col-span-full grid grid-cols-subgrid items-center py-0.5"
       @mouseenter="hover(isState(s) ? null : (s as VSet))"
@@ -253,11 +248,6 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
         </span>
         <span v-else class="max-md:hidden" />
       </template>
-      <span class="flex shrink-0 items-center justify-end gap-1 max-md:col-start-3 max-md:row-start-1">
-        <Tooltip v-if="!role && (isState(s) || s.path !== '')" text="Compare on canvas">
-          <Button variant="ghost" icon="lucide-columns-2" :aria-label="`Compare ${rowName(s)} on the canvas`" @click="compare(s)" />
-        </Tooltip>
-      </span>
     </div>
   </DefineRow>
 
@@ -274,14 +264,14 @@ const rowName = (s: VSet | DState) => (isState(s) ? `${s.label} states` : s.labe
       class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[16px] bg-surface-elevation-2 p-2 shadow-lg ring-1 ring-outline-gray-2"
     >
       <div
-        class="grid grid-cols-[auto_minmax(0,max-content)_auto] items-center gap-x-2"
-        :class="actionsShown ? 'md:grid-cols-[auto_minmax(0,max-content)_auto_auto]' : ''"
+        class="grid grid-cols-[auto_minmax(0,max-content)] items-center gap-x-2"
+        :class="actionsShown ? 'md:grid-cols-[auto_minmax(0,max-content)_auto]' : ''"
       >
         <Row v-for="s in appRows" :key="'a' + s.key" :s="s" role />
         <Row v-for="s in pageStateRows" :key="'s' + s.key" :s="s" />
         <Row v-for="s in setRows" :key="setId(s)" :s="s" />
       </div>
-      <Button v-if="canOpen" class="mt-0.5 w-full !justify-start" variant="ghost" icon-left="lucide-columns-2" label="Open canvas" @click="openHere" />
+      <Button v-if="canOpen" class="mt-0.5 w-full !justify-start" variant="ghost" icon-left="lucide-layout-grid" label="Open canvas" @click="openHere" />
     </div>
     <div ref="pill" data-pill="demo" class="pointer-events-auto rounded-5 bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2">
       <Button variant="ghost" aria-controls="sketch-demo-card" :aria-expanded="open" :class="open ? 'bg-surface-gray-3' : ''" @click="toggle">
