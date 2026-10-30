@@ -68,6 +68,10 @@ DEFAULT_TTL = 60
 #:   (`sketch.api.seen_mark`). Minted over the hash id and the username together, like
 #:   COMMENT, into the page of anyone who may comment. It opens one write, a mark on that
 #:   person's own list of seen variants and threads, which the person could make by hand.
+#: - THEME saves one signed-in person's prototype theme (`sketch.api.prototype_theme_signed`). Minted over
+#:   the username alone (`sketch.prototype_theme.subject`) into every page that person opens, so a
+#:   Prototype's own theme switch can save it. It opens one write: light, dark or system, on that person's
+#:   account, which the person could make by hand from Sketch's avatar menu.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
@@ -76,6 +80,7 @@ COMMENT_MINT = "comment-mint"
 VARIANT_DEFAULT = "variant_default"
 VARIANT_EDIT = "variant_edit"
 SEEN = "seen"
+THEME = "theme"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

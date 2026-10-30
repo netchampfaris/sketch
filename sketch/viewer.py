@@ -29,6 +29,7 @@ from sketch import (
 	comments,
 	prototype,
 	prototype_files,
+	prototype_theme,
 	runtime_assets,
 	sharing,
 	signature,
@@ -114,8 +115,8 @@ def url_theme() -> str | None:
 	"""The theme URL parameter, when it is light or dark.
 
 	Anything else, including "system", is None. The Viewer then resolves the
-	theme client side, from localStorage and then the browser preference
-	(spec 12). The renderer never writes localStorage and never sends "system".
+	theme client side: the person's prototype theme (`theme_pref`), the visit's
+	choice for a Guest, then the browser preference (spec 12, decision 84).
 	"""
 	value = (frappe.form_dict.get("theme") or "").strip().lower()
 	return value if value in THEMES else None
@@ -352,6 +353,13 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return frappe.db.get_value("User", frappe.session.user, "username") or ""
 
+	def signed_in_username(self) -> str:
+		"""The username of the signed-in person reading this page, in a real browser session, else ""."""
+		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
+			return ""
+
+		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+
 	def role(self) -> str:
 		"""owner, editor, viewer or guest, for the page's chrome. A `check` request is a guest."""
 		if frappe.form_dict.get("sig"):
@@ -436,6 +444,10 @@ class SketchViewerRenderer(BaseRenderer):
 		# (`sketch.badges`, `sketch.api.seen_mark`). Nobody else gets either.
 		seen = signature.mint(comments.subject(self.doc.name, commenter), LIVE_TTL_SECONDS, signature.SEEN) if commenter else {}
 		fresh = badges.page(self.doc.name, frappe.session.user) if commenter else None
+		# The theme this person's prototypes open in, and the right to save it from the Prototype's own switch
+		# (`sketch.prototype_theme`, `sketch.api.prototype_theme_signed`). A Guest and a `check` get neither.
+		reader = self.signed_in_username()
+		theming = signature.mint(prototype_theme.subject(reader), LIVE_TTL_SECONDS, signature.THEME) if reader else {}
 		tree = prototype_files.read_tree(self.doc.name)
 		adopted = sharing.read_adopted(tree)
 		return {
@@ -480,6 +492,10 @@ class SketchViewerRenderer(BaseRenderer):
 			"variant_exp": variant.get("exp", ""),
 			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
+			"theme_pref": prototype_theme.read(frappe.session.user) if reader else None,
+			"theme_user": reader,
+			"theme_exp": theming.get("exp", ""),
+			"theme_sig": theming.get("sig", ""),
 		}
 
 

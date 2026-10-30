@@ -13,10 +13,12 @@
  * only appear inside the menu. So the bar reads the same signed out, loading
  * and loaded, and it does not move on hover, on focus or on open.
  *
- * The theme rows are here because `useColorScheme` writes
- * `localStorage["theme"]` and `data-theme` on <html>. The Viewer reads that
- * same key inside its iframe, so these three rows theme the Sketch UI and
- * every Prototype (spec 12). They replace the old ThemeControl.vue.
+ * The Theme rows theme the Sketch UI: `useColorScheme` writes
+ * `localStorage["theme"]` and `data-theme` on <html>. They replace the old
+ * ThemeControl.vue. Prototypes have a theme of their own, saved to the account
+ * (decision 84): the Viewer is sandboxed and cannot read this browser's
+ * storage, and a dark Sketch must be able to show light prototypes. The
+ * Prototype theme rows set that one (`sketch.prototype_theme`).
  */
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -26,12 +28,14 @@ import {
   Dropdown,
   TabButtons,
   Tooltip,
+  toast,
+  useCall,
   useColorScheme,
   type ColorScheme,
   type DropdownOptions,
   type TabButton,
 } from 'frappe-ui'
-import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
+import { errorText, goToLogin, logout, method, session, sessionSettled, signedIn } from '../store'
 import { openWhatsNew } from '../whatsnew'
 
 const { colorScheme, setColorScheme } = useColorScheme()
@@ -103,6 +107,30 @@ const schemes: { label: string; value: ColorScheme; icon: string }[] = [
 ]
 
 /**
+ * The theme every prototype opens in, for this account. The check moves at
+ * once and goes back if the save fails. Open prototypes pick it up on their
+ * next load; a prototype's own switch saves the same preference.
+ */
+const prototypeTheme = computed<ColorScheme>(() => session.data?.prototype_theme ?? 'system')
+const savePrototypeTheme = useCall<{ prototype_theme: ColorScheme }, { theme: ColorScheme }>({
+  url: method('set_prototype_theme'),
+  method: 'POST',
+  immediate: false,
+})
+
+async function setPrototypeTheme(theme: ColorScheme) {
+  if (!session.data || theme === prototypeTheme.value) return
+  const before = prototypeTheme.value
+  session.data.prototype_theme = theme
+  try {
+    await savePrototypeTheme.submit({ theme })
+  } catch (error) {
+    if (session.data) session.data.prototype_theme = before
+    toast.error(errorText(error))
+  }
+}
+
+/**
  * One group, so the username labels the whole menu.
  *
  * The label is a non-breaking space until the session answers. Menu.vue skips
@@ -138,6 +166,16 @@ const menu = computed<DropdownOptions>(() => [
           icon: scheme.icon,
           selected: colorScheme.value === scheme.value,
           onClick: () => setColorScheme(scheme.value),
+        })),
+      },
+      {
+        label: 'Prototype theme',
+        icon: 'lucide-app-window',
+        submenu: schemes.map((scheme) => ({
+          label: scheme.label,
+          icon: scheme.icon,
+          selected: prototypeTheme.value === scheme.value,
+          onClick: () => setPrototypeTheme(scheme.value),
         })),
       },
       { label: "What's new", icon: 'lucide-sparkles', onClick: openWhatsNew },

@@ -153,9 +153,25 @@ To undo or go back to an earlier state, call `list_versions` to find the sequenc
    Never hand-mount a `<Dialog>` to ask "are you sure?".
 9. **Style through `data-slot` and `data-state`, not class injection.** There is
    no `triggerClass` or `contentClass` prop, by design.
-10. **Sketch owns the theme.** Never call `useColorScheme` or `setColorScheme`.
-    Never render `ThemeSwitcher`. Never write to `localStorage`. Use semantic
-    tokens and both light and dark work with no effort from you.
+10. **Every app shell has a theme switch, built with `useColorScheme`.** Put
+    Light, Dark and System where the product would: the user menu in the
+    sidebar header, or a settings page. Read `colorScheme` for the check mark
+    and call `setColorScheme(value)` on click. Sketch remembers the choice for
+    the person (on their account, or for the visit), applies it with no reload,
+    and the same choice opens every other prototype. Never render
+    `ThemeSwitcher`, never write `data-theme` or `localStorage` yourself. Use
+    semantic tokens and both light and dark work with no effort from you.
+
+    ```ts
+    const { colorScheme, setColorScheme } = useColorScheme()
+    const themes = [
+      { label: 'Light', value: 'light', icon: 'lucide-sun' },
+      { label: 'Dark', value: 'dark', icon: 'lucide-moon' },
+      { label: 'System', value: 'system', icon: 'lucide-monitor' },
+    ] as const
+    // A Dropdown row: { label: 'Theme', icon: 'lucide-sun-moon', submenu: themes.map((t) => ({
+    //   label: t.label, icon: t.icon, onClick: () => setColorScheme(t.value) })) }
+    ```
 
 ## 4. What you can import
 
@@ -776,8 +792,8 @@ See section 1.
 **There is no type checking.** TypeScript annotations are stripped and thrown
 away. A wrong type is silent. A syntax error is fatal.
 
-**There is no `localStorage` you own,** and no theme control. Sketch sets
-`data-theme`. See rule 10.
+**There is no `localStorage` that lasts.** It works for the page and is gone
+on reload. The theme is the exception: `useColorScheme` saves it. See rule 10.
 
 **There is no `frappe-ui/experimental`.** `Accordion`, `Calendar`,
 `FloatingWindow`, `MultiEmailInput` and `CodeEditor` are not available.

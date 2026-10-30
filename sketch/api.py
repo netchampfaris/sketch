@@ -26,6 +26,7 @@ from sketch import (
 	editor_variants,
 	prototype,
 	prototype_files,
+	prototype_theme,
 	sharing,
 	signature,
 	snapshots,
@@ -366,7 +367,32 @@ def get_session() -> dict:
 		"last_used_pretty": pretty_date(last_used) if last_used else None,
 		"mcp_endpoint": _public_base() + MCP_PATH,
 		"logout_url": "/api/method/logout",
+		"prototype_theme": prototype_theme.read(user),
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_prototype_theme(theme: str) -> dict:
+	"""Save the theme this person's prototypes open in: light, dark or system. From Sketch's avatar menu."""
+	return {"prototype_theme": prototype_theme.write(frappe.session.user, theme)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def prototype_theme_signed(username: str = "", exp: str = "", sig: str = "", theme: str = "") -> dict:
+	"""`set_prototype_theme` for the Viewer, which sends no session cookie: a Prototype's own theme switch.
+
+	The page's `theme` credential names the person (`signature.THEME`) and opens this one write. A bad
+	credential, or a person who is gone, is a 404.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not username or not signature.verify(prototype_theme.subject(username), exp, sig, signature.THEME):
+		raise frappe.DoesNotExistError
+
+	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	if not user:
+		raise frappe.DoesNotExistError
+
+	return {"prototype_theme": prototype_theme.write(user, theme)}
 
 
 @frappe.whitelist()
