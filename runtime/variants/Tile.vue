@@ -134,9 +134,12 @@ watch(
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
-          <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
-        </Dropdown>
+        <!-- The wrapper, not the Dropdown, takes ml-auto: the Dropdown does not pass a class to what it renders. -->
+        <span v-if="live" class="-mr-1.5 ml-auto flex shrink-0">
+          <Dropdown v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
+            <Button variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
+          </Dropdown>
+        </span>
       </div>
     </div>
     <div
