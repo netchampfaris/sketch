@@ -1,32 +1,31 @@
 <script setup lang="ts">
 /**
- * What's new, on the gallery (decision 72): a Dialog once per release, then a small card in the corner.
+ * What's new (decision 72): one Dialog, mounted once by `App.vue`, and a small card in the corner of the gallery.
  *
- * The Dialog opens when this browser has not seen the newest entry. It is a carousel of one feature per slide. The slide
- * moves on when its clip ends, never on a timer, so with no clip, or with reduced motion, it stays where it is. A dot or
- * an arrow key moves it and stops that for this open. After the last clip it stays on the last slide. Every way out
- * writes the seen id, so the release shows once.
+ * The Dialog opens by itself on the gallery, for a signed-in person, when this browser has not seen the newest entry.
+ * Anyone can open it by hand from anywhere (`openWhatsNew`): the corner card, the avatar menu, the signed-out hero. It
+ * is a carousel of one feature per slide. The slide moves on when its clip ends, never on a timer, so with no clip, or
+ * with reduced motion, it stays where it is. A dot or an arrow key moves it and stops that for this open. After the last
+ * clip it stays on the last slide. Every way out writes the seen id, so the release shows once.
  *
- * The corner card is what is left of it: it appears when the Dialog is closed and goes when it is clicked or its × is
- * pressed. A phone has no room for it, so it is hidden under 640px.
+ * The corner card is what is left of it: signed in, on the gallery, while the Dialog is closed, until it is clicked or
+ * its × is pressed. A phone has no room for it, so it is hidden under 640px.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { Button, Dialog } from 'frappe-ui'
 import WhatsNewClip from './WhatsNewClip.vue'
 import { signedIn } from '../store'
-import { cardDismissed, dismissCard, markSeen, seenRelease, whatsNew } from '../whatsnew'
+import { cardGone, dismissCard, markSeen, openWhatsNew, seenRelease, slides, whatsNew, whatsNewOpen } from '../whatsnew'
 
-const router = useRouter()
+const route = useRoute()
 
-const open = ref(false)
 const index = ref(0)
 /** True until a dot or an arrow is used: the clip's end moves to the next slide only while it is. */
 const advance = ref(true)
-const cardGone = ref(cardDismissed())
 
-const entry = computed(() => whatsNew[index.value])
-const last = whatsNew.length - 1
+const entry = computed(() => slides[index.value])
+const last = slides.length - 1
 
 function go(to: number): void {
   index.value = Math.min(Math.max(to, 0), last)
@@ -46,7 +45,7 @@ function onKey(event: KeyboardEvent): void {
   else if (event.key === 'ArrowRight') pick(index.value + 1)
 }
 
-watch(open, (isOpen) => {
+watch(whatsNewOpen, (isOpen) => {
   if (isOpen) {
     index.value = 0
     advance.value = true
@@ -57,36 +56,21 @@ watch(open, (isOpen) => {
   }
 })
 
-// The session read lands after this screen mounts, so the Dialog waits for it.
+/** The gallery is where it opens by itself, once the session read says who is here. A Guest never gets it unasked. */
+const onGallery = computed(() => route.path === '/')
 watch(
-  signedIn,
-  (yes) => {
-    if (yes && !seenRelease()) open.value = true
+  [signedIn, onGallery],
+  ([yes, home]) => {
+    if (yes && home && !seenRelease()) whatsNewOpen.value = true
   },
   { immediate: true },
 )
 
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-
-function seeAll(): void {
-  open.value = false
-  router.push('/whats-new')
-}
-
-function openCard(): void {
-  dismissCard()
-  cardGone.value = true
-  router.push('/whats-new')
-}
-
-function closeCard(): void {
-  dismissCard()
-  cardGone.value = true
-}
 </script>
 
 <template>
-  <Dialog v-if="signedIn" v-model:open="open" size="xl">
+  <Dialog v-model:open="whatsNewOpen" size="xl">
     <template #title><span class="text-base-medium text-ink-gray-8">What's new</span></template>
 
     <div>
@@ -95,7 +79,7 @@ function closeCard(): void {
       <p class="mt-1 text-p-base text-ink-gray-6">{{ entry.line }}</p>
       <div class="mt-4 flex items-center gap-2">
         <button
-          v-for="(one, at) in whatsNew"
+          v-for="(one, at) in slides"
           :key="one.id"
           type="button"
           :aria-label="`Show ${one.title}`"
@@ -108,8 +92,7 @@ function closeCard(): void {
     </div>
 
     <template #actions="{ close }">
-      <div class="flex items-center justify-between gap-2">
-        <Button label="See all updates" variant="ghost" @click="seeAll" />
+      <div class="flex justify-end">
         <Button label="Got it" variant="solid" @click="close" />
       </div>
     </template>
@@ -120,10 +103,10 @@ function closeCard(): void {
     keyboard reachable; the × is its own button beside it, not inside it.
   -->
   <div
-    v-if="signedIn && !open && !cardGone"
+    v-if="signedIn && onGallery && !whatsNewOpen && !cardGone"
     class="fixed bottom-4 left-4 z-30 hidden w-64 rounded-6 bg-surface-elevation-1 shadow-xl ring-1 ring-outline-gray-2 sm:block"
   >
-    <button type="button" class="block w-full rounded-6 px-3 py-2.5 pr-10 text-left" @click="openCard">
+    <button type="button" class="block w-full rounded-6 px-3 py-2.5 pr-10 text-left" @click="openWhatsNew">
       <span class="block text-xs text-ink-gray-5">What's new</span>
       <span class="block truncate text-sm-medium text-ink-gray-8">{{ whatsNew[0].title }}</span>
     </button>
@@ -133,7 +116,7 @@ function closeCard(): void {
       icon="lucide-x"
       size="xs"
       variant="ghost"
-      @click="closeCard"
+      @click="dismissCard"
     />
   </div>
 </template>

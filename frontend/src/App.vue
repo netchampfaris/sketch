@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, FrappeUIProvider, useColorScheme } from 'frappe-ui'
 import AppTopBar from './components/AppTopBar.vue'
+import WhatsNew from './components/WhatsNew.vue'
 import { toSpaPath } from './router'
 import {
   goToLogin,
@@ -112,6 +113,8 @@ function goBackToWhereTheyWere(): void {
         <router-view />
       </div>
     </div>
+    <!-- Mounted once, so any screen can open it (`openWhatsNew`). -->
+    <WhatsNew />
     <!-- The session ended while the gallery was open: one place says so, over whatever dialog is up. Mounted only then,
          so it teleports after any open dialog and stacks above it (every frappe-ui Dialog is z-50). -->
     <Dialog

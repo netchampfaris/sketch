@@ -56,14 +56,14 @@ class TestFeedPage(IntegrationTestCase):
 		for mark in BUNDLE_MARKS:
 			self.assertIn(mark, body)
 
-	def test_a_guest_is_served_whats_new(self):
-		"""The signed-out hero links to it, so it is a public route: the bundle
-		goes out with no session, the same as /about."""
+	def test_whats_new_is_not_a_page(self):
+		"""What's new is a modal, not a route. A direct load of /whats-new is an unknown path, and
+		serves no bundle."""
 		response = utils.request("GET", "/whats-new")
 
-		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.status_code, 404)
 		for mark in BUNDLE_MARKS:
-			self.assertIn(mark, response.text)
+			self.assertNotIn(mark, response.text)
 
 	def test_a_guest_is_still_refused_the_bundle_elsewhere(self):
 		"""The rest of problem B4 stands. A deep link into the app bounces to

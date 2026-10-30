@@ -31,6 +31,7 @@ import {
   type TabButton,
 } from 'frappe-ui'
 import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
+import { openWhatsNew } from '../whatsnew'
 
 const { colorScheme, setColorScheme } = useColorScheme()
 const route = useRoute()
@@ -138,7 +139,7 @@ const menu = computed<DropdownOptions>(() => [
           onClick: () => setColorScheme(scheme.value),
         })),
       },
-      { label: "What's new", icon: 'lucide-sparkles', route: '/whats-new' },
+      { label: "What's new", icon: 'lucide-sparkles', onClick: openWhatsNew },
       { label: 'Log out', icon: 'lucide-log-out', onClick: logout },
     ],
   },

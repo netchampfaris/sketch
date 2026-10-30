@@ -1,10 +1,12 @@
 /**
  * What Sketch can do now (decision 72), newest first.
  *
- * One list feeds the modal on the gallery, its corner card and /whats-new. The first entry is the newest: its `id` is
+ * One list feeds the modal and the corner card. There is no page of it: the modal is the only place. The first entry is the newest: its `id` is
  * what a browser stores once it has seen the release. `video` is a silent clip in `sketch/public/whatsnew/`; an entry
  * without one, or whose file is missing, draws its icon in the clip's frame instead.
  */
+import { ref } from 'vue'
+
 export interface WhatsNewEntry {
   id: string
   /** The release, as an ISO date. */
@@ -72,6 +74,9 @@ export const whatsNew: WhatsNewEntry[] = [
 /** The newest entry's id: what "seen" means for a browser. */
 export const newestId = whatsNew[0].id
 
+/** The modal's slides: the newest release only, so older releases drop off the carousel. */
+export const slides = whatsNew.filter((entry) => entry.date === whatsNew[0].date)
+
 const SEEN = 'sketch.whatsnew.seen'
 const CARD = 'sketch.whatsnew.card'
 
@@ -94,14 +99,20 @@ function write(key: string, value: string): void {
 
 export const seenRelease = (): boolean => read(SEEN) === newestId
 export const markSeen = (): void => write(SEEN, newestId)
-export const cardDismissed = (): boolean => read(CARD) === newestId
-export const dismissCard = (): void => write(CARD, newestId)
 
-/** "2026-10-30" as "30 October 2026", the way the page heads a release. */
-export function releaseDate(date: string): string {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+/** The modal, openable from anywhere: the avatar menu, the corner card, the signed-out hero. */
+export const whatsNewOpen = ref(false)
+
+/** True once the corner card was clicked, dismissed, or the modal was opened by hand. */
+export const cardGone = ref(read(CARD) === newestId)
+
+export function dismissCard(): void {
+  write(CARD, newestId)
+  cardGone.value = true
+}
+
+/** Opens on slide 1. A person asking for it has seen what the corner card was for, so the card goes. */
+export function openWhatsNew(): void {
+  dismissCard()
+  whatsNewOpen.value = true
 }
