@@ -22,30 +22,6 @@ const clip = (id: string) => `/assets/sketch/whatsnew/${id}.mp4`
 
 export const whatsNew: WhatsNewEntry[] = [
   {
-    id: 'comments',
-    date: '2026-10-30',
-    title: 'Comments on prototypes',
-    line: 'Pin a comment anywhere on a page, reply, @mention, resolve.',
-    icon: 'lucide-message-circle',
-    video: clip('comments'),
-  },
-  {
-    id: 'invite',
-    date: '2026-10-30',
-    title: 'Invite teammates',
-    line: 'Invite by GitHub username. Editors can add their own options and notes.',
-    icon: 'lucide-user-plus',
-    video: clip('invite'),
-  },
-  {
-    id: 'teammates-options',
-    date: '2026-10-30',
-    title: "Teammates' options",
-    line: 'See whose option is whose, then make the best one the default.',
-    icon: 'lucide-users',
-    video: clip('teammates-options'),
-  },
-  {
     id: 'canvas',
     date: '2026-10-30',
     title: 'Canvas',
@@ -54,12 +30,28 @@ export const whatsNew: WhatsNewEntry[] = [
     video: clip('canvas'),
   },
   {
-    id: 'page-states',
+    id: 'states',
     date: '2026-10-30',
-    title: 'Page states',
-    line: 'Flip a page to Loading, Empty or Error from the Demo pill, or see them all on the canvas.',
+    title: 'State machine',
+    line: 'Pick an option, then see it loading, empty, failing and more, side by side.',
     icon: 'lucide-layers',
-    video: clip('page-states'),
+    video: clip('states'),
+  },
+  {
+    id: 'team',
+    date: '2026-10-30',
+    title: 'Invite your team',
+    line: 'Invite by GitHub username, see whose option is whose, and make the best one the default.',
+    icon: 'lucide-user-plus',
+    video: clip('team'),
+  },
+  {
+    id: 'comments',
+    date: '2026-10-30',
+    title: 'Comments on prototypes',
+    line: 'Pin a comment anywhere on a page, reply, @mention, resolve.',
+    icon: 'lucide-message-circle',
+    video: clip('comments'),
   },
   {
     id: 'annotations',
