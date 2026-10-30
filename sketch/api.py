@@ -363,14 +363,7 @@ def get_session() -> dict:
 		"last_used_pretty": pretty_date(last_used) if last_used else None,
 		"mcp_endpoint": _public_base() + MCP_PATH,
 		"logout_url": "/api/method/logout",
-		"prototype_theme": prototype_theme.read(user),
 	}
-
-
-@frappe.whitelist(methods=["POST"])
-def set_prototype_theme(theme: str) -> dict:
-	"""Save the theme this person's prototypes open in: light, dark or system. From Sketch's avatar menu."""
-	return {"prototype_theme": prototype_theme.write(frappe.session.user, theme)}
 
 
 @frappe.whitelist()

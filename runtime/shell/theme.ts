@@ -4,7 +4,7 @@
 // The shell hands the parameter and the preference to the frame in its URL; the frame paints the Prototype and reports
 // the theme it shows, and the shell's chrome follows it, as it did inside the page.
 import { THEMES, type Theme } from '../shared/protocol'
-import { write } from './api'
+import { call } from './api'
 
 export const CHOICES = [...THEMES, 'system'] as const
 export type Choice = (typeof CHOICES)[number]
@@ -40,9 +40,9 @@ export function applyTheme(theme: Theme) {
 	document.documentElement.dataset.theme = theme
 }
 
-// The Prototype's own switch chose a theme (the frame's `theme:choose`). It is one of three values, on the reader's own
-// account, which they could set by hand from Sketch's avatar menu; the shell takes it only from a click or key the
-// person made (the frame's activation reaches the shell), so a page cannot change it on its own. Its choice outranks
+// The Prototype's own switch chose a theme (the frame's `theme:choose`), the one way the preference changes. It is one
+// of three values on the reader's own account; the shell takes it only right after a click or key the person made (the
+// frame's activation reaches the shell), so a page cannot change it on its own. Its choice outranks
 // a theme in the link from now on, so the parameter leaves the URL and a reload keeps it.
 export function chooseTheme(next: Choice) {
 	if (next === preference || !navigator.userActivation?.isActive) return
@@ -61,5 +61,5 @@ export function chooseTheme(next: Choice) {
 		return
 	}
 	// Quiet: the page already shows the choice.
-	write('sketch.api.set_prototype_theme', { theme: next }).catch(() => {})
+	call('save_prototype_theme', { theme: next }).catch(() => {})
 }
