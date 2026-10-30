@@ -18,8 +18,8 @@
  * Export takes it away, History reads when it was written. Delete uses the
  * destructive confirm preset.
  *
- * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
- * the card.
+ * Row one is `h-7`, the height of a `sm` Button; row two is `h-5`, one line of
+ * text, so it sits close under the title. No state change moves the card.
  */
 import { computed, ref } from 'vue'
 import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
@@ -214,8 +214,8 @@ const menuOptions = computed(() => [
     </div>
 
     <!--
-      Two rows under the preview. `h-7` on both is the height of a `sm` Button
-      (`Button.vue:209`), so neither row changes height when its contents change.
+      Two rows under the preview: `h-7`, the height of a `sm` Button (`Button.vue:209`),
+      then `h-5` for the line of text. Neither changes height when its contents change.
     -->
     <div class="mt-3 flex h-7 items-center gap-2">
       <!--
@@ -240,32 +240,30 @@ const menuOptions = computed(() => [
       </Badge>
       <!--
         Status, not a second Share button: who it is shared with, up to three faces and then +n.
-        It opens the dialog the menu opens. The ring gives the pale fill an edge.
+        Not a button: sharing is in the ⋯ menu. The ring, in the card's own surface, cuts each face from the next.
       -->
       <Tooltip v-if="sharedWith.length" :text="sharedWith.text">
-        <Button variant="ghost" :aria-label="sharedWith.text" @click="shareOpen = true">
-          <span class="flex items-center">
-            <span class="flex -space-x-1">
+        <span class="flex items-center" role="img" :aria-label="sharedWith.text">
+            <span class="flex -space-x-1.5">
               <Avatar
                 v-for="person in sharedWith.shown"
                 :key="person.username"
-                class="ring-1 ring-outline-gray-2"
-                size="xs"
+                class="ring-2 ring-surface-base"
+                size="sm"
                 :theme="avatarTheme(person.username)"
                 :image="person.user_image"
                 :label="person.full_name"
               />
             </span>
             <span v-if="sharedWith.more" class="ml-1 text-xs tabular-nums text-ink-gray-5">+{{ sharedWith.more }}</span>
-          </span>
-        </Button>
+        </span>
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
 
-    <div class="flex h-7 items-center text-xs text-ink-gray-5">
+    <div class="flex h-5 items-center text-xs text-ink-gray-5">
       <span class="min-w-0 truncate">Updated {{ prototype.updated }}</span>
     </div>
 

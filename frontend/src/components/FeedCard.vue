@@ -12,8 +12,8 @@
  * gallery. The other three read what the Viewer already renders, so a Guest
  * gets them too (`sketch.prototype.resolve_readable`).
  *
- * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
- * the card.
+ * Row one is `h-7`, the height of a `sm` Button; row two is `h-5`, one line of
+ * text, so it sits close under the title. No state change moves the card.
  */
 import { computed, ref } from 'vue'
 import { Avatar, Button, Dropdown, toast, useCall } from 'frappe-ui'
@@ -142,10 +142,10 @@ const menuOptions = computed(() => [
     <!--
       The author leads this row, because the feed crosses users and the handle
       is also the first half of the address. The Avatar is `xs`, 16px, so the
-      row keeps the `h-7` the card is built on and the face sits inside the
+      row keeps the `h-5` under the title and the face sits inside the
       cap height of the text beside it.
     -->
-    <div class="flex h-7 items-center gap-2">
+    <div class="flex h-5 items-center gap-2">
       <Avatar
         :image="prototype.user_image"
         :label="prototype.full_name"

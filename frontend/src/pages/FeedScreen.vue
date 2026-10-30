@@ -170,13 +170,13 @@ onMounted(() => {
       The placeholder repeats the loaded card's own height and margin classes
       and replaces only the text, so the grid does not resize when the rows
       arrive. The blocks match FeedCard.vue one for one: the picture, then the
-      two `h-7` rows. Change a row here only with the matching row there.
+      `h-7` and `h-5` rows. Change a row here only with the matching row there.
     -->
     <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       <div v-for="n in 4" :key="n">
         <Skeleton class="aspect-[16/10] w-full rounded-6" />
         <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
-        <div class="flex h-7 items-center"><Skeleton class="h-3.5 w-56" /></div>
+        <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-56" /></div>
       </div>
     </div>
 

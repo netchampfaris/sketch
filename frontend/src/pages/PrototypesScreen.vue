@@ -369,7 +369,7 @@ onMounted(() => {
       Every placeholder repeats the loaded card's own height and margin classes
       and replaces only the text, so the grid does not resize when the rows
       arrive (finding 4.2). The blocks match PrototypeCard.vue one for one:
-      the picture, then the two `h-7` rows.
+      the picture, then the `h-7` and `h-5` rows.
 
       Those heights are load-bearing, not decoration. The card was four rows
       once, and this block kept its four after the card became two, so the
@@ -381,7 +381,7 @@ onMounted(() => {
       <div v-for="n in 3" :key="n">
         <Skeleton class="aspect-[16/10] w-full rounded-6" />
         <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
-        <div class="flex h-7 items-center"><Skeleton class="h-3.5 w-28" /></div>
+        <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-28" /></div>
       </div>
     </div>
 

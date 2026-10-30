@@ -12,8 +12,8 @@
  *
  * Row one is the name, a gray "Private" Badge when it is private, and ⋯; the
  * preview and the name are the links in. Row two is "Updated 2 hours ago", and
- * what is new is a pill on the preview (`PrototypeMarker.vue`). Both rows are
- * `h-7`, the height of a `sm` Button, so the card never moves.
+ * what is new is a pill on the preview (`PrototypeMarker.vue`). Row one is
+ * `h-7`, the height of a `sm` Button, row two `h-5`, so the card never moves.
  */
 import { computed, ref } from 'vue'
 import { Badge, Button, Dropdown, toast } from 'frappe-ui'
@@ -113,7 +113,7 @@ const menuOptions = computed(() => [
       </Dropdown>
     </div>
 
-    <div class="flex h-7 items-center text-xs text-ink-gray-5">
+    <div class="flex h-5 items-center text-xs text-ink-gray-5">
       <span class="min-w-0 truncate">Updated {{ prototype.updated }}</span>
     </div>
 
