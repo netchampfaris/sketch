@@ -15,9 +15,9 @@ import { menuBind } from '../shared/menus'
 
 type Row = ModelSet | ModelState
 
-const [DefineRow, RowOf] = createReusableTemplate<{ s: Row; role?: boolean }>({
+const [DefineRow, RowOf] = createReusableTemplate<{ s: Row }>({
 	inheritAttrs: false,
-	props: { s: { type: Object, required: true }, role: Boolean },
+	props: { s: { type: Object, required: true } },
 })
 
 const isState = (s: Row): s is ModelState => !('key' in s)
@@ -146,12 +146,12 @@ function openHere() {
 	const first = setRows.value.find((s) => s.path !== '')
 	go(first ? first.view : pageStateRows.value.length ? `page:${pageStateRows.value[0].path}` : 'auto')
 }
-const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.label)
+const rowLabel = (s: Row) => (isState(s) && s.path !== '' ? 'State' : s.label)
 
 </script>
 
 <template>
-	<DefineRow v-slot="{ s, role }">
+	<DefineRow v-slot="{ s }">
 		<!-- Each row is a subgrid of the card, so labels and controls line up across rows. -->
 		<div
 			class="col-span-full grid grid-cols-subgrid items-center py-0.5"
@@ -159,7 +159,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			@mouseleave="hover(null)"
 		>
 			<span class="flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
-				<span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s, role) }}</span>
+				<span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s) }}</span>
 				<span
 					v-if="freshOf(s)"
 					class="ml-1.5 size-1.5 shrink-0 rounded-full bg-surface-blue-6"
@@ -204,7 +204,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[16px] bg-surface-elevation-2 p-2 shadow-lg ring-1 ring-outline-gray-2"
 		>
 			<div class="grid grid-cols-[auto_minmax(0,max-content)] items-center gap-x-2">
-				<RowOf v-for="s in appRows" :key="s.id" :s="s" role />
+				<RowOf v-for="s in appRows" :key="s.id" :s="s" />
 				<RowOf v-for="s in pageStateRows" :key="s.id" :s="s" />
 				<RowOf v-for="s in setRows" :key="s.id" :s="s" />
 			</div>
