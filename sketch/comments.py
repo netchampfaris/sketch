@@ -687,8 +687,9 @@ def _fraction(value) -> float:
 
 
 def _numbers(value, keys) -> dict:
+	"""Finite numbers only: `json.loads` reads NaN and Infinity, the browser's `JSON.parse` does not."""
 	value = value if isinstance(value, dict) else {}
-	return {k: (float(value[k]) if isinstance(value.get(k), int | float) else 0) for k in keys}
+	return {k: (float(v) if isinstance(v := value.get(k), int | float) and math.isfinite(v) else 0) for k in keys}
 
 
 def _plain(value, depth: int = 0) -> bool:
@@ -699,7 +700,10 @@ def _plain(value, depth: int = 0) -> bool:
 	if isinstance(value, str):
 		return len(value) <= 1024
 
-	if isinstance(value, bool | int | float) or value is None:
+	if isinstance(value, float):
+		return math.isfinite(value)
+
+	if isinstance(value, bool | int) or value is None:
 		return True
 
 	if isinstance(value, list):
