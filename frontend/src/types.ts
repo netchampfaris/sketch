@@ -31,7 +31,7 @@ export interface NewPerson {
 }
 
 /**
- * What changed on a prototype since this person last looked: the line on its gallery card.
+ * What changed on a prototype since this person last looked: the pill on its gallery card (`PrototypeMarker.vue`).
  * Counts are what is still unseen. `by` is the first three people, `more` how many others.
  * `mention` is set when someone named this person in a comment they have not opened.
  * `invited` is set for an invited editor until they first open the prototype, and `adopted` while the owner's
