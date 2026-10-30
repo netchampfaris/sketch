@@ -32,8 +32,8 @@ export const prototypes = useCall<Prototype[]>({
 })
 
 /**
- * Prototypes other people invited this user to. Empty for most users, and the
- * gallery draws nothing for it then.
+ * Prototypes other people invited this user to. Empty for most users. The
+ * gallery's Shared tab holds these and `conversationPrototypes`.
  */
 export const sharedPrototypes = useCall<SharedPrototype[]>({
   url: method('shared_prototypes'),
@@ -43,7 +43,7 @@ export const sharedPrototypes = useCall<SharedPrototype[]>({
 
 /**
  * Prototypes this user commented on or was mentioned in and neither owns nor edits.
- * The gallery draws a section for it only while there is one.
+ * They join the gallery's Shared tab.
  */
 export const conversationPrototypes = useCall<SharedPrototype[]>({
   url: method('conversations'),

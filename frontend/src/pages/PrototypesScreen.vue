@@ -2,8 +2,8 @@
 /**
  * Prototypes: the Prototype gallery (spec 11, decisions 69 to 72).
  *
- * The header holds the title and the one primary action. The body is one grid
- * of cards, newest update first: the user's own and the ones shared with them.
+ * No visible title (decision 79): one toolbar row, then one grid of cards,
+ * newest update first: the user's own and the ones shared with them.
  * Shared is what somebody invited them to, plus what they only commented on.
  * Tabs "All · Mine · Shared" show only while there is something shared, and a
  * search sits beside them once the tab holds more than ten.
@@ -69,12 +69,11 @@ const counts = computed<Record<Tab, number>>(() => ({
   shared: shared.value.length,
 }))
 
-const tabs = computed(() =>
-  (['all', 'mine', 'shared'] as const).map((value) => ({
-    value,
-    label: { all: 'All', mine: 'Mine', shared: 'Shared' }[value],
-  })),
-)
+const tabs: { value: Tab; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'mine', label: 'Mine' },
+  { value: 'shared', label: 'Shared' },
+]
 
 /** The cards of the tab, newest update first across both kinds. `modified` is the tree's own stamp. */
 const tabItems = computed(() => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * One card under "Shared with me": a prototype somebody invited this user to.
+ * One card in the gallery's Shared tab: a prototype somebody invited this user
+ * to, or one they only talked on.
  *
  * The same card as the gallery's own (`PrototypeCard.vue`), because it draws
  * the same picture and the same facts, minus the editors' stack: who it is
