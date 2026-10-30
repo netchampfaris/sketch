@@ -20,8 +20,12 @@ export type VSet = {
   // The matched route record's path, and '' for a set outside any RouterView.
   path: string
   options: () => Opt[]
-  // The slot's top-level elements, in document order.
+  // The slot's top-level elements, in document order: of the first copy in the page, when the tag is drawn many times.
   elements: () => Element[]
+  // Each copy's own `elements`, while it is mounted.
+  copies: (() => Element[])[]
+  // True when the set is the page: the root of the routed page component. Its tile shows the whole window.
+  page: () => boolean
 }
 // A heading over some of a state's options, when the caller grouped them.
 export type DGroup = { title: string; options: string[] }

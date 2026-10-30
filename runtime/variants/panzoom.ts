@@ -49,8 +49,8 @@ export function usePanZoom(getEl: () => HTMLElement | null) {
     }
 
     const onWheel = (e: WheelEvent) => {
+      // Over a live tile too: the version is lifted out of its page (lift.ts), so there is nothing in it to scroll to.
       const zoom = e.ctrlKey || e.metaKey
-      if (!zoom && (e.target as HTMLElement).closest?.('[data-live]')) return
       e.preventDefault()
       flags.touched = true
       if (zoom) {

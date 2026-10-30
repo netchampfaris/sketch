@@ -15,7 +15,7 @@ import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
 import { restoreScrolls } from './snapshot'
-import type { Snap } from './snapshot'
+import type { Crop, Snap } from './snapshot'
 import type { Sandbox } from './state'
 import type { TileBox } from './layout'
 
@@ -27,7 +27,14 @@ const props = defineProps<{
   win: { w: number; h: number }
   sandbox?: Sandbox
 }>()
-const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; openPage: []; openStates: []; near: [near: boolean] }>()
+// `resize`: the live tile's set changed size (something expanded, a state switched), so the grid can follow it.
+const emit = defineEmits<{
+  activate: [e: MouseEvent | KeyboardEvent]
+  openPage: []
+  openStates: []
+  near: [near: boolean]
+  resize: [size: { w: number; h: number } | null]
+}>()
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -43,9 +50,24 @@ useIntersectionObserver(
 
 // A set tile, and a state tile of one option's component states, show the set's own box; the others the whole window.
 const isSet = computed(() => !!props.tile.setKey)
-// The part of the page this tile shows: the set's own box, or the whole window.
+// The part of the page this tile shows: the set lifted out of its page (lift.ts), or the whole window. Live, the frame
+// reports where the set is each time it moves or resizes.
+const liveBox = ref<Crop | null>(null)
+watch(
+  () => props.live,
+  (live) => {
+    if (live) return
+    liveBox.value = null
+    emit('resize', null)
+  },
+)
+function onAnchor(box: Crop | null) {
+  liveBox.value = box
+  emit('resize', box ? { w: box.w, h: box.h } : null)
+}
 const rect = computed(() => {
   if (!isSet.value) return { x: 0, y: 0, w: props.win.w, h: props.win.h }
+  if (props.live && liveBox.value) return liveBox.value
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
   return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
 })
@@ -176,10 +198,17 @@ watch(
       <!-- Only the set's own box shows; the rest of the tile is the tile background. -->
       <div class="absolute overflow-hidden" :style="clip">
         <div v-if="live && sandbox" data-live class="absolute left-0 top-0 cursor-auto" :style="shift">
-          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" />
+          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" @anchor="onAnchor" />
         </div>
         <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0" :style="shift">
-          <div ref="snapEl" inert class="pointer-events-none" :style="{ width: win.w + 'px', height: win.h + 'px' }" v-html="snap.html" />
+          <div
+            ref="snapEl"
+            inert
+            class="pointer-events-none"
+            :data-sketch-lift="snap.lifted ? '' : undefined"
+            :style="{ width: win.w + 'px', height: win.h + 'px' }"
+            v-html="snap.html"
+          />
         </div>
       </div>
       <template v-if="!(live && sandbox)">
