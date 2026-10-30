@@ -48,7 +48,6 @@ export type Note = {
   tile?: TileRef
   createdAt: number
 }
-export const isTileNote = (n: { tile?: unknown }) => !!n.tile
 
 // The server's copy of a list may come from an older build or a hand edit, or be written by the
 // Prototype's own code: drop what is unusable instead of breaking the page.

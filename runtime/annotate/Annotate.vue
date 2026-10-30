@@ -411,12 +411,7 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 		applyPicks(t.anchor.picks, router)
 		await nextTick()
 	}
-	let el: Element | null = null
-	for (let i = 0; i < 30 && !unmounted; i++) {
-		el = resolve(t.anchor.selector)
-		if (el) break
-		await sleep(50)
-	}
+	const el = (await until(() => !!resolve(t.anchor.selector), 1500)) ? resolve(t.anchor.selector) : null
 	el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 	await sleep(el ? 250 : 0)
 	const r = el?.getBoundingClientRect()
