@@ -37,13 +37,6 @@ function go(to: number): void {
   played.value = null
 }
 
-/** A part's corners, set inline so no utility can win over them: round outer ends, 2px at every join. */
-function corners(at: number): string {
-  if (at === 0) return '9999px 2px 2px 9999px'
-  if (at === last) return '2px 9999px 9999px 2px'
-  return '2px'
-}
-
 /** A pill's fill: the ones before are full, the ones after empty, the current one follows its clip while it moves on. */
 function fill(at: number): string {
   if (at !== index.value) return at < index.value ? '100%' : '0%'
@@ -103,9 +96,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
         <!--
-          One segmented pill right under the clip, centred: parts 28 × 8px with 4px gaps, the outer ends fully round,
-          the joins only 2px round, so it reads as one pill cut into parts. Each part is a 24px-tall button around its
-          bar, so it is easy to hit.
+          The progress row right under the clip, centred, 4px gaps. Clips not on screen are 8px dots; the current one
+          grows to a 32px capsule and fills as it plays. Clips already seen stay filled, so the row shows how many
+          are left. Every part and its fill are fully round. Each part is a 24px-tall button, so it is easy to hit.
           Filled parts use the ink colour through its variable: Tailwind has no `bg-ink-*`.
         -->
         <div class="mx-auto mt-1 flex w-fit gap-1">
@@ -115,15 +108,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             type="button"
             :aria-label="`Show ${one.title}`"
             :aria-current="at === index"
-            class="group h-6 w-7 focus-visible:ring-0 focus-visible:focus-ring"
-                        @click="pick(at)"
+            class="group h-6 transition-[width] duration-300 ease-out focus-visible:ring-0 focus-visible:focus-ring"
+            :class="at === index ? 'w-8' : 'w-2'"
+            @click="pick(at)"
           >
-            <span
-              class="block h-2 overflow-hidden bg-surface-gray-3 group-hover:bg-surface-gray-4"
-              :style="{ borderRadius: corners(at) }"
-            >
+            <span class="block h-2 overflow-hidden rounded-full bg-surface-gray-3 group-hover:bg-surface-gray-4">
               <span
-                class="block h-full bg-[color:var(--ink-gray-8)]"
+                class="block h-full rounded-full bg-[color:var(--ink-gray-8)]"
                 :class="at === index && advance && played !== null ? 'transition-[width] duration-300 ease-linear' : ''"
                 :style="{ width: fill(at) }"
               />
