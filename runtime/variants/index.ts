@@ -1,5 +1,5 @@
-// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `enableMakeDefault`,
-// `makeDefault` and `Chrome` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
+// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. The other exports are internal, for annotate
+// and the Viewer, and are deliberately left out of the skill.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
 import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -8,15 +8,15 @@ import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, re
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { enableMakeDefault, makeDefault } from './default'
+export { enableMakeDefault } from './default'
 export { enableVariantEdit } from './edit'
 export { registerExtras, registerSeen } from './extras'
-export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
+export { badges, hasUnreadThreads, initBadges, readThread, setUnread } from './badges'
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { menuBind } from './menus'
 export { closeCanvas, openCanvas } from './state'
-export { applyPicks, currentPicks, picksAvailable, picksShown, picksWords } from './picks'
+export { applyPicks, currentPicks, picksShown, picksWords } from './picks'
 export type { DemoPick } from './picks'
 
 // A demo value (a persona, a workflow phase). The first option is the default. Options are a list, or an object of

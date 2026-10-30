@@ -8,7 +8,7 @@ import { slugOf } from './state'
 
 // A canvas tile in plain data: the page it belongs to (`route` sits beside it in an anchor), the variant option
 // or page state it shows, and the view it was pinned in. Options are named by their slot, never by their order,
-// so a tile keeps its comments when Make default reorders a set.
+// so a tile keeps its comments whatever else joins or leaves its set.
 export type TileRef = {
   kind: 'set' | 'state' | 'default'
   // The URL value of the pick the tile was pinned in: `set:overview/spend-summary`.

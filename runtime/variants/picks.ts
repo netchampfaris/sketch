@@ -48,9 +48,6 @@ export function picksShown(picks: DemoPick[] | undefined): boolean {
   })
 }
 
-// True once the page has registered every set and state a comment names (it is still mounting before that).
-export const picksAvailable = (picks: DemoPick[] | undefined) => (picks ?? []).every(reachable)
-
 // Put the Demo on these picks. The URL follows.
 export function applyPicks(picks: DemoPick[] | undefined, router: any) {
   for (const p of picks ?? []) {

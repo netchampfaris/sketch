@@ -15,9 +15,9 @@ import { pagesModel } from './snapshot'
 import { choices, currentOf, idOf, isChoice, nav, onPage, openCanvas, setId, sets, slugOfRoute, states } from './state'
 import type { DState, VSet } from './state'
 
-const [DefineRow, Row] = createReusableTemplate<{ s: VSet | DState; role?: boolean }>({
+const [DefineRow, Row] = createReusableTemplate<{ s: VSet | DState }>({
   inheritAttrs: false,
-  props: { s: { type: Object, required: true }, role: Boolean },
+  props: { s: { type: Object, required: true } },
 })
 const route = useRoute()
 const router = useRouter()
@@ -124,13 +124,6 @@ const menuOf = (s: VSet) =>
     onClick: () => (choices[idOf(s.path, s.key)] = o.value),
   }))
 
-function go(id: string) {
-  close()
-  const opener = pill.value?.querySelector('button') ?? null
-  openCanvas(router, id)
-  // The card is gone by now; Esc should land back on the Demo pill.
-  nav.opener = opener
-}
 // The page slug a set is filed under in the canvas's picks.
 const pageSlug = (path: string) => {
   const record = (router.options.routes as any[]).find((r) => r.path === path)
@@ -141,14 +134,18 @@ const hereStates = computed(() => pageStateRows.value.length > 0)
 const canOpen = computed(() => setRows.value.some((s) => s.path !== '') || hereStates.value || !pagesModel.value || pagesModel.value.some(hasItems))
 function openHere() {
   const first = setRows.value.find((s) => s.path !== '')
-  go(first ? `set:${pageSlug(first.path)}/${first.key}` : hereStates.value ? `page:${pageStateRows.value[0].path}` : 'auto')
+  close()
+  const opener = pill.value?.querySelector('button') ?? null
+  openCanvas(router, first ? `set:${pageSlug(first.path)}/${first.key}` : hereStates.value ? `page:${pageStateRows.value[0].path}` : 'auto')
+  // The card is gone by now; Esc should land back on the Demo pill.
+  nav.opener = opener
 }
 const rowLabel = (s: VSet | DState) => (isState(s) && !role(s) ? 'State' : s.label)
 const role = (s: VSet | DState) => isState(s) && s.path === ''
 </script>
 
 <template>
-  <DefineRow v-slot="{ s, role }">
+  <DefineRow v-slot="{ s }">
     <!-- Each row is a subgrid of the card, so labels and controls line up across rows. -->
     <div
       class="col-span-full grid grid-cols-subgrid items-center py-0.5"
@@ -201,7 +198,7 @@ const role = (s: VSet | DState) => isState(s) && s.path === ''
       class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[16px] bg-surface-elevation-2 p-2 shadow-lg ring-1 ring-outline-gray-2"
     >
       <div class="grid grid-cols-[auto_minmax(0,max-content)] items-center gap-x-2">
-        <Row v-for="s in appRows" :key="'a' + s.key" :s="s" role />
+        <Row v-for="s in appRows" :key="'a' + s.key" :s="s" />
         <Row v-for="s in pageStateRows" :key="'s' + s.key" :s="s" />
         <Row v-for="s in setRows" :key="setId(s)" :s="s" />
       </div>
