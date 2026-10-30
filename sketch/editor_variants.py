@@ -86,26 +86,12 @@ def targets_same(meta: dict, other: dict) -> bool:
 
 def leaders(name: str, host_file: str, set_name: str, keep: str | None = None) -> list[str]:
 	"""The adopted variants that lead this set now."""
-	registry = read_registry(name)
-	probe = {
-		"set": set_name,
-		"component": host_file if _is_component_host(name, host_file, set_name) else "",
-		"name": "",
-	}
-	found = []
-	for path, row in registry.items():
-		if path == keep or not isinstance(row, dict) or not row.get("default"):
-			continue
-
-		try:
-			meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-		except frappe.ValidationError:
-			continue
-
-		if meta and targets_same(meta, probe):
-			found.append(path)
-
-	return found
+	paths = [
+		path
+		for path, row in read_registry(name).items()
+		if path != keep and isinstance(row, dict) and row.get("default")
+	]
+	return _of_set(name, host_file, set_name, paths)
 
 
 def targeting(name: str, host_file: str, set_name: str) -> list[str]:
@@ -113,26 +99,37 @@ def targeting(name: str, host_file: str, set_name: str) -> list[str]:
 
 	A file whose `<variant>` tag cannot be read is left out: nothing says which set it is for.
 	"""
+	paths = [
+		row["path"]
+		for row in prototype_files.list_files(name)
+		if row["path"].endswith(".vue")
+		and (sharing.is_editor_path(row["path"]) or row["path"].startswith(sharing.ADOPTED_DIR))
+	]
+	return _of_set(name, host_file, set_name, paths)
+
+
+def _of_set(name: str, host_file: str, set_name: str, paths: list[str]) -> list[str]:
+	"""The paths whose `<variant>` tag targets this set."""
 	probe = {
 		"set": set_name,
 		"component": host_file if _is_component_host(name, host_file, set_name) else "",
 		"name": "",
 	}
 	found = []
-	for row in prototype_files.list_files(name):
-		path = row["path"]
-		if not path.endswith(".vue") or not (sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)):
-			continue
-
-		try:
-			meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-		except frappe.ValidationError:
-			continue
-
+	for path in paths:
+		meta = _meta(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
 
 	return found
+
+
+def _meta(name: str, path: str) -> dict | None:
+	"""A variant file's `<variant>` tag, or None when the file is gone or the tag does not parse."""
+	try:
+		return sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
+	except frappe.ValidationError:
+		return None
 
 
 def clear_defaults(name: str, host_file: str, set_name: str, keep: str | None = None) -> bool:
@@ -269,11 +266,7 @@ def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
 	path = path_of(option)
 	versions.lock(doc.name)
 	registry = read_registry(doc.name)
-	try:
-		meta = sharing.variant_meta(prototype_files.read_files(doc.name, [path])[0]["content"])
-	except frappe.ValidationError:
-		meta = None
-
+	meta = _meta(doc.name, path)
 	if path not in registry or not meta:
 		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
 
@@ -335,8 +328,12 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	except frappe.ValidationError:
 		frappe.throw(frappe._("That variant is already gone."), frappe.ValidationError)
 
-	meta = sharing.variant_meta(source) if _quiet(source) else None
-	label = (meta or {}).get("name") or option.rsplit("/", 1)[-1]
+	try:
+		label = (sharing.variant_meta(source) or {}).get("name")
+	except frappe.ValidationError:
+		# A broken file still deletes; it just has no label.
+		label = None
+	label = label or option.rsplit("/", 1)[-1]
 	if versions.pending(doc.name, by):
 		versions.commit(doc, "Changes before a variant was deleted", source="App", by=by)
 
@@ -352,16 +349,7 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	return {"option": option, "label": label, "sequence": version.sequence if version else None}
 
 
-def _quiet(source: str) -> bool:
-	"""True when the tag parses. A broken file still deletes; it just has no label."""
-	try:
-		sharing.variant_meta(source)
-		return True
-	except frappe.ValidationError:
-		return False
-
-
-def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
+def undo_delete(doc, username: str, is_owner: bool, sequence) -> dict:
 	"""Bring a deleted variant back. An editor may undo their own deletions only."""
 	sequence = _int(sequence)
 	row = frappe.db.get_value(

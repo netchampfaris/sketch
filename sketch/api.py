@@ -616,7 +616,7 @@ def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
 
 	`resolve_owned` is the permission check, so only the owner may rewrite the
 	source. Saves a version, so the change can be undone. See
-	`variant_default.move_slot` for what is refused.
+	`variant_default.record_slot` for what is refused.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return variant_default.set_default(doc, file, name, option)
@@ -1300,11 +1300,11 @@ def delete_variant_signed(name: str, username: str = "", exp: str = "", sig: str
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def undo_delete_variant_signed(
-	name: str, username: str = "", exp: str = "", sig: str = "", option: str = "", sequence: str = ""
+	name: str, username: str = "", exp: str = "", sig: str = "", sequence: str = ""
 ) -> dict:
 	"""Bring back the variant version `sequence` deleted, unless the tree changed since."""
 	doc, is_owner = _variant_person(name, username, exp, sig)
-	return editor_variants.undo_delete(doc, username, is_owner, sequence, option)
+	return editor_variants.undo_delete(doc, username, is_owner, sequence)
 
 
 @frappe.whitelist(methods=["POST"])

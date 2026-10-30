@@ -9,14 +9,11 @@ and this module writes that prop, so the agent never has to be asked and no
 option ever changes its place. Options show in the order they first appeared
 (sketch/variant_order.py), never in the order of the source.
 
-`move_slot` is the older way, kept for the tests that pin its text handling.
-
-`move_slot` is pure text in, text out. It walks the template's tags with a
+`record_slot` is pure text in, text out. It walks the template's tags with a
 small tokenizer that skips quoted attribute values, comments and CDATA, so a
 `>` inside `:class="a > b"` or a nested `<template v-if>` inside a slot cannot
-end a slot early. Everything outside the moved slot stays byte for byte: the
-slot is swapped with the text from the first slot up to it, so the whitespace
-that separated slots keeps its place.
+end a slot early. Only the set's opening tag changes; the rest of the file stays
+byte for byte.
 """
 
 import json
@@ -167,58 +164,6 @@ def find_sets(source: str, name: str | None) -> list[dict]:
 				break
 
 	return found
-
-
-def move_slot(source: str, name: str, option: str) -> str:
-	"""`source` with the `option` slot of the set `name` moved to the front.
-
-	Raises frappe.ValidationError, with a message the owner can read, when the
-	set is missing or repeated, the option is not in it, or it is already first.
-	"""
-	sets = find_sets(source, name)
-	if not sets:
-		frappe.throw(
-			frappe._('There is no <Variants name="{0}"> in this file.').format(name),
-			frappe.ValidationError,
-		)
-
-	if len(sets) > 1:
-		frappe.throw(
-			frappe._('<Variants name="{0}"> appears {1} times in this file. Names must be unique.').format(
-				name, len(sets)
-			),
-			frappe.ValidationError,
-		)
-
-	slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
-	matches = [s for s in slots if s["key"] == option]
-	if not matches:
-		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
-
-	if len(matches) > 1:
-		frappe.throw(
-			frappe._('"{0}" lists the option "{1}" more than once.').format(name, option),
-			frappe.ValidationError,
-		)
-
-	target = matches[0]
-	first = slots[0]
-	if target is first:
-		frappe.throw(
-			frappe._('"{0}" is already the default for {1}.').format(label_of(option), name),
-			frappe.ValidationError,
-		)
-
-	# [first … previous slot] [gap] [target]  ->  [target] [gap] [first … previous slot]
-	previous = max((s for s in slots if s["end"] <= target["start"]), key=lambda s: s["end"])
-	gap = source[previous["end"] : target["start"]]
-	return (
-		source[: first["start"]]
-		+ source[target["start"] : target["end"]]
-		+ gap
-		+ source[first["start"] : previous["end"]]
-		+ source[target["end"] :]
-	)
 
 
 def only_set(source: str, name: str) -> tuple[dict, list[dict]]:
