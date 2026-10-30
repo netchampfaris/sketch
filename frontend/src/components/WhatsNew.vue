@@ -96,12 +96,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
         <!--
-          One segmented pill right under the clip, on the left: parts 28 × 8px with 2px gaps, the outer ends fully round,
+          One segmented pill right under the clip, centred: parts 28 × 8px with 4px gaps, the outer ends fully round,
           the joins only 2px round, so it reads as one pill cut into parts. Each part is a 24px-tall button around its
           bar, so it is easy to hit.
           Filled parts use the ink colour through its variable: Tailwind has no `bg-ink-*`.
         -->
-        <div class="mt-1 flex gap-0.5 self-start">
+        <div class="mx-auto mt-1 flex w-fit gap-1">
           <button
             v-for="(one, at) in slides"
             :key="one.id"
