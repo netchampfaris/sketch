@@ -26,12 +26,10 @@ export const cache = shallowReactive<Record<string, Snap>>({})
 export const session = {
   model: null as any[] | null,
   modelKey: '',
-  // The last thing shown, as it is written in the URL.
-  pick: null as string | null,
   // Whether the Show panel is open on desktop.
   panel: true,
 }
-// The pages the canvas found, once it has looked (reactive, so the canvas button can follow it).
+// The pages the canvas found, once it has looked (reactive, so the Demo card's Open canvas can follow it).
 export const pagesModel = shallowRef<any[] | null>(null)
 
 export const nextFrames = (n = 2) =>

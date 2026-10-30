@@ -63,11 +63,7 @@ const pickValue = computed(() => (pick.value ? valueOfPick(pick.value) : ''))
 watch(
   [model, raw],
   () => {
-    if (!model.value) return
-    if (pick.value) {
-      session.pick = valueOfPick(pick.value)
-      return
-    }
+    if (!model.value || pick.value) return
     const next = fallbackPick(model.value, openedOn)
     if (next) router.replace({ query: { ...route.query, canvas: next } })
   },
@@ -147,7 +143,7 @@ function statesOfOption(cacheId: string): StateInfo[] | 'error' | null {
   return snap.reg.states.filter((s) => s.path === v.page.path && !!s.of && slugOf(s.of) === slugOf(v.of))
 }
 const layout = computed(() =>
-  layoutPick(pick.value, model.value ?? [], {
+  layoutPick(pick.value, {
     win,
     vp: vpSize.value,
     phone: phone.value,
@@ -155,7 +151,7 @@ const layout = computed(() =>
       const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
       return r ? { w: r.w, h: r.h } : null
     },
-    statesOf: (id) => statesOfOption(id),
+    statesOf: statesOfOption,
   }),
 )
 const pz = usePanZoom(() => vp.value)
@@ -282,20 +278,12 @@ const onNear = (id: string, near: boolean) => {
   } else visible.delete(id)
 }
 
-const drawn_ = computed(() => layout.value.tiles)
-const total = computed(() => new Set(drawn_.value.map((t) => keyOf(t.cacheId))).size)
-const drawn = computed(() => {
-  const keys = new Set(drawn_.value.map((t) => keyOf(t.cacheId)))
-  let n = 0
-  keys.forEach((k) => cache[k] && n++)
-  return n
-})
+const drawKeys = computed(() => [...new Set(layout.value.tiles.map((t) => keyOf(t.cacheId)))])
+const total = computed(() => drawKeys.value.length)
+const drawn = computed(() => drawKeys.value.filter((k) => cache[k]).length)
 const drawing = computed(() => !!model.value && drawn.value < total.value)
 
-
 watch([() => layout.value.tiles.length, lensStr, pickValue], () => pump())
-
-
 
 // ---- Live tile
 const liveId = ref<string | null>(null)
@@ -542,8 +530,7 @@ async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
   }
   const t = tileBox(spot)!
   // The tile in the middle of what the panel leaves open; a tile bigger than that is centred on the spot instead.
-  const w = fullSize.value.w - (panelShown.value ? PANEL_W : 0)
-  const h = fullSize.value.h
+  const { w, h } = vpSize.value
   const fits = t.w * view.z <= w && t.h * view.z <= h
   const cx = fits ? t.x + t.w / 2 : t.x + at.fx * t.w
   const cy = fits ? t.y + t.h / 2 : t.y + at.fy * t.h

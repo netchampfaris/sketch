@@ -1,8 +1,8 @@
-// Pan and zoom for the canvas viewport: wheel and trackpad, drag, touch pinch, and fit.
+// Pan and zoom for the canvas viewport: wheel and trackpad, drag and touch pinch. Fit is the layout's (layout.ts).
 import { reactive } from 'vue'
 
 export const MIN_ZOOM = 0.05
-export const MAX_ZOOM = 2
+const MAX_ZOOM = 2
 const clamp = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
 
 export function usePanZoom(getEl: () => HTMLElement | null) {
@@ -27,18 +27,6 @@ export function usePanZoom(getEl: () => HTMLElement | null) {
     const el = getEl()
     if (el) zoomAt(z, el.clientWidth / 2, el.clientHeight / 2)
   }
-  // Fit a world rect inside the viewport with padding, never above `max`.
-  function fit(r: { x: number; y: number; w: number; h: number }, pad = 48, max = 1) {
-    const el = getEl()
-    if (!el || !r.w || !r.h) return
-    const vw = el.clientWidth, vh = el.clientHeight
-    const z = clamp(Math.min(max, (vw - pad * 2) / r.w, (vh - pad * 2) / r.h))
-    view.z = z
-    view.x = (vw - r.w * z) / 2 - r.x * z
-    view.y = (vh - r.h * z) / 2 - r.y * z
-    flags.touched = false
-  }
-
   function attach(el: HTMLElement) {
     const pts = new Map<number, { x: number; y: number }>()
     let pinch: { d: number; z: number } | null = null
@@ -118,5 +106,5 @@ export function usePanZoom(getEl: () => HTMLElement | null) {
     }
   }
 
-  return { view, zoomAt, zoomBy, zoomTo, fit, attach, flags, moved: () => travel > 4 }
+  return { view, zoomBy, zoomTo, attach, flags, moved: () => travel > 4 }
 }
