@@ -68,7 +68,7 @@ NOTES = json.dumps(
 #: Every method, with arguments that would reach its body. A refusal must come before any of them is read.
 CALLS = {
 	"delete_variant": {"option": "@d2tvaed/compact"},
-	"undo_delete_variant": {"option": "@d2tvaed/compact", "sequence": "1"},
+	"undo_delete_variant": {"sequence": "1"},
 	"save_annotations": {"data": NOTES, "epoch": "0"},
 	"comments_list": {},
 	"comment_add": {"anchor": ANCHOR, "text": "Hi"},
@@ -188,7 +188,7 @@ class TestVariants(ViewerApiCase):
 		)
 		self.assertNotIn("src/variants/@d2tvaed/compact.vue", self.tree())
 
-		back = self.call(self.ed, "undo_delete_variant", option=option, sequence=str(done["sequence"]))
+		back = self.call(self.ed, "undo_delete_variant", sequence=str(done["sequence"]))
 		self.assertEqual((back["file"], back["set"], back["label"]), (done["file"], "KPI strip", "Compact"))
 		self.assertTrue(back["sequence"])
 		self.assertEqual(self.tree()["src/variants/@d2tvaed/compact.vue"], COMPACT)
@@ -202,9 +202,9 @@ class TestVariants(ViewerApiCase):
 
 		done = self.call(self.owner, "delete_variant", option=mine)
 		with self.assertRaises(frappe.PermissionError):
-			self.call(self.ed, "undo_delete_variant", option=mine, sequence=str(done["sequence"]))
+			self.call(self.ed, "undo_delete_variant", sequence=str(done["sequence"]))
 
-		self.call(self.owner, "undo_delete_variant", option=mine, sequence=str(done["sequence"]))
+		self.call(self.owner, "undo_delete_variant", sequence=str(done["sequence"]))
 		self.assertIn("src/variants/@d2tvaed/compact.vue", self.tree())
 
 	def test_the_owner_deletes_any_editors_variant(self):

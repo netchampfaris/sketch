@@ -80,10 +80,10 @@ def delete_variant(name: str, option: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def undo_delete_variant(name: str, option: str, sequence: str) -> dict:
+def undo_delete_variant(name: str, sequence: str) -> dict:
 	"""Bring back the variant version `sequence` deleted. An editor may undo their own deletions only."""
 	doc, who = _variant_editor(name)
-	return editor_variants.undo_delete(doc, who.username, who.is_owner, sequence, option)
+	return editor_variants.undo_delete(doc, who.username, who.is_owner, sequence)
 
 
 # ---------------------------------------------------------------------- notes

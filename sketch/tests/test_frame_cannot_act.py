@@ -365,7 +365,7 @@ def calls(doc, owner_username: str, editor_username: str, thread: str) -> list[d
 		("Keep only this", "sketch.api.keep_variant", variant),
 		("Undo Keep only this", "sketch.api.undo_keep_variant", undo),
 		("Delete variant", "sketch.viewer_api.delete_variant", {"name": name, "option": calm}),
-		("Undo Delete variant", "sketch.viewer_api.undo_delete_variant", {"name": name, "option": calm, "sequence": "1"}),
+		("Undo Delete variant", "sketch.viewer_api.undo_delete_variant", {"name": name, "sequence": "1"}),
 		("Save notes", "sketch.viewer_api.save_annotations", {"name": name, "data": note, "epoch": "0"}),
 		("Read comments (POST)", "sketch.viewer_api.comments_list", {"name": name}),
 		("Comment", "sketch.viewer_api.comment_add", {"name": name, "anchor": anchor, "text": "forged"}),

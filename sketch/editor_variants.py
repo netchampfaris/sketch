@@ -99,22 +99,12 @@ def targets_same(meta: dict, other: dict) -> bool:
 
 def leaders(name: str, host_file: str, set_name: str, keep: str | None = None) -> list[str]:
 	"""The adopted variants that lead this set now."""
-	registry = read_registry(name)
-	probe = {
-		"set": set_name,
-		"component": host_file if _is_component_host(name, host_file, set_name) else "",
-		"name": "",
-	}
-	found = []
-	for path, row in registry.items():
-		if path == keep or not isinstance(row, dict) or not row.get("default"):
-			continue
-
-		meta = meta_at(name, path)
-		if meta and targets_same(meta, probe):
-			found.append(path)
-
-	return found
+	paths = [
+		path
+		for path, row in read_registry(name).items()
+		if path != keep and isinstance(row, dict) and row.get("default")
+	]
+	return _of_set(name, host_file, set_name, paths)
 
 
 def targeting(name: str, host_file: str, set_name: str) -> list[str]:
@@ -122,17 +112,24 @@ def targeting(name: str, host_file: str, set_name: str) -> list[str]:
 
 	A file whose `<variant>` tag cannot be read is left out: nothing says which set it is for.
 	"""
+	paths = [
+		row["path"]
+		for row in prototype_files.list_files(name)
+		if row["path"].endswith(".vue")
+		and (sharing.is_editor_path(row["path"]) or row["path"].startswith(sharing.ADOPTED_DIR))
+	]
+	return _of_set(name, host_file, set_name, paths)
+
+
+def _of_set(name: str, host_file: str, set_name: str, paths: list[str]) -> list[str]:
+	"""The paths whose `<variant>` tag targets this set."""
 	probe = {
 		"set": set_name,
 		"component": host_file if _is_component_host(name, host_file, set_name) else "",
 		"name": "",
 	}
 	found = []
-	for row in prototype_files.list_files(name):
-		path = row["path"]
-		if not path.endswith(".vue") or not (sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)):
-			continue
-
+	for path in paths:
 		meta = meta_at(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
@@ -276,11 +273,7 @@ def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
 	path = path_of(option)
 	versions.lock(doc.name)
 	registry = read_registry(doc.name)
-	try:
-		meta = sharing.variant_meta(prototype_files.read_files(doc.name, [path])[0]["content"])
-	except frappe.ValidationError:
-		meta = None
-
+	meta = meta_at(doc.name, path)
 	if path not in registry or not meta:
 		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
 
@@ -367,7 +360,7 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	}
 
 
-def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
+def undo_delete(doc, username: str, is_owner: bool, sequence) -> dict:
 	"""Bring a deleted variant back. An editor may undo their own deletions only."""
 	sequence = _int(sequence)
 	done = versions.action_of(doc.name, sequence)

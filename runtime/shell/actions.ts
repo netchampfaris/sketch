@@ -189,7 +189,7 @@ export async function deleteVariant(option: string, key: string, tileId = '') {
 		`Deleted ${done.label}`,
 		sequence
 			? async () => {
-					const back = await landed(() => write('sketch.viewer_api.undo_delete_variant', { name: ctx.name, option: done.option, sequence: String(sequence) }))
+					const back = await landed(() => write('sketch.viewer_api.undo_delete_variant', { name: ctx.name, sequence: String(sequence) }))
 					toast.success(`Restored ${back.label || done.label}`)
 				}
 			: null,

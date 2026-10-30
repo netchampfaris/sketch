@@ -120,7 +120,7 @@ class ShareCase(IntegrationTestCase):
 
 	def undo_delete_as(self, user, option, sequence):
 		with set_user(user):
-			return viewer_api.undo_delete_variant(self.doc.name, option=option, sequence=str(sequence))
+			return viewer_api.undo_delete_variant(self.doc.name, sequence=str(sequence))
 
 	def add_variant(self, content=COMPACT, name="compact.vue", commit=True):
 		self.invite()

@@ -594,7 +594,7 @@ def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
 
 	`resolve_owned` is the permission check, so only the owner may rewrite the
 	source. Saves a version, so the change can be undone. See
-	`variant_default.move_slot` for what is refused.
+	`variant_default.record_slot` for what is refused.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return variant_default.set_default(doc, file, name, option)
