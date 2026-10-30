@@ -47,10 +47,10 @@ const firstLoad = computed(() => !settled.value)
  */
 const showIntro = computed(() => sessionSettled.value && !signedIn.value)
 
-/** The toolbar shows whenever there is anything public to look through. */
+/** The toolbar shows to a signed-in reader whenever there is anything public; a signed-out visitor gets the hero and the grid only. */
 const query = ref('')
 const owner = ref<string | null>(null)
-const showFilters = computed(() => items.value.length > 0)
+const showFilters = computed(() => signedIn.value && items.value.length > 0)
 
 /** Owners of what is public, most prototypes first, with how many each has. */
 const owners = computed(() => {
@@ -147,7 +147,7 @@ onMounted(() => {
 
   <div class="px-3 pb-10 sm:px-5" :class="showIntro ? '' : 'pt-6'">
     <!--
-      The toolbar, whenever anything is public, on the left: a search by title,
+      The toolbar, signed in and whenever anything is public, on the left: a search by title,
       then an owner picker (avatar, name, and how many they have public), both 28px. On a phone each takes its own line.
     -->
     <div v-if="showFilters" class="mb-4 flex flex-col gap-2 sm:flex-row">
