@@ -298,9 +298,15 @@ dayjs(row.modified).fromNow()        // "3 days ago"
 ### `sketch:variants`
 
 When the user asks for variants, options, alternatives or versions of anything,
-use `<Variants>`. Never build a switcher. Each named slot is one option, and the
-first slot is the default, so put the current design first. Sketch adds the
+use `<Variants>`. Never build a switcher. Each named slot is one option. Sketch adds the
 pill, the URL and the Keep button.
+
+The default is recorded on the tag: `<Variants name="Leave card" default="timeline">`
+shows `timeline` when nothing is picked. With no `default`, the first slot is the
+default, so a new set puts the current design first. Sketch writes `default` when
+the owner picks Make default; leave it as it is. Options show in the order they
+first appeared, oldest first, whatever their order in the file, so never reorder
+slots to change the default: set or change `default` instead.
 
 ```vue
 <script setup>
@@ -322,9 +328,16 @@ import { Variants } from 'sketch:variants'
   It is unique on a page.
 - A set covers the smallest part that differs. A whole page is fine when the
   whole page differs.
+- When the part repeats (a card in a list, a row in a table, an item in a
+  board), put the set inside the component that renders one item
+  (`src/components/DealCard.vue`), so every copy follows the pick: Sketch counts
+  every copy of one `<Variants>` tag as one set. Never wrap a single copy in the
+  page: the others would stay on the old design.
 - When a note says "Keep …", replace the `<Variants>` block with the kept
   slot's content, delete the other slots and any code only they used, then
   commit.
+- Add a new option as a new slot anywhere in the set; it shows last because it
+  is the newest. It never becomes the default unless the user asks.
 
 #### Demo states
 

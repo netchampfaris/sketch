@@ -10,7 +10,7 @@ import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, re
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { registerExtras } from './extras'
+export { registerExtras, registerSeen } from './extras'
 export { badges } from './badges'
 export { bridge, canvasReport, landed } from './bridge'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'

@@ -1,6 +1,6 @@
 // The canvas world for one pick: one even grid of tiles in canvas units (CSS px at 100% zoom). It is computed
 // once per view, window size and panel state, with the largest gaps it needs, and zoom never touches it.
-import type { DGroup, Opt } from './state'
+import { defaultOf, type DGroup, type Opt } from './state'
 import type { Pick } from './picker'
 
 export const GAP = 48
@@ -120,7 +120,7 @@ function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
       setFile: set.file,
       setOptions: set.options,
       option: o.value,
-      isDefault: i === 0,
+      isDefault: o.value === defaultOf(set.options),
       meta: set.meta ?? undefined,
     }))
   }

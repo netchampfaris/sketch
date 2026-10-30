@@ -6,7 +6,10 @@ import type { InjectionKey } from 'vue'
 import { matchedRouteKey } from 'vue-router'
 
 // `author` is the username of the teammate who made the option, and absent for the owner's own.
-export type Opt = { value: string; label: string; author?: string }
+// `isDefault` marks the set's default, wherever it sits.
+export type Opt = { value: string; label: string; author?: string; isDefault?: boolean }
+// The option a set shows when nothing is picked.
+export const defaultOf = (o: readonly Opt[]) => (o.find((x) => x.isDefault) ?? o[0])?.value
 export type VSet = {
   key: string
   label: string
@@ -72,7 +75,7 @@ export const choices = reactive<Record<string, string>>({})
 export const currentOf = (s: VSet) => {
   const o = s.options()
   const c = choices[setId(s)]
-  return o.some((x) => x.value === c) ? c : o[0]?.value
+  return o.some((x) => x.value === c) ? c : defaultOf(o)
 }
 // Demo states, listed while a caller is mounted. Values are kept per page for the session.
 export const states = reactive<Record<string, DState>>({})
@@ -118,7 +121,7 @@ export function mirrorSets(router: any) {
   const route = router.currentRoute.value
   const mine = sets.filter((s) => onPage(route, s.path))
   mine.forEach((s) => knownV.add(s.key))
-  const chosen = mine.filter((s) => currentOf(s) !== s.options()[0]?.value).map((s) => `${s.key}.${currentOf(s)}`)
+  const chosen = mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
   mirrorParam(router, 'v', knownV, chosen)
 }
 
