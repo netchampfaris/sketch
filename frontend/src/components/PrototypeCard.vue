@@ -239,16 +239,22 @@ const menuOptions = computed(() => [
         <template #prefix><span class="lucide-lock size-3" aria-hidden="true" /></template>
       </Badge>
       <!--
-        Status, not a second Share button: who it is shared with, up to three faces and then +n.
-        Not a button: sharing is in the ⋯ menu. The ring, in the card's own surface, cuts each face from the next.
+        Status: who it is shared with, up to three faces and then +n. A click opens the share dialog the menu opens,
+        but it draws as faces, not as a Button: no box, no hover fill. The ring is the page's own surface colour
+        (`--surface-base`; Tailwind has no `ring-surface-*`), so it cuts each face from the next.
       -->
       <Tooltip v-if="sharedWith.length" :text="sharedWith.text">
-        <span class="flex items-center" role="img" :aria-label="sharedWith.text">
+        <button
+          type="button"
+          class="flex items-center rounded-full focus-visible:ring-0 focus-visible:focus-ring"
+          :aria-label="sharedWith.text"
+          @click="shareOpen = true"
+        >
             <span class="flex -space-x-1.5">
               <Avatar
                 v-for="person in sharedWith.shown"
                 :key="person.username"
-                class="ring-2 ring-surface-base"
+                class="ring-2 ring-[color:var(--surface-base)]"
                 size="sm"
                 :theme="avatarTheme(person.username)"
                 :image="person.user_image"
@@ -256,7 +262,7 @@ const menuOptions = computed(() => [
               />
             </span>
             <span v-if="sharedWith.more" class="ml-1 text-xs tabular-nums text-ink-gray-5">+{{ sharedWith.more }}</span>
-        </span>
+        </button>
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
