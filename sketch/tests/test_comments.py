@@ -403,6 +403,20 @@ class TestCaps(CommentCase):
 		with mock.patch.object(comments, "MAX_THREADS", 1):
 			self.call(api.comment_reply, self.reader_name, thread=thread["id"], text="still fine")
 
+	def test_an_element_anchor_stores_no_number_a_browser_cannot_parse(self):
+		"""`json.loads` takes NaN and Infinity, `JSON.parse` does not: one stored would break the list for everyone."""
+		anchor = {
+			**ANCHOR,
+			"offset": {"x": float("nan"), "y": 0.25},
+			"rect": {"x": float("inf"), "y": 20, "w": 100, "h": 40},
+			"box": {"w": float("-inf")},
+		}
+		stored = self.start(self.reader_name, anchor=anchor)["anchor"]
+		self.assertEqual(stored["offset"], {"x": 0, "y": 0.25})
+		self.assertEqual(stored["rect"], {"x": 0, "y": 20.0, "w": 100.0, "h": 40.0})
+		self.assertNotIn("box", stored)
+		json.dumps(self.call(api.comments_list, self.reader_name), allow_nan=False)
+
 	def test_text_with_angle_brackets_survives_the_http_door(self):
 		utils.require_webserver()
 		p = self.pass_for(self.reader_name)
@@ -890,6 +904,14 @@ class TestFormerCommenter(CommentCase):
 		self.assertRegex(page, r'<a href="/"[^>]*>Back to Sketch</a>')
 		self.assertNotIn("hello", page)
 		self.assertNotIn("sketch-data", page)
+
+	def test_the_owners_name_on_that_page_is_text_not_markup(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		frappe.db.set_value("User", self.owner, "full_name", "<i>Ann</i> Lee")
+		page = self.render(self.reader).get_data(as_text=True)
+		self.assertNotIn("<i>Ann</i>", page)
+		self.assertIn("&lt;i&gt;Ann&lt;/i&gt; made this prototype private", page)
 
 	def test_someone_who_never_commented_gets_the_plain_404(self):
 		self.start(self.reader_name)

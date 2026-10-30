@@ -2,7 +2,7 @@
 // comment is sent each one that was picked becomes "@[username]", the form the server stores (sketch/comments.py). So does
 // a "@username" or an exact "@Full Name" typed by hand. The server keeps a mention only for someone on the list the page
 // was given; any other "@xyz" stays plain text.
-import { mentionable, type Mentionable } from './comments'
+import { TOKEN, mentionable, type Mentionable } from './comments'
 
 // Two people on the list share a name: only then does the list and the box show a username beside it.
 export const hasTwin = (p: Mentionable) => mentionable.value.some((o) => o.username !== p.username && o.name === p.name)
@@ -42,7 +42,7 @@ export function encode(text: string): string {
 
 // The words as they are edited: each @[username] as its label again, and picked again.
 export function decode(text: string): string {
-  return text.replace(/@\[([a-z][a-z0-9-]{2,29})\]/g, (whole, username: string) => {
+  return text.replace(TOKEN, (_, username: string) => {
     const p = mentionable.value.find((m) => m.username === username)
     if (!p) return `@${username}`
     remember(p)

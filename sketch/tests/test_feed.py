@@ -56,6 +56,15 @@ class TestFeedPage(IntegrationTestCase):
 		for mark in BUNDLE_MARKS:
 			self.assertIn(mark, body)
 
+	def test_whats_new_is_not_a_page(self):
+		"""What's new is a modal, not a route. A direct load of /whats-new is an unknown path, and
+		serves no bundle."""
+		response = utils.request("GET", "/whats-new")
+
+		self.assertEqual(response.status_code, 404)
+		for mark in BUNDLE_MARKS:
+			self.assertNotIn(mark, response.text)
+
 	def test_a_guest_is_still_refused_the_bundle_elsewhere(self):
 		"""The rest of problem B4 stands. A deep link into the app bounces to
 		/login before a byte of the bundle is served."""
@@ -64,6 +73,41 @@ class TestFeedPage(IntegrationTestCase):
 		self.assertEqual(response.status_code, 301)
 		for mark in BUNDLE_MARKS:
 			self.assertNotIn(mark, response.text)
+
+
+class TestSignInUrl(IntegrationTestCase):
+	"""`sketch.api.sign_in_url`: the hero's "Continue with GitHub" goes straight to the provider only
+	when the site has exactly one."""
+
+	def url(self, providers: list[str]):
+		from unittest import mock
+
+		from sketch import api
+
+		with (
+			set_user("Guest"),
+			mock.patch.object(api, "_social_logins", return_value=providers),
+			mock.patch("frappe.utils.oauth.get_oauth2_authorize_url", return_value="https://github.test/auth") as built,
+		):
+			return api.sign_in_url(), built
+
+	def test_one_provider_goes_straight_to_it(self):
+		url, built = self.url(["github"])
+
+		self.assertEqual(url, "https://github.test/auth")
+		built.assert_called_once_with("github", "")
+
+	def test_no_provider_leaves_it_to_the_login_page(self):
+		url, built = self.url([])
+
+		self.assertIsNone(url)
+		built.assert_not_called()
+
+	def test_two_providers_leave_the_choice_to_the_login_page(self):
+		url, built = self.url(["github", "google"])
+
+		self.assertIsNone(url)
+		built.assert_not_called()
 
 
 class TestFeedListing(IntegrationTestCase):

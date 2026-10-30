@@ -1,15 +1,19 @@
 <script setup lang="ts">
 /**
- * Your prototypes: the Prototype gallery (spec 11).
+ * Prototypes: the Prototype gallery (spec 11, decisions 69 to 72).
  *
- * The header holds the count and the one primary action. The body is a
- * responsive grid of cards, each with a live preview of the Prototype.
+ * No visible title (decision 79): one toolbar row, then one grid of cards,
+ * newest update first: the user's own and the ones shared with them.
+ * Shared is what somebody invited them to, plus what they only commented on.
+ * Tabs "All · Mine · Shared" show only while there is something shared, and a
+ * search sits beside them once the tab holds more than ten.
  *
  * The screen also polls, because this is the screen a new user watches while
  * the agent writes its first Prototype. See the polling block below.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Button, PageHeader, Skeleton, useCall } from 'frappe-ui'
+import { useRoute, useRouter } from 'vue-router'
+import { Button, Skeleton, TabButtons, TextInput, useCall } from 'frappe-ui'
 import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
 import SharedCard from '../components/SharedCard.vue'
@@ -20,19 +24,83 @@ import type { Prototype, SharedPrototype } from '../types'
 const showPicker = ref(false)
 
 const items = computed(() => prototypes.data ?? [])
-const count = computed(() => items.value.length)
 
 /**
- * Prototypes somebody invited this user to. The section draws only while there
- * is one, so most users never see it.
+ * Prototypes somebody invited this user to, then the ones this user commented on or was mentioned in and neither
+ * owns nor edits. A prototype in both reads once, as the invitation.
  */
-const shared = computed(() => sharedPrototypes.data ?? [])
+const shared = computed(() => {
+  const invited = sharedPrototypes.data ?? []
+  const named = new Set(invited.map((row) => row.name))
+  const talked = (conversationPrototypes.data ?? []).filter((row) => !named.has(row.name))
+  return [
+    ...invited.map((row) => ({ row, conversation: false })),
+    ...talked.map((row) => ({ row, conversation: true })),
+  ]
+})
+
+type Tab = 'all' | 'mine' | 'shared'
+
+const route = useRoute()
+const router = useRouter()
+
+/** The tab is in the address (`?tab=mine`, `?tab=shared`; All is no parameter), so a reload and a link keep it. */
+const requested = computed<Tab>(() => {
+  const tab = route.query.tab
+  return tab === 'mine' || tab === 'shared' ? tab : 'all'
+})
+
+/** There is no Shared tab to land on while nothing is shared, so a stale `?tab=shared` reads as All. */
+const tab = computed<Tab>(() => (requested.value === 'shared' && !shared.value.length ? 'all' : requested.value))
+
+const tabModel = computed<Tab>({
+  get: () => tab.value,
+  set: (value) => {
+    const { tab: _drop, ...rest } = route.query
+    router.replace({ query: value === 'all' ? rest : { ...rest, tab: value } })
+  },
+})
+
+const showTabs = computed(() => shared.value.length > 0)
+
+const counts = computed<Record<Tab, number>>(() => ({
+  all: items.value.length + shared.value.length,
+  mine: items.value.length,
+  shared: shared.value.length,
+}))
+
+const tabs: { value: Tab; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'mine', label: 'Mine' },
+  { value: 'shared', label: 'Shared' },
+]
+
+/** The cards of the tab, newest update first across both kinds. `modified` is the tree's own stamp. */
+const tabItems = computed(() => {
+  const mine = items.value.map((row) => ({ row, shared: false, conversation: false }))
+  const others = shared.value.map((one) => ({ row: one.row, shared: true, conversation: one.conversation }))
+  const rows = tab.value === 'mine' ? mine : tab.value === 'shared' ? others : [...mine, ...others]
+  return rows.sort((a, b) => (b.row.modified ?? '').localeCompare(a.row.modified ?? ''))
+})
+
+/** The search appears once the tab holds more than ten, and filters by title. */
+const SEARCH_ABOVE = 10
+const query = ref('')
+const showSearch = computed(() => tabItems.value.length > SEARCH_ABOVE)
+const needle = computed(() => (showSearch.value ? query.value.trim() : ''))
+const visible = computed(() =>
+  needle.value
+    ? tabItems.value.filter((one) => one.row.title.toLowerCase().includes(needle.value.toLowerCase()))
+    : tabItems.value,
+)
 
 /**
- * Prototypes this user commented on or was mentioned in, and neither owns nor
- * edits. The same card and the same news line, so a reply reaches them.
+ * The empty state's title. A user with prototypes shared to them but none of their own sees it on Mine only, so the
+ * sentence is about them and not about the product.
  */
-const conversations = computed(() => conversationPrototypes.data ?? [])
+const emptyTitle = computed(() =>
+  tab.value === 'mine' && shared.value.length ? 'No prototypes of your own yet' : 'No prototypes yet',
+)
 
 /**
  * True until the first list lands. It latches, and it is not a computed over
@@ -45,7 +113,20 @@ const conversations = computed(() => conversationPrototypes.data ?? [])
  * every card action.
  */
 const settled = ref(false)
-const firstLoad = computed(() => !settled.value)
+const firstLoad = computed(() => !settled.value || !sharedSettled.value)
+
+/**
+ * The first answer of all three lists, not only the owned one: the tabs and the grid's first row both depend on what
+ * is shared, so waiting for it keeps the page from growing a tab row under the pointer.
+ */
+const sharedSettled = ref(false)
+watch(
+  () => [sharedPrototypes.isFinished, conversationPrototypes.isFinished],
+  ([invited, talked]) => {
+    if (invited && talked) sharedSettled.value = true
+  },
+  { immediate: true },
+)
 
 /**
  * True once an agent has called /mcp with a good token (plan v2, step 1.5).
@@ -93,10 +174,10 @@ const emptyBody = computed(() =>
 const POLL_MS = 4000
 
 /**
- * The poll's own reader. It hits the same endpoint as `prototypes` and writes
- * a separate copy of the answer, which the poll then compares.
+ * The poll's own reader for one list. It hits the same endpoint as the store's
+ * list and writes a separate copy of the answer, which it then compares.
  *
- * It cannot be `prototypes.reload()`: that commits the answer before anyone
+ * It cannot be the store's `reload()`: that commits the answer before anyone
  * can look at it, and `reload()` is `useFetch.execute`, so every poll would
  * also flip `isFetching` and `isFinished` under the whole screen.
  *
@@ -104,15 +185,9 @@ const POLL_MS = 4000
  * `response.message`, while `/api/v2/method/...` answers `{"data": ...}`
  * (frappe-ui utils/frappeRequest.ts, `transformResponse`), so it would read
  * `undefined` on every poll.
- */
-const probe = useCall<Prototype[]>({
-  url: method('list_prototypes'),
-  immediate: false,
-})
-
-/**
- * The list the store currently holds, serialised. The poll compares against
- * this and writes nothing when it matches.
+ *
+ * `signature` is the list the store currently holds, serialised. The poll
+ * compares against it and writes nothing when it matches.
  *
  * The Viewer compares one revision string (`sketch.api.prototype_revision`).
  * There is no list-wide equivalent, so the payload is the revision: it
@@ -128,45 +203,39 @@ const probe = useCall<Prototype[]>({
  * the user has seen. Seeding it from the first poll instead would swallow any
  * write made between mount and that poll: the new row would arrive, become
  * the baseline, and never be committed.
+ *
+ * The read answers false when the request failed, null when the screen went
+ * while it was out, and true otherwise.
  */
-let signature = ''
-let sharedSignature = ''
-let conversationSignature = ''
+function pollerOf<T>(store: { data: T[] | null | undefined; reload: () => Promise<unknown> }, endpoint: string) {
+  const probe = useCall<T[]>({ url: method(endpoint), immediate: false })
+  let signature = ''
+  watch(
+    () => store.data,
+    (rows) => {
+      signature = JSON.stringify(rows ?? [])
+    },
+    { immediate: true },
+  )
+  return async (alive: () => boolean): Promise<boolean | null> => {
+    // `reload()` resolves rather than rejects on a failed request
+    // (@vueuse/core `useFetch.execute`, called with `throwOnFailed` unset), so
+    // the error ref is the only signal that the answer is not real.
+    const rows = await probe.reload()
+    // The screen may have gone while the request was out. Commit nothing to a
+    // store the next screen also reads.
+    if (!alive()) return null
+    if (probe.error || !rows) return false
+    // The second request costs one extra list only when something actually
+    // moved, and it keeps the store the single writer of its data.
+    if (JSON.stringify(rows) !== signature) await store.reload()
+    return true
+  }
+}
 
-/** The poll's reader for the shared list, the same way `probe` reads the owned one. */
-const probeShared = useCall<SharedPrototype[]>({
-  url: method('shared_prototypes'),
-  immediate: false,
-})
-
-watch(
-  () => prototypes.data,
-  (rows) => {
-    signature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
-
-watch(
-  () => sharedPrototypes.data,
-  (rows) => {
-    sharedSignature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
-
-const probeConversations = useCall<SharedPrototype[]>({
-  url: method('conversations'),
-  immediate: false,
-})
-
-watch(
-  () => conversationPrototypes.data,
-  (rows) => {
-    conversationSignature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
+const pollOwned = pollerOf<Prototype>(prototypes, 'list_prototypes')
+const pollShared = pollerOf<SharedPrototype>(sharedPrototypes, 'shared_prototypes')
+const pollConversations = pollerOf<SharedPrototype>(conversationPrototypes, 'conversations')
 
 watch(
   () => prototypes.isFinished,
@@ -181,29 +250,15 @@ watch(
 // and the visibility rule.
 usePoll(
   async (alive) => {
-    // `reload()` resolves rather than rejects on a failed request
-    // (@vueuse/core `useFetch.execute`, called with `throwOnFailed` unset), so
-    // the error ref is the only signal that the answer is not real. Returning
-    // false is silent, like the Viewer's poller: a failed poll leaves the
-    // gallery as it is, because the rows on screen are the last good answer.
-    const rows = await probe.reload()
-    // The screen may have gone while the request was out. Commit nothing to a
-    // store the next screen also reads.
-    if (!alive()) return
-    if (probe.error || !rows) return false
-    // The second request costs one extra list only when something actually
-    // moved, and it keeps the store the single writer of `prototypes.data`.
-    if (JSON.stringify(rows) !== signature) await prototypes.reload()
-    // An invitation arrives while this screen is open, the same way a prototype does.
-    const invited = await probeShared.reload()
-    if (!alive()) return
-    if (!probeShared.error && invited && JSON.stringify(invited) !== sharedSignature)
-      await sharedPrototypes.reload()
-    // A reply or a mention arrives the same way.
-    const talked = await probeConversations.reload()
-    if (!alive()) return
-    if (!probeConversations.error && talked && JSON.stringify(talked) !== conversationSignature)
-      await conversationPrototypes.reload()
+    // A failed read of the owned list returns false, silently, like the
+    // Viewer's poller: the gallery stays as it is, because the rows on screen
+    // are the last good answer.
+    const owned = await pollOwned(alive)
+    if (owned !== true) return owned ?? undefined
+    // An invitation, a reply or a mention arrives the same way a prototype
+    // does. A failed read of these two only skips its list this tick.
+    if ((await pollShared(alive)) === null) return
+    await pollConversations(alive)
     return true
   },
   { interval: POLL_MS },
@@ -217,74 +272,61 @@ onMounted(() => {
 </script>
 
 <template>
-  <!--
-    No rule under the title. The top bar already draws one, and a second line
-    12px below it read as a double border rather than as a section edge.
-
-    `border-b-0` beats `PageHeader.vue`'s own `border-b` on source order, not
-    on specificity: Tailwind emits `.border-b-0` after `.border-b`. The
-    component hard-codes the border and exposes no prop, and its class lands
-    on the same element as ours through `PageHeaderBase`'s `$attrs`.
-
-    `pt-6` matches the body's own top padding below, so the title sits on the
-    same rhythm as the grid. The component is `min-h-12 justify-center`, so
-    padding moves the content down and the header grows with it.
-  -->
-  <PageHeader class="border-b-0 pt-6">
-    <div class="min-w-0">
-      <h1 class="truncate text-2xl-semibold text-ink-gray-8">Your prototypes</h1>
-    </div>
-    <!--
-      One action per screen (DESIGN.md principle 3), and it lives here in
-      every state. Finding 4.5 asked for one "New prototype" button, not for
-      the capability to disappear: hiding this one while the list was empty
-      left a user with no agent and no prototypes with no way to make one.
-      The empty state below therefore never repeats this label.
-
-      It waits for the first list only so the header does not offer an action
-      over skeleton cards. The button is 28px and the `h1` line box is 28px,
-      so the row height is the same whether or not the button is there.
-    -->
-    <Button
-      v-if="!firstLoad"
-      icon-left="lucide-plus"
-      label="New prototype"
-      theme="gray"
-      variant="subtle"
-      @click="showPicker = true"
-    />
-  </PageHeader>
+  <!-- No visible title: the top bar's "My prototypes" already names the page. Screen readers still get one. -->
+  <h1 class="sr-only">Prototypes</h1>
 
   <div class="px-3 pb-10 pt-6 sm:px-5">
     <!--
-      Two columns, never three. The shell centres the page in a 940px column,
-      so a third column only makes each card narrower: 284px against 438px.
-      The card scales a 1280px iframe to its own width, so a narrow card makes
-      the preview unreadable. A wider screen changes nothing, because the
-      column does not grow.
+      One toolbar: the tabs on the left; the search (once the tab holds more than ten) and "New prototype" on the right
+      edge. All 28px, so the row is one height whatever is in it. With nothing shared there are no tabs and the right
+      group keeps the right edge.
+
+      "New prototype" is the one action on this screen (DESIGN.md principle 3) and it is here in every state, the empty
+      one too: hiding it while the list was empty left a user with no way to make one (finding 4.5), so the empty state
+      below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
     -->
+    <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <TabButtons v-if="showTabs" v-model="tabModel" :options="tabs" size="sm">
+        <template #suffix="{ button }">
+          <span class="ml-1 tabular-nums text-ink-gray-5">{{ counts[button.value as Tab] }}</span>
+        </template>
+      </TabButtons>
+      <div class="ml-auto flex min-w-0 items-center gap-2">
+        <TextInput
+          v-if="showSearch"
+          v-model="query"
+          class="w-40 sm:w-64"
+          aria-label="Search prototypes"
+          placeholder="Search prototypes"
+        >
+          <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
+        </TextInput>
+        <Button icon-left="lucide-plus" label="New prototype" theme="gray" variant="subtle" @click="showPicker = true" />
+      </div>
+    </div>
+
     <!--
       Every placeholder repeats the loaded card's own height and margin classes
       and replaces only the text, so the grid does not resize when the rows
       arrive (finding 4.2). The blocks match PrototypeCard.vue one for one:
-      the picture, then the two `h-7` rows.
+      the picture, then the `h-7` and `h-5` rows.
 
       Those heights are load-bearing, not decoration. The card was four rows
       once, and this block kept its four after the card became two, so the
       placeholder measured 124px below the picture against the card's 68px and
       the whole grid rose 56px a row when the list landed. Change a row here
-      only with the matching row in `PrototypeCard.vue:209,271`.
+      only with the matching rows in `PrototypeCard.vue` and `SharedCard.vue`.
     -->
-    <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2">
+    <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       <div v-for="n in 3" :key="n">
         <Skeleton class="aspect-[16/10] w-full rounded-6" />
         <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
-        <div class="flex h-7 items-center"><Skeleton class="h-3.5 w-56" /></div>
+        <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-28" /></div>
       </div>
     </div>
 
     <div
-      v-else-if="!count"
+      v-else-if="!tabItems.length"
       class="flex flex-col items-center justify-center gap-3 py-16 text-center"
     >
       <span
@@ -292,7 +334,7 @@ onMounted(() => {
       >
         <span class="lucide-panels-top-left size-6" aria-hidden="true" />
       </span>
-      <p class="text-base-medium text-ink-gray-8">No prototypes yet</p>
+      <p class="text-base-medium text-ink-gray-8">{{ emptyTitle }}</p>
       <p class="max-w-sm text-p-sm text-ink-gray-5">{{ emptyBody }}</p>
       <!--
         Never "New prototype": the header already carries that, and one screen
@@ -317,44 +359,33 @@ onMounted(() => {
       />
     </div>
 
-    <div v-else class="grid gap-6 md:grid-cols-2">
-      <PrototypeCard
-        v-for="item in items"
-        :key="item.name"
-        :prototype="item"
-        @changed="prototypes.reload()"
-        @removed="prototypes.reload()"
-      />
+    <div
+      v-else-if="!visible.length"
+      class="flex flex-col items-center justify-center gap-3 py-16 text-center"
+    >
+      <p class="text-base-medium text-ink-gray-8">No prototypes match "{{ needle }}"</p>
+      <Button label="Clear search" variant="ghost" @click="query = ''" />
+    </div>
+
+    <!--
+      One column on a phone, two from md, three from lg, four from 2xl. The
+      shell's column is 1240px (App.vue), and the top bar is as wide, so the
+      mark and the title stay on one line. A card scales a 1280px iframe's
+      picture to its own width, and three across at 1240px is still 390px, the
+      smallest the picture stays readable at.
+    -->
+    <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      <template v-for="one in visible" :key="one.row.name">
+        <SharedCard v-if="one.shared" :prototype="one.row" :conversation="one.conversation" />
+        <PrototypeCard
+          v-else
+          :prototype="one.row"
+          @changed="prototypes.reload()"
+          @removed="prototypes.reload()"
+        />
+      </template>
     </div>
   </div>
-
-  <!--
-    One heading, no border and no count: the grid under it is made of cards
-    already, and a count here would only restate what the eye sees. Nothing is
-    drawn for a user nobody has invited.
-  -->
-  <section v-if="shared.length" class="px-3 pb-10 sm:px-5" aria-labelledby="shared-heading">
-    <h2 id="shared-heading" class="mb-4 truncate text-2xl-semibold text-ink-gray-8">
-      Shared with me
-    </h2>
-    <div class="grid gap-6 md:grid-cols-2">
-      <SharedCard v-for="item in shared" :key="item.name" :prototype="item" />
-    </div>
-  </section>
-
-  <!-- Same as above: one heading, no count, nothing drawn until there is a conversation. -->
-  <section
-    v-if="conversations.length"
-    class="px-3 pb-10 sm:px-5"
-    aria-labelledby="conversations-heading"
-  >
-    <h2 id="conversations-heading" class="mb-4 truncate text-2xl-semibold text-ink-gray-8">
-      Conversations
-    </h2>
-    <div class="grid gap-6 md:grid-cols-2">
-      <SharedCard v-for="item in conversations" :key="item.name" :prototype="item" conversation />
-    </div>
-  </section>
 
   <NewPrototypeDialog v-model:open="showPicker" @created="prototypes.reload()" />
 </template>

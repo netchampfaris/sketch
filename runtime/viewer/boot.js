@@ -92,30 +92,116 @@ function readData() {
   return JSON.parse(raw)
 }
 
-// Sketch owns the theme. The order is fixed: the theme URL parameter, then
-// localStorage["theme"], then the browser preference. The renderer resolves
-// the URL parameter and sends null when there is none, because it can read
-// neither of the other two. "system" is not an answer, and the Viewer never
-// writes localStorage: the Sketch UI shares this origin and owns that key.
+// Sketch owns the theme (decision 84). The preference is light, dark or system, and the order is fixed: the theme
+// URL parameter, then the person's prototype theme (`theme_pref`, saved on their account, apart from Sketch's own UI
+// theme), then for a Guest the choice made earlier this visit (`window.name`, which survives a reload in the tab),
+// then system. The renderer resolves the URL parameter and sends null when there is none.
+//
+// The page sits in an opaque origin, so `localStorage` throws. frappe-ui's `useColorScheme` reads and writes
+// `localStorage["theme"]`, so the Viewer puts a stand-in there: "theme" reads this preference and a write saves it
+// (to the account, through the page's own credential, or to the visit), and every other key lives in memory for the
+// page. frappe-ui paints `data-theme` itself on a write, so a Prototype's switch applies with no reload.
 const THEMES = ['light', 'dark']
+const CHOICES = [...THEMES, 'system']
 const pick = (value) => (THEMES.includes(value) ? value : null)
+const choice = (value) => (CHOICES.includes(value) ? value : null)
+const VISIT = 'sketch:theme:'
+const SAVE = '/api/method/sketch.api.prototype_theme_signed'
+const dark = window.matchMedia?.('(prefers-color-scheme: dark)')
 
-function storedTheme() {
-  // A sandboxed or partitioned context can throw on the first read.
-  try {
-    return localStorage.getItem('theme')
-  } catch {
-    return null
+let preference = 'system'
+let themeCred = null
+// Saves go one after another, so quick switching cannot land an older choice after the newest.
+let saving = Promise.resolve()
+
+const visitTheme = () => (window.name.startsWith(VISIT) ? choice(window.name.slice(VISIT.length)) : null)
+
+function paintTheme() {
+  document.documentElement.dataset.theme = pick(preference) || (dark?.matches ? 'dark' : 'light')
+}
+
+function applyTheme(data) {
+  if (data.theme_user && data.theme_exp && data.theme_sig)
+    themeCred = { username: data.theme_user, exp: data.theme_exp, sig: data.theme_sig }
+  const url = new URLSearchParams(location.search).get('theme')
+  preference =
+    pick(data.theme) || pick(url) || (themeCred ? choice(data.theme_pref) : visitTheme()) || 'system'
+  paintTheme()
+}
+
+// The Prototype chose a theme. Its own choice outranks a theme in the link from now on, so the parameter leaves the
+// URL and a reload keeps what was picked. Saving is quiet: the page already shows the choice.
+function saveTheme(value) {
+  const next = choice(value)
+  // frappe-ui writes back what it read when it starts: that is no choice.
+  if (!next || next === preference) return
+  preference = next
+  const url = new URL(location.href)
+  if (url.searchParams.has('theme')) {
+    url.searchParams.delete('theme')
+    history.replaceState(history.state, '', url)
+  }
+  if (!themeCred) {
+    window.name = VISIT + next
+    return
+  }
+  const body = new URLSearchParams({ ...themeCred, theme: next })
+  saving = saving.then(() => fetch(SAVE, { method: 'POST', body, credentials: 'omit', cache: 'no-store' })).catch(() => {})
+}
+
+// System follows the computer while the page is open.
+dark?.addEventListener?.('change', () => {
+  if (preference === 'system') paintTheme()
+})
+
+function makeStorage(real) {
+  const memory = new Map()
+  const has = (key) => memory.has(String(key))
+  const backing = real
+    ? {
+        get: (key) => real.getItem(key),
+        set: (key, value) => real.setItem(key, value),
+        remove: (key) => real.removeItem(key),
+        keys: () => Array.from({ length: real.length }, (_, i) => real.key(i)),
+        clear: () => real.clear(),
+      }
+    : {
+        get: (key) => (has(key) ? memory.get(String(key)) : null),
+        set: (key, value) => memory.set(String(key), String(value)),
+        remove: (key) => memory.delete(String(key)),
+        keys: () => [...memory.keys()],
+        clear: () => memory.clear(),
+      }
+  const others = () => backing.keys().filter((key) => key !== 'theme')
+  return {
+    getItem: (key) => (String(key) === 'theme' ? preference : backing.get(String(key))),
+    setItem: (key, value) => (String(key) === 'theme' ? saveTheme(String(value)) : backing.set(String(key), String(value))),
+    removeItem: (key) => (String(key) === 'theme' ? undefined : backing.remove(String(key))),
+    clear: () => others().forEach((key) => backing.remove(key)),
+    key: (index) => ['theme', ...others()][index] ?? null,
+    get length() {
+      return others().length + 1
+    },
   }
 }
 
-function applyTheme(resolved) {
-  const url = new URLSearchParams(location.search).get('theme')
-  const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  const theme =
-    pick(resolved) || pick(url) || pick(storedTheme()) || (dark ? 'dark' : 'light')
-  document.documentElement.dataset.theme = theme
+// Before any Prototype code runs. The page's origin is opaque, so the real storage is normally out of reach; where it
+// is reachable it is Sketch's own, whose "theme" key is Sketch's UI theme, so "theme" is always this page's.
+function installStorage() {
+  let real = null
+  try {
+    real = window.localStorage
+    real.getItem('theme')
+  } catch {
+    real = null
+  }
+  try {
+    Object.defineProperty(window, 'localStorage', { value: makeStorage(real), configurable: true, enumerable: true })
+  } catch {
+    // A browser that will not let the property go keeps throwing, as it did before.
+  }
 }
+installStorage()
 
 // ------------------------------------------------------------------- chrome
 // Sketch's one piece of DOM inside a Viewer: the status screen. It is plain
@@ -489,7 +575,7 @@ function variantsOf(data, compiled, blocks, skip, loader) {
 async function run() {
   const data = readData()
   payload = data
-  applyTheme(data.theme)
+  applyTheme(data)
   setTitle(data)
   // Before the early returns below: an empty or broken tree must reload too.
   try {
@@ -658,6 +744,8 @@ async function run() {
     return wrapped.get(path)
   }
   const load = makeRegistry(view, factories, bare, wrap)
+  // When each option first appeared, so every set shows its options oldest first (sketch/variant_order.py).
+  bare.get('sketch:variants')?.registerSeen?.(data.variant_seen)
   if (extras.length)
     bare.get('sketch:variants').registerExtras(extras, data.authors || {}, (extra, err) =>
       warnings.push({

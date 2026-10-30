@@ -55,10 +55,11 @@ DEFAULT_TTL = 60
 #:   server as Guest), so a call that only a session cookie could make is not
 #:   possible from the toolbar. This stands in for the cookie until the toolbar
 #:   moves out of the Prototype's page.
-#: - VARIANT_DEFAULT moves one slot of a `<Variants>` set to the front of its
-#:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
-#:   minted into the owner's live page only, and what it can do is reorder
-#:   slots in a `.vue` file the owner already owns, which Undo reverses.
+#: - VARIANT_DEFAULT records which option of a `<Variants>` set is its default,
+#:   or keeps one option and removes the others, and saves a version
+#:   (`sketch.api.set_variant_default_signed`, `keep_variant_signed`). It is
+#:   minted into the owner's live page only, and what it can do is rewrite a set
+#:   in a `.vue` file the owner already owns, which Undo reverses.
 #: - VARIANT_EDIT deletes a variant (`sketch.api.delete_variant_signed`). It is
 #:   minted over the hash id and one username together, like COMMENT, into the
 #:   page of the owner and of each invited editor. The server reads the person
@@ -68,6 +69,10 @@ DEFAULT_TTL = 60
 #:   (`sketch.api.seen_mark`). Minted over the hash id and the username together, like
 #:   COMMENT, into the page of anyone who may comment. It opens one write, a mark on that
 #:   person's own list of seen variants and threads, which the person could make by hand.
+#: - THEME saves one signed-in person's prototype theme (`sketch.api.prototype_theme_signed`). Minted over
+#:   the username alone (`sketch.prototype_theme.subject`) into every page that person opens, so a
+#:   Prototype's own theme switch can save it. It opens one write: light, dark or system, on that person's
+#:   account, the one way that preference changes.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
@@ -76,6 +81,7 @@ COMMENT_MINT = "comment-mint"
 VARIANT_DEFAULT = "variant_default"
 VARIANT_EDIT = "variant_edit"
 SEEN = "seen"
+THEME = "theme"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

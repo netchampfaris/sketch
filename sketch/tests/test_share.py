@@ -22,7 +22,7 @@ from frappe.tests import IntegrationTestCase, set_user
 from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, versions
 from sketch.mcp import tools
 from sketch.tests import utils
-from sketch.viewer import SketchViewerRenderer, sharing_subject
+from sketch.viewer import SketchViewerRenderer
 
 HOME = """<script setup>
 import { Variants } from 'sketch:variants'
@@ -103,7 +103,7 @@ class ShareCase(IntegrationTestCase):
 			return renderer.payload()
 
 	def edit_credential(self, user):
-		stamp = signature.mint(sharing_subject(self.doc.name, utils.username_of(user)), 600, signature.VARIANT_EDIT)
+		stamp = signature.mint(comments.subject(self.doc.name, utils.username_of(user)), 600, signature.VARIANT_EDIT)
 		return {"username": utils.username_of(user), "exp": str(stamp["exp"]), "sig": stamp["sig"]}
 
 	def delete_as(self, user, option):
@@ -112,9 +112,7 @@ class ShareCase(IntegrationTestCase):
 
 	def undo_delete_as(self, user, option, sequence):
 		with set_user("Guest"):
-			return api.undo_delete_variant_signed(
-				self.doc.name, option=option, sequence=str(sequence), **self.edit_credential(user)
-			)
+			return api.undo_delete_variant_signed(self.doc.name, sequence=str(sequence), **self.edit_credential(user))
 
 	def add_variant(self, content=COMPACT, name="compact.vue", commit=True):
 		self.invite()
@@ -447,7 +445,7 @@ class TestEditorNotes(ShareCase):
 		self.assertTrue(page["annotate_sig"])
 		self.assertEqual(page["annotations"]["notes"], [])
 		self.assertTrue(
-			signature.verify(annotations.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
+			signature.verify(comments.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
 		)
 		self.assertFalse(
 			signature.verify(self.doc.name, page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE),
@@ -482,6 +480,13 @@ class TestEditorNotes(ShareCase):
 		page = self.page_data_for(self.ed)
 		with set_user(self.owner):
 			api.remove_editor(self.doc.slug, "d2tshed")
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.save_as_editor(page, "late")
+
+	def test_a_disabled_editors_signature_saves_nothing(self):
+		page = self.page_data_for(self.ed)
+		frappe.db.set_value("User", self.ed, "enabled", 0)
+		self.addCleanup(frappe.db.set_value, "User", self.ed, "enabled", 1)
 		with self.assertRaises(frappe.DoesNotExistError):
 			self.save_as_editor(page, "late")
 
@@ -789,7 +794,8 @@ class TestDeleteAndDefault(ShareCase):
 
 		registry = json.loads(self.tree()["src/variants/adopted.json"])
 		self.assertFalse(registry["src/variants/adopted/compact.vue"]["default"])
-		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME, "wide was already first in the source")
+		# The owner's pick is recorded on the tag, even for the first slot: no slot moves.
+		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME.replace('name="KPI strip"', 'name="KPI strip" default="wide"'))
 
 	def test_make_default_on_a_component_variant_and_back_to_the_original(self):
 		self.add_variant(WRAP, "dense.vue")

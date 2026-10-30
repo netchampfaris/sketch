@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// The canvas: one collection at a time (a variant set, a state across pages, or a page), picked in "Show".
+// The canvas: one collection at a time (a variant set, a page's states, or one option's component states), picked in "Show".
 // The grid is laid out once per view (see layout.ts); zoom and pan only transform it.
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
-import { Button, Dropdown, Popover, Tooltip } from 'frappe-ui'
+import { Button, Dropdown, Popover, Tooltip, toast } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
@@ -12,7 +12,7 @@ import { bridge, findTile, spotOf, tileExists } from './bridge'
 import { landed, placeToasts } from './default'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
-import type { PageModel, TileBox } from './layout'
+import type { PageModel, StateInfo, TileBox } from './layout'
 import { lookAt } from './badges'
 import { menuBind } from './menus'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
@@ -27,6 +27,7 @@ import {
   mirrorSets,
   mirrorStates,
   nav,
+  slugOf,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -62,11 +63,7 @@ const pickValue = computed(() => (pick.value ? valueOfPick(pick.value) : ''))
 watch(
   [model, raw],
   () => {
-    if (!model.value) return
-    if (pick.value) {
-      session.pick = valueOfPick(pick.value)
-      return
-    }
+    if (!model.value || pick.value) return
     const next = fallbackPick(model.value, openedOn)
     if (next) router.replace({ query: { ...route.query, canvas: next } })
   },
@@ -88,7 +85,7 @@ watch(
   },
   { immediate: true },
 )
-const summary = computed(() => (pick.value && model.value ? pickSummary(pick.value, model.value) : ''))
+const summary = computed(() => (pick.value ? pickSummary(pick.value) : ''))
 // Beside the name in the top-left pill: a set's option count ("12 options"), without the page it is on; else the summary.
 const countText = computed(() => {
   const p = pick.value
@@ -96,6 +93,15 @@ const countText = computed(() => {
   const n = p.page.sets.find((s) => s.key === p.key)?.options.length ?? 0
   return `${n} ${n === 1 ? 'option' : 'options'}`
 })
+// One option's component states: the set, the option, and the words its states are declared with (`of`).
+const optView = computed(() => {
+  const p = pick.value
+  if (p?.kind !== 'opt') return null
+  const set = p.page.sets.find((s) => s.key === p.key)
+  const opt = set?.options.find((o) => o.value === p.value)
+  return set && opt ? { page: p.page, set, opt, of: `${set.label}/${opt.label}`, cacheId: `${p.page.path}|v|${set.key}|${opt.value}|full` } : null
+})
+const setViewValue = computed(() => (optView.value ? `set:${optView.value.page.slug}/${optView.value.set.key}` : ''))
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
@@ -121,16 +127,31 @@ const fullSize = ref({ w: win.w, h: win.h })
 useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
+// The live tile's set as it is now, while it differs from its drawing: the grid follows it, and goes back when it closes.
+const liveSize = reactive<Record<string, { w: number; h: number }>>({})
+const onResize = (t: TileBox, size: { w: number; h: number } | null) => {
+  if (size) liveSize[t.cacheId] = size
+  else delete liveSize[t.cacheId]
+}
 const vpSize = computed(() => ({ w: fullSize.value.w - (panelShown.value ? PANEL_W : 0), h: fullSize.value.h }))
+// The states a drawn option declared with `of` naming it: null until it is drawn.
+function statesOfOption(cacheId: string): StateInfo[] | 'error' | null {
+  const v = optView.value
+  const snap = cache[keyOf(cacheId)]
+  if (!v || !snap) return null
+  if (snap.error) return 'error'
+  return snap.reg.states.filter((s) => s.path === v.page.path && !!s.of && slugOf(s.of) === slugOf(v.of))
+}
 const layout = computed(() =>
-  layoutPick(pick.value, model.value ?? [], {
+  layoutPick(pick.value, {
     win,
     vp: vpSize.value,
     phone: phone.value,
     sizeOf: (id, key) => {
-      const r = cache[keyOf(id)]?.sets.find((s) => s.key === key)
+      const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
       return r ? { w: r.w, h: r.h } : null
     },
+    statesOf: statesOfOption,
   }),
 )
 const pz = usePanZoom(() => vp.value)
@@ -143,7 +164,7 @@ const { view } = pz
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
 
 // ---- Drawing: one offscreen render at a time, in idle time, tiles in view first.
-type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null }
+type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null; grow?: boolean }
 const job = shallowRef<Job | null>(null)
 let seq = 0
 let pending: ((s: Snap) => void) | null = null
@@ -158,10 +179,12 @@ const makeSandbox = (t: Partial<TileBox> | null, live = false): Sandbox => {
   }
   if (t?.kind === 'state') sb.states[idOf(t.path!, t.stateKey!)] = t.option!
   if (t?.kind === 'set') sb.variants[idOf(t.path!, t.setKey!)] = t.option!
+  // A component state: the page with that option showing, and then the state.
+  if (t?.setOption) sb.variants[idOf(t.path!, t.setKey!)] = t.setOption
   return reactive({ ...sb, reg: sb.reg as any })
 }
 
-function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
+function runJob(path: string, sandbox: Sandbox, targetSet?: string | null, grow = false) {
   return new Promise<Snap>((resolve) => {
     const timer = setTimeout(() => finish(errorSnap('Timed out while drawing')), 6000)
     const finish = (s: Snap) => {
@@ -171,7 +194,7 @@ function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
       resolve(s)
     }
     pending = finish
-    job.value = { n: ++seq, path, sandbox, targetSet }
+    job.value = { n: ++seq, path, sandbox, targetSet, grow }
   })
 }
 const onReady = (s: Snap) => pending?.(s)
@@ -193,14 +216,20 @@ async function discover() {
     if (!alive) return
     const snap = await runJob(r.path, makeSandbox(null))
     cache[keyOf(`${r.path}|default`)] = snap
+    const sets = snap.reg.sets
+      .filter((s) => s.path === r.path && (isChoice(s.options) || here === `set:${slugOfRoute(r)}/${s.key}`))
+      .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null }))
+    // A component state belongs to its set option, and shows there. One whose option is no longer in a set (after Keep only
+    // this) shows on its page.
+    const lives = (of: string) => sets.some((s) => s.options.some((o) => slugOf(`${s.label}/${o.label}`) === slugOf(of)))
     pages.push({
       path: r.path,
       slug: slugOfRoute(r),
       title: titleOfRoute(r),
-      states: snap.reg.states.filter((s) => s.path === r.path).map((s) => ({ key: s.key, label: s.label, options: s.options })),
-      sets: snap.reg.sets
-        .filter((s) => s.path === r.path && (isChoice(s.options) || here === `set:${slugOfRoute(r)}/${s.key}`))
-        .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null })),
+      states: snap.reg.states
+        .filter((s) => s.path === r.path && (!s.of || !lives(s.of)))
+        .map((s) => ({ key: s.key, label: s.label, options: s.options, groups: s.groups, of: s.of })),
+      sets,
     })
     // Page order for sets: top to bottom, then left to right.
     const last = pages[pages.length - 1]
@@ -217,7 +246,6 @@ let pumping = false
 const missing = () => {
   const seen = new Set<string>()
   return layout.value.tiles.filter((t) => {
-    if (t.kind === 'gap') return false
     const k = keyOf(t.cacheId)
     if (cache[k] || seen.has(k)) return false
     seen.add(k)
@@ -233,7 +261,8 @@ async function pump() {
       const t = todo.find((x) => visible.has(x.id)) ?? todo[0]
       if (!t) break
       const k = keyOf(t.cacheId)
-      const snap = await runJob(t.path, makeSandbox(t), t.kind === 'set' ? t.setKey : null)
+      // A state tile (one option's states) grows to the set's full content height.
+      const snap = await runJob(t.path, makeSandbox(t), t.setKey ?? null, !!t.setOption)
       if (!alive) return
       cache[k] = snap
       await idle()
@@ -249,20 +278,12 @@ const onNear = (id: string, near: boolean) => {
   } else visible.delete(id)
 }
 
-const drawn_ = computed(() => layout.value.tiles.filter((t) => t.kind !== 'gap'))
-const total = computed(() => new Set(drawn_.value.map((t) => keyOf(t.cacheId))).size)
-const drawn = computed(() => {
-  const keys = new Set(drawn_.value.map((t) => keyOf(t.cacheId)))
-  let n = 0
-  keys.forEach((k) => cache[k] && n++)
-  return n
-})
+const drawKeys = computed(() => [...new Set(layout.value.tiles.map((t) => keyOf(t.cacheId)))])
+const total = computed(() => drawKeys.value.length)
+const drawn = computed(() => drawKeys.value.filter((k) => cache[k]).length)
 const drawing = computed(() => !!model.value && drawn.value < total.value)
 
-
 watch([() => layout.value.tiles.length, lensStr, pickValue], () => pump())
-
-
 
 // ---- Live tile
 const liveId = ref<string | null>(null)
@@ -288,6 +309,46 @@ watch(
   { immediate: true },
 )
 
+// ---- One option's component states: the tile menu's States opens them, ← and the set crumb go back up.
+function openStates(t: TileBox) {
+  const page = model.value?.find((p) => p.path === t.path)
+  if (!page || !t.setKey || !t.option) return
+  // A new history entry, so the browser's Back goes up one level.
+  router.push({ query: { ...route.query, canvas: `opt:${page.slug}/${t.setKey}/${t.option}` } })
+}
+function goUp() {
+  const target = setViewValue.value
+  if (!target) return
+  // Reached by States from that set: step back through history, so Back and Forward still mean something.
+  if (decodeURIComponent(String(history.state?.back ?? '')).includes(`canvas=${target}`)) router.back()
+  else router.replace({ query: { ...route.query, canvas: target } })
+}
+
+// Nothing declared for the option: the view is one line and a way to ask the agent for it. The note is the one the Note
+// tool makes, on the option's own tile of its set; while it waits for the agent the view says so.
+const OPENING = 'Build the states for'
+const emptyView = computed(() => !!optView.value && Array.isArray(statesOfOption(optView.value.cacheId)) && !layout.value.tiles.length)
+const optSpot = computed<TileSpot | null>(() => {
+  const v = optView.value
+  const tile = { kind: 'set' as const, view: setViewValue.value, page: v?.page.title ?? '', group: v?.set.label ?? '', groupKey: v?.set.key ?? '', option: v?.opt.value ?? '', optionLabel: v?.opt.label ?? '' }
+  return v ? { route: v.page.path, tile } : null
+})
+const pendingNote = computed(() => (optSpot.value ? (bridge.pendingNote?.(optSpot.value, OPENING) ?? null) : null))
+const asking = ref(false)
+async function askAgent() {
+  const v = optView.value
+  if (!v || !optSpot.value || !bridge.addNote || asking.value) return
+  asking.value = true
+  try {
+    await bridge.addNote(optSpot.value, `${OPENING} ${v.set.label} · ${v.opt.label}${v.set.file ? ` (${v.set.file})` : ''}. Follow the States section of the Sketch skill.`)
+  } catch (e) {
+    toast.error(`Could not add the note: ${(e as Error).message}. Try again.`)
+  } finally {
+    asking.value = false
+  }
+}
+const undoAsk = () => pendingNote.value && bridge.removeNote?.(pendingNote.value)
+
 function openPage(t: TileBox) {
   nav.pushed = false
   // A new history entry on top of the canvas, so Back returns to it. The picks are set once it has landed,
@@ -295,6 +356,7 @@ function openPage(t: TileBox) {
   router.push({ path: t.path }).then(() => {
     if (t.kind === 'state') stateValues[idOf(t.path, t.stateKey!)] = t.option!
     if (t.kind === 'set') choices[idOf(t.path, t.setKey!)] = t.option!
+    if (t.setOption) choices[idOf(t.path, t.setKey!)] = t.setOption
     mirrorStates(router)
     mirrorSets(router)
   })
@@ -362,6 +424,7 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
     if (e.defaultPrevented || bridge.tool) return
     if (pickerOpen.value || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
     if (liveId.value) liveId.value = null
+    else if (optView.value) goUp()
     else closeCanvas(router)
     return
   }
@@ -467,8 +530,7 @@ async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
   }
   const t = tileBox(spot)!
   // The tile in the middle of what the panel leaves open; a tile bigger than that is centred on the spot instead.
-  const w = fullSize.value.w - (panelShown.value ? PANEL_W : 0)
-  const h = fullSize.value.h
+  const { w, h } = vpSize.value
   const fits = t.w * view.z <= w && t.h * view.z <= h
   const cx = fits ? t.x + t.w / 2 : t.x + at.fx * t.w
   const cy = fits ? t.y + t.h / 2 : t.y + at.fy * t.h
@@ -540,8 +602,22 @@ watch(
             :win="win"
             @activate="(e) => activate(t, e)"
             @open-page="openPage(t)"
+            @open-states="openStates(t)"
             @near="(n: boolean) => onNear(t.id, n)"
+            @resize="(size) => onResize(t, size)"
           />
+          <!-- The headings over the sections of tiles, laid out at 1x and scaled like the captions. -->
+          <div
+            v-for="h in layout.heads"
+            :key="h.text"
+            role="heading"
+            aria-level="2"
+            class="pointer-events-none absolute origin-top-left select-none truncate"
+            :class="h.small ? 'text-p-sm text-ink-gray-5' : 'text-base font-medium text-ink-gray-8'"
+            :style="{ left: h.x + 'px', top: h.y + 'px', width: `calc(${layout.bounds.w}px / var(--ls))`, transform: 'scale(var(--ls))', lineHeight: '24px' }"
+          >
+            {{ h.text }}
+          </div>
           <!-- Comment or note pins, drawn by the toolbar in the world's own coordinates, so they stay on their tile. -->
           <component :is="bridge.Pins" v-if="bridge.Pins" :tiles="layout.tiles" :zoom="view.z" :view="pickValue" />
         </div>
@@ -551,18 +627,41 @@ watch(
         </div>
       </div>
 
+      <!-- An option with no states built: say so, and offer the agent. -->
+      <div v-if="emptyView" data-ui class="pointer-events-none absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-2 px-6 text-center" :style="{ right: panelShown ? `${PANEL_W}px` : '0' }">
+        <template v-if="pendingNote">
+          <p class="text-base text-ink-gray-8">Added to your notes for the agent.</p>
+          <p class="text-p-sm text-ink-gray-5">Tell your agent to apply your notes.</p>
+          <Button class="pointer-events-auto" variant="ghost" label="Undo" @click="undoAsk" />
+        </template>
+        <template v-else>
+          <p class="text-base text-ink-gray-8">No states built yet</p>
+          <Button v-if="bridge.canNote && bridge.addNote" class="pointer-events-auto" variant="subtle" theme="gray" label="Ask agent" :loading="asking" @click="askAgent" />
+        </template>
+      </div>
+
       <!-- Top left: the way back, and what the canvas shows. On a phone the name opens the Show list. It sits above the
            tiles and pins (z-10 is the panel's; a box or menu opens in a layer above the canvas). -->
       <div
         data-ui
         data-canvas-title
-        class="absolute left-3 top-3 z-10 flex h-9 min-w-0 items-center gap-1 rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute left-3 top-3 z-10 flex min-w-0 items-center gap-1 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ maxWidth: `calc(100% - ${panelShown ? PANEL_W + 12 : 24}px)` }"
       >
         <Tooltip text="Back (Esc)">
-          <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="closeCanvas(router)" />
+          <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="optView ? goUp() : closeCanvas(router)" />
         </Tooltip>
-        <Popover v-if="phone" v-model:open="pickerOpen" side="bottom" align="start" :offset="8" :collision-padding="12" class="min-w-0 flex-1">
+        <!-- One option's states: "Supplier card › Compact › States". The set goes back up; on a phone only the option and what it shows. -->
+        <div v-if="optView" data-canvas-crumbs class="flex min-w-0 items-center gap-1 pl-1 pr-2 text-base">
+          <template v-if="!phone">
+            <button type="button" class="min-w-0 truncate text-ink-gray-5 hover:text-ink-gray-8" :title="optView.set.label" @click="goUp">{{ optView.set.label }}</button>
+            <span class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
+          </template>
+          <span class="min-w-0 truncate text-ink-gray-8" :title="optView.opt.label">{{ optView.opt.label }}</span>
+          <span class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
+          <span class="shrink-0 text-ink-gray-8">States</span>
+        </div>
+        <Popover v-else-if="phone" v-model:open="pickerOpen" side="bottom" align="start" :offset="8" :collision-padding="12" class="min-w-0 flex-1">
           <template #trigger>
             <div class="min-w-0">
             <Button variant="ghost" class="w-full max-w-full justify-start" aria-label="Show on the canvas">
@@ -583,12 +682,12 @@ watch(
         </div>
       </div>
 
-      <!-- Bottom right: zoom, left of the panel when it is open. -->
+      <!-- Bottom right: zoom, left of the panel when it is open. Title and zoom wear the notes toolbar's surface: elevation 2, border, shadow-lg, 40px tall. -->
       <div
         ref="zoomPill"
         data-ui
         data-canvas-zoom
-        class="absolute bottom-3 z-10 flex h-9 items-center rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute bottom-3 z-10 flex items-center rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
         <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
@@ -622,6 +721,7 @@ watch(
     :h="win.h"
     :sandbox="job.sandbox"
     :target-set="job.targetSet"
+    :grow="job.grow"
     @ready="onReady"
     @error="onError"
   />

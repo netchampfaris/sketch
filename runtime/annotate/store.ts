@@ -72,6 +72,28 @@ async function flush(keepalive = false) {
   }
 }
 
+// Save now and say why not: null once the server has it. For a note that must be on the server before the page tells
+// the person it is (the canvas's Ask agent), so a failure leaves nothing half done.
+export async function saveNow(): Promise<string | null> {
+  clearTimeout(timer)
+  timer = 0
+  const snap = snapshot()
+  try {
+    const res = await post(JSON.stringify({ ...snap, prompt: promptOf() }))
+    // The agent cleared since this page loaded: start again from what the server holds.
+    if (res.status === 409) {
+      location.reload()
+      return null
+    }
+    if (!res.ok) return `the server answered ${res.status}`
+    last = JSON.stringify(snap)
+    saveState.value = 'saved'
+    return null
+  } catch {
+    return 'there is no connection'
+  }
+}
+
 // Debounced after every change. A failed save is retried by the next change.
 export function startSaving() {
   watch(

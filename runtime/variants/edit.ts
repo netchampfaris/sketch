@@ -4,7 +4,7 @@
 // Make default does (default.ts).
 import { toast } from 'frappe-ui'
 import { editing } from './extras'
-import { placeToasts } from './default'
+import { placeToasts, signedPost } from './default'
 
 const MARK = 'sketch:variant-deleted:'
 const UNDO_MS = 10000
@@ -54,23 +54,10 @@ function reload(note: Note) {
   location.reload()
 }
 
-function readError(body: any): string {
-  try {
-    const first = JSON.parse(JSON.parse(body._server_messages)[0])
-    return String(first.message).replace(/<[^>]*>/g, '')
-  } catch {
-    return 'Reload the page and try again.'
-  }
-}
-
-async function post(method: string, params: Record<string, string>) {
+function post(method: string, params: Record<string, string>) {
   const c = editing.value
-  if (!c) throw new Error('Only the owner and invited editors can delete variants.')
-  const form = new URLSearchParams({ name: c.name, username: c.user, exp: c.exp, sig: c.sig, ...params })
-  const res = await fetch(`/api/method/sketch.api.${method}`, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store' })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(readError(body))
-  return body.message
+  if (!c) return Promise.reject(new Error('Only the owner and invited editors can delete variants.'))
+  return signedPost(method, { name: c.name, username: c.user, exp: c.exp, sig: c.sig, ...params })
 }
 
 export const deleteFailure = (e: Error) =>

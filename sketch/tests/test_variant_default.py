@@ -1,16 +1,16 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""Make default moves one slot of a `<Variants>` set to the front of its file.
+"""Make default records one slot of a `<Variants>` set as its default, on the tag.
 
-The first slot is the default, so the owner's pick becomes first and the rest
-of the file stays byte for byte. The traps:
+No slot moves: the owner's pick is written as `default="…"` and the rest of the
+file stays byte for byte. The traps:
 
 - A slot holds nested `<template>` elements and a `>` inside an attribute, so
   the end of a slot is found by tag depth, not by the first `</template>`.
 - Indentation and the whitespace between slots keep their place.
 - It refuses, with a message the owner can read, a set that is missing or
-  repeated, an option that is not there, and an option already first.
+  repeated, an option that is not there, and an option already the default.
 - Only the owner may do it, through the session door and the signed one.
 - The move is one version, with no agent prompt, and the version before it
   restores the old order.
@@ -73,81 +73,60 @@ NESTED = """<template>
 class TestMoveSlot(IntegrationTestCase):
 	"""The text rewrite, with no Prototype."""
 
-	def test_the_picked_slot_goes_first(self):
-		out = variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars")
-		self.assertEqual(
-			out,
-			SIMPLE.replace(
-				"""    <template #totals>
-      <p>Totals</p>
-    </template>
-    <template #budget-bars>
-      <p>Budget bars</p>
-    </template>
-""",
-				"""    <template #budget-bars>
-      <p>Budget bars</p>
-    </template>
-    <template #totals>
-      <p>Totals</p>
-    </template>
-""",
-			),
-		)
-
-	def test_moving_it_back_restores_the_file_byte_for_byte(self):
-		moved = variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars")
-		self.assertEqual(variant_default.move_slot(moved, "Spend summary", "totals"), SIMPLE)
-
 	def test_nested_templates_do_not_end_a_slot_early(self):
-		out = variant_default.move_slot(NESTED, "Spend summary", "bars")
-		start = out.index("<Variants")
-		self.assertLess(out.index("#bars", start), out.index("#totals", start))
-		self.assertLess(out.index("#totals", start), out.index("v-slot:timeline", start))
-		# Nothing was lost or duplicated, only reordered.
-		self.assertEqual(sorted(out.splitlines()), sorted(NESTED.splitlines()))
-
-		# A slot with nested templates, an attribute holding `>` and a comment holding
-		# a closing tag moves whole.
-		out = variant_default.move_slot(NESTED, "Spend summary", "timeline")
-		self.assertTrue(out.index("v-slot:timeline") < out.index("#totals"))
-		self.assertIn("<!-- </template> inside a comment -->\n      </template>\n      <template #bars>", out)
-		self.assertEqual(variant_default.move_slot(out, "Spend summary", "totals"), NESTED)
-
-	def test_indentation_and_the_text_around_the_set_are_kept(self):
-		source = "<template>\n\t<Variants name='A'>\n\t\t<template #one>1</template>\n\n\t\t<template #two>\n\t\t\t2\n\t\t</template>\n\t</Variants>\n</template>\n"
-		out = variant_default.move_slot(source, "A", "two")
-		self.assertEqual(
-			out,
-			"<template>\n\t<Variants name='A'>\n\t\t<template #two>\n\t\t\t2\n\t\t</template>\n\n\t\t<template #one>1</template>\n\t</Variants>\n</template>\n",
-		)
-
-	def test_slots_on_one_line_move_too(self):
-		source = '<template><Variants name="A"><template #a>A</template><template #b>B</template></Variants></template>'
-		out = variant_default.move_slot(source, "A", "b")
-		self.assertEqual(out, '<template><Variants name="A"><template #b>B</template><template #a>A</template></Variants></template>')
+		"""A slot with nested templates, an attribute holding `>` and a comment holding a closing tag ends at its own tag."""
+		(found,) = variant_default.find_sets(NESTED, "Spend summary")
+		slots = {slot["key"]: NESTED[slot["start"] : slot["end"]] for slot in found["slots"]}
+		self.assertEqual(list(slots), ["totals", "timeline", "bars"])
+		self.assertTrue(slots["totals"].endswith("<!-- </template> inside a comment -->\n      </template>"))
+		self.assertTrue(slots["timeline"].endswith('<img src="x.png">\n      </template>'))
 
 	def test_a_set_that_is_not_there_is_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
-			variant_default.move_slot(SIMPLE, "Nope", "totals")
+			variant_default.record_slot(SIMPLE, "Nope", "totals")
 		self.assertIn('There is no <Variants name="Nope">', str(caught.exception))
 
 	def test_the_same_name_twice_is_refused(self):
 		block = SIMPLE[SIMPLE.index("  <Variants") : SIMPLE.index("</template>\n", SIMPLE.index("</Variants>"))]
 		twice = SIMPLE.replace(block, block + block)
 		with self.assertRaises(frappe.ValidationError) as caught:
-			variant_default.move_slot(twice, "Spend summary", "budget-bars")
+			variant_default.record_slot(twice, "Spend summary", "budget-bars")
 		self.assertIn("2 times", str(caught.exception))
 
 	def test_an_option_that_is_not_in_the_set_is_refused(self):
 		with self.assertRaises(frappe.ValidationError) as caught:
-			variant_default.move_slot(SIMPLE, "Spend summary", "missing")
+			variant_default.record_slot(SIMPLE, "Spend summary", "missing")
 		self.assertIn('has no option "missing"', str(caught.exception))
 
-	def test_the_default_is_already_first(self):
-		with self.assertRaises(frappe.ValidationError) as caught:
-			variant_default.move_slot(SIMPLE, "Spend summary", "totals")
-		self.assertIn("already the default", str(caught.exception))
+	def test_recording_a_default_moves_no_slot(self):
+		out = variant_default.record_slot(SIMPLE, "Spend summary", "budget-bars")
+
+		self.assertIn('<Variants name="Spend summary" default="budget-bars">', out)
+		self.assertEqual(out.replace(' default="budget-bars"', ""), SIMPLE)
+
+	def test_a_recorded_default_is_replaced_not_repeated(self):
+		once = variant_default.record_slot(SIMPLE, "Spend summary", "budget-bars")
+		twice = variant_default.record_slot(once, "Spend summary", "totals")
+
+		self.assertEqual(twice.count("default="), 1)
+		self.assertIn('default="totals"', twice)
+		with self.assertRaises(frappe.ValidationError):
+			variant_default.record_slot(twice, "Spend summary", "totals")
+
+	def test_the_first_slot_is_the_default_when_none_is_recorded(self):
+		with self.assertRaises(frappe.ValidationError):
+			variant_default.record_slot(SIMPLE, "Spend summary", "totals")
+
+	def test_a_leading_teammate_option_lets_the_first_slot_take_it_back(self):
+		out = variant_default.record_slot(SIMPLE, "Spend summary", "totals", leading=True)
+
+		self.assertIn('default="totals"', out)
+
+	def test_the_default_prop_can_be_dropped(self):
+		once = variant_default.record_slot(SIMPLE, "Spend summary", "budget-bars")
+		entry = variant_default.find_sets(once, "Spend summary")[0]
+
+		self.assertEqual(variant_default.with_default(once, entry, None), SIMPLE)
 
 
 class TestSetVariantDefault(IntegrationTestCase):
@@ -185,10 +164,10 @@ class TestSetVariantDefault(IntegrationTestCase):
 	def source(self) -> str:
 		return prototype_files.read_text(self.doc.name, "src/App.vue")["content"]
 
-	def test_the_owner_moves_it_and_a_version_is_saved(self):
+	def test_the_owner_records_it_and_a_version_is_saved(self):
 		out = api.set_variant_default(SLUG, "src/App.vue", "Spend summary", "budget-bars")
 
-		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
+		self.assertEqual(self.source(), SIMPLE.replace('name="Spend summary"', 'name="Spend summary" default="budget-bars"'))
 		rows = api.list_versions(SLUG)
 		self.assertEqual(rows[0]["sequence"], out["sequence"])
 		self.assertEqual(rows[0]["source"], "App")
@@ -199,7 +178,8 @@ class TestSetVariantDefault(IntegrationTestCase):
 		api.set_variant_default(SLUG, "src/App.vue", "Spend summary", "budget-bars")
 		api.set_variant_default(SLUG, "src/App.vue", "Spend summary", "totals")
 
-		self.assertEqual(self.source(), SIMPLE)
+		# Back to the first slot: the default is recorded, and no slot ever moved.
+		self.assertEqual(self.source(), SIMPLE.replace('name="Spend summary"', 'name="Spend summary" default="totals"'))
 		self.assertEqual(len(api.list_versions(SLUG)), 3)
 
 	def test_a_refusal_writes_nothing_and_saves_no_version(self):
@@ -249,7 +229,7 @@ class TestSetVariantDefault(IntegrationTestCase):
 		api.set_variant_default_signed(
 			self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
 		)
-		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
+		self.assertEqual(self.source(), variant_default.record_slot(SIMPLE, "Spend summary", "budget-bars"))
 		frappe.set_user("Administrator")
 		self.assertEqual(
 			versions.history(self.doc.name)[0]["prompt"], "Made \u201cBudget bars\u201d the default for Spend summary"

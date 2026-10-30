@@ -1,18 +1,19 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""Make one slot of a `<Variants name="…">` set the default, by moving it first.
+"""Make one slot of a `<Variants name="…">` set the default, by recording it on the tag.
 
-The first slot of a Variants set is the default (runtime/variants/Variants.vue).
-The owner picks a new default in the Viewer, and this module rewrites the
-source so the agent never has to be asked.
+A set's default is the slot its `default="…"` prop names, else its first slot
+(runtime/variants/Variants.vue). The owner picks a new default in the Viewer,
+and this module writes that prop, so the agent never has to be asked and no
+option ever changes its place. Options show in the order they first appeared
+(sketch/variant_order.py), never in the order of the source.
 
-`move_slot` is pure text in, text out. It walks the template's tags with a
+`record_slot` is pure text in, text out. It walks the template's tags with a
 small tokenizer that skips quoted attribute values, comments and CDATA, so a
 `>` inside `:class="a > b"` or a nested `<template v-if>` inside a slot cannot
-end a slot early. Everything outside the moved slot stays byte for byte: the
-slot is swapped with the text from the first slot up to it, so the whitespace
-that separated slots keeps its place.
+end a slot early. Only the set's opening tag changes; the rest of the file stays
+byte for byte.
 """
 
 import json
@@ -28,6 +29,7 @@ VOID = frozenset("area base br col embed hr img input link meta param source tra
 TAG_NAME = re.compile(r"[A-Za-z][\w:.-]*")
 SLOT_ATTR = re.compile(r"""(?:^|\s)(?:#|v-slot:)([^\s=/>"']+)""")
 NAME_ATTR = re.compile(r"""(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+DEFAULT_ATTR = re.compile(r"""(\s+)default\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 
 
 class Tag:
@@ -109,11 +111,11 @@ def top_template(source: str) -> tuple[int, int]:
 	return 0, len(source)
 
 
-def find_sets(source: str, name: str) -> list[dict]:
-	"""Each `<Variants name="{name}">` in the template, with its direct slots.
+def find_sets(source: str, name: str | None) -> list[dict]:
+	"""Each `<Variants name="{name}">` in the template, with its direct slots. Every set when `name` is None.
 
 	A slot is {"key", "start", "end"}: `<template #key>` through its own
-	`</template>`.
+	`</template>`. `tag` is the opening `<Variants …>` tag's span.
 	"""
 	lo, hi = top_template(source)
 	found = []
@@ -135,9 +137,9 @@ def find_sets(source: str, name: str) -> list[dict]:
 				if attr:
 					label = attr.group(1) if attr.group(1) is not None else attr.group(2)
 
-				entry = {"label": label, "slots": []}
+				entry = {"label": label, "slots": [], "tag": (tag.start, tag.end)}
 				stack.append((lower, entry, None))
-				if label == name:
+				if label == name or (name is None and label is not None):
 					found.append(entry)
 				continue
 
@@ -164,12 +166,8 @@ def find_sets(source: str, name: str) -> list[dict]:
 	return found
 
 
-def move_slot(source: str, name: str, option: str) -> str:
-	"""`source` with the `option` slot of the set `name` moved to the front.
-
-	Raises frappe.ValidationError, with a message the owner can read, when the
-	set is missing or repeated, the option is not in it, or it is already first.
-	"""
+def only_set(source: str, name: str) -> tuple[dict, list[dict]]:
+	"""The one set `name` in `source` and its slots. Raises, with a message the owner can read, when it is missing or repeated."""
 	sets = find_sets(source, name)
 	if not sets:
 		frappe.throw(
@@ -185,35 +183,66 @@ def move_slot(source: str, name: str, option: str) -> str:
 			frappe.ValidationError,
 		)
 
-	slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
-	matches = [s for s in slots if s["key"] == option]
-	if not matches:
+	return sets[0], [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
+
+
+def recorded_default(source: str, entry: dict) -> str | None:
+	"""The value of the set's `default="…"` prop, or None when it has none."""
+	start, end = entry["tag"]
+	attr = DEFAULT_ATTR.search(source, start, end)
+	if not attr:
+		return None
+
+	return attr.group(2) if attr.group(2) is not None else attr.group(3)
+
+
+def with_default(source: str, entry: dict, option: str | None) -> str:
+	"""`source` with the set's `default` prop naming `option`, or with no `default` prop when `option` is None.
+
+	Only the opening tag changes. A new prop goes right after `name="…"`.
+	"""
+	start, end = entry["tag"]
+	attr = DEFAULT_ATTR.search(source, start, end)
+	if attr:
+		replacement = "" if option is None else f'{attr.group(1)}default="{option}"'
+		return source[: attr.start()] + replacement + source[attr.end() :]
+
+	if option is None:
+		return source
+
+	name = NAME_ATTR.search(source, start, end)
+	at = name.end() if name else start + len("<Variants")
+	return source[:at] + f' default="{option}"' + source[at:]
+
+
+def record_slot(source: str, name: str, option: str, leading: bool = False) -> str:
+	"""`source` with the `option` slot recorded as the default of the set `name`. No slot moves.
+
+	Raises frappe.ValidationError when the set is missing or repeated, the option
+	is not in it, or it is already the default. With `leading` (a teammate's option
+	leads the set now) the owner's option is never already the default.
+	"""
+	entry, slots = only_set(source, name)
+	count = [s["key"] for s in slots].count(option)
+	if not count:
 		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
 
-	if len(matches) > 1:
+	if count > 1:
 		frappe.throw(
 			frappe._('"{0}" lists the option "{1}" more than once.').format(name, option),
 			frappe.ValidationError,
 		)
 
-	target = matches[0]
-	first = slots[0]
-	if target is first:
+	current = recorded_default(source, entry)
+	if current not in [s["key"] for s in slots]:
+		current = slots[0]["key"]
+	if current == option and not leading:
 		frappe.throw(
 			frappe._('"{0}" is already the default for {1}.').format(label_of(option), name),
 			frappe.ValidationError,
 		)
 
-	# [first … previous slot] [gap] [target]  ->  [target] [gap] [first … previous slot]
-	previous = max((s for s in slots if s["end"] <= target["start"]), key=lambda s: s["end"])
-	gap = source[previous["end"] : target["start"]]
-	return (
-		source[: first["start"]]
-		+ source[target["start"] : target["end"]]
-		+ gap
-		+ source[first["start"] : previous["end"]]
-		+ source[target["end"] :]
-	)
+	return with_default(source, entry, option)
 
 
 def label_of(option: str) -> str:
@@ -225,38 +254,27 @@ def label_of(option: str) -> str:
 
 def set_default(doc, file: str, name: str, option: str) -> dict:
 	"""Rewrite `file` of the Prototype and save a version. The caller has checked ownership."""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
+	_check_vue(file)
 	if editor_variants.is_extra(option):
-		# An invited editor's option: Sketch copies it into the owner's files.
+		# An invited editor's option: Sketch copies it into the owner's files. One adopted before leads again.
+		if option.startswith("adopted/"):
+			return editor_variants.lead_adopted(doc, file, name, option)
 		return editor_variants.adopt(doc, file, name, option)
 
-	absolute = prototype_files.safe_join(doc.name, file)
-	versions.lock(doc.name)
-	try:
-		with open(absolute, encoding="utf-8", newline="") as handle:
-			source = handle.read()
-	except FileNotFoundError:
-		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
-
+	source = _locked_source(doc, file)
 	# An editor's option the owner made the default leads this set until one of
-	# the owner's own options takes the lead back. The order in the source is
-	# then what already leads, so the source may not change at all.
+	# the owner's own options takes the lead back. The `default` prop on the tag
+	# says which of the owner's own options that is.
 	leading = editor_variants.leaders(doc.name, file, name)
-	sets = find_sets(source, name)
-	slots = [s for s in (sets[0]["slots"] if len(sets) == 1 else []) if s["key"] != "default" and s["end"] is not None]
-	if leading and not sets:
+	if leading and not find_sets(source, name):
 		if option != "original":
 			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
 		changed = source
-	elif leading and slots and slots[0]["key"] == option:
-		changed = source
 	else:
-		changed = move_slot(source, name, option)
+		changed = record_slot(source, name, option, leading=bool(leading))
 
 	# What the agent wrote and has not committed goes in its own version
-	# first, so the next version holds the reorder and nothing else.
+	# first, so the next version holds the new default and nothing else.
 	if versions.pending(doc.name):
 		versions.commit(doc, "Changes before the default was changed", source="App")
 
@@ -266,7 +284,7 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 
 	if leading:
 		editor_variants.clear_defaults(doc.name, file, name)
-		versions.note(doc.name, "src/variants/adopted.json", versions.MODIFIED)
+		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 
 	version = versions.commit(doc, f"Made \u201c{label_of(option)}\u201d the default for {name}", source="App")
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
@@ -283,14 +301,8 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	default, or the owner's option taking the lead back) restores every file it
 	changed, under the same refusal (`editor_variants.restore_files`).
 	"""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
-	try:
-		sequence = int(sequence)
-	except (TypeError, ValueError):
-		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
-
+	_check_vue(file)
+	sequence = editor_variants._int(sequence)
 	touched = versions._parse(
 		frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "changes")
 	)
@@ -378,17 +390,8 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 
 	Returns `removed`, how many options went.
 	"""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
-	absolute = prototype_files.safe_join(doc.name, file)
-	versions.lock(doc.name)
-	try:
-		with open(absolute, encoding="utf-8", newline="") as handle:
-			source = handle.read()
-	except FileNotFoundError:
-		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
-
+	_check_vue(file)
+	source = _locked_source(doc, file)
 	extra = editor_variants.is_extra(option)
 	sets = find_sets(source, name)
 	label = label_of(option)
@@ -414,6 +417,8 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 			gone = [s for s in slots if s["key"] != option]
 
 		changed = drop_slots(source, gone)
+		# One option is left, or none of the owner's: a recorded default has nothing to name.
+		changed = with_default(changed, find_sets(changed, name)[0], None)
 		dropped = len(gone)
 	elif not extra and option != "original":
 		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
@@ -437,7 +442,8 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 			found = editor_variants.adoptable(doc, file, name, option)
 			label = found["meta"]["name"]
 		else:
-			label = _name_of(doc.name, kept_path, option)
+			meta = editor_variants.meta_of(doc.name, kept_path) or {}
+			label = meta.get("name") or option.rsplit("/", 1)[-1]
 
 	others = [path for path in extras if path != kept_path]
 	leads = bool(extra and found is None and not replaced and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
@@ -482,22 +488,9 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	}
 
 
-def _name_of(name: str, path: str, option: str) -> str:
-	"""The `<variant name>` of an adopted file, or the end of its option value."""
-	try:
-		meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-	except frappe.ValidationError:
-		meta = None
-
-	return (meta or {}).get("name") or option.rsplit("/", 1)[-1]
-
-
 def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 	"""Bring back everything version `sequence` removed. Refused when any of it changed since."""
-	try:
-		sequence = int(sequence)
-	except (TypeError, ValueError):
-		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+	sequence = editor_variants._int(sequence)
 
 	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
 	if not (prompt or "").startswith("Kept \u201c"):
@@ -512,3 +505,19 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 		"option": option,
 		**editor_variants.restore_files(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
 	}
+
+
+def _check_vue(file) -> None:
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+
+def _locked_source(doc, file: str) -> str:
+	"""The text of `file`, read after the Prototype's version lock is taken."""
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	try:
+		with open(absolute, encoding="utf-8", newline="") as handle:
+			return handle.read()
+	except FileNotFoundError:
+		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)

@@ -48,7 +48,6 @@ export type Note = {
   tile?: TileRef
   createdAt: number
 }
-export const isTileNote = (n: { tile?: unknown }) => !!n.tile
 
 // The server's copy of a list may come from an older build or a hand edit, or be written by the
 // Prototype's own code: drop what is unusable instead of breaking the page.
@@ -116,6 +115,7 @@ export function addNote(n: Omit<Note, 'id' | 'createdAt'>, els: Element[] = []) 
   const id = newId()
   els.forEach((el, i) => live.set(`${id}:${i}`, new WeakRef(el)))
   notes.value = [...notes.value, { ...n, id, createdAt: Date.now() }]
+  return id
 }
 // The note's i-th element (0 is the main one, then the extras): the live reference, else the selector.
 export function resolveNote(n: Note, i = 0): Element | null {

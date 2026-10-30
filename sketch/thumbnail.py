@@ -53,6 +53,10 @@ class SketchThumbnailRenderer(BaseRenderer):
 
 	def can_render(self) -> bool:
 		"""True only when this path is a picture the caller may see."""
+		if self.path.startswith("t/"):
+			# A guest's 404 must not prevent the owner or an editor from loading this picture.
+			frappe.local.no_cache = True
+
 		parts = self.path.split("/")
 		if len(parts) != 4 or parts[0] != "t" or not parts[1] or not parts[2]:
 			return False

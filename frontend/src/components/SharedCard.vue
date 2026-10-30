@@ -1,25 +1,25 @@
 <script setup lang="ts">
 /**
- * One card under "Shared with me": a prototype somebody invited this user to.
+ * One card in the gallery's Shared tab: a prototype somebody invited this user
+ * to, or one they only talked on.
  *
- * The same two rows as the gallery card, because it draws the same picture and
- * the same facts. Row two leads with the owner, an Avatar and a name, because
- * the card is theirs and the address is theirs. The menu holds reads only:
- * the invited person adds variants through their own agent, and the owner
- * decides everything else. An editor's menu also has "Copy prompt", the words
- * to hand their agent. The same card draws "Conversations", prototypes the
- * user only talked on: they are not editors, so it has no prompt.
+ * The same card as the gallery's own (`PrototypeCard.vue`), because it draws
+ * the same picture and the same facts, minus the editors' stack: who it is
+ * shared with is the owner's to know. The menu holds reads only: the invited
+ * person adds variants through their own agent, and the owner decides
+ * everything else. An editor's menu also has "Copy prompt", the words to hand
+ * their agent. A prototype the user only talked on (`conversation`) is not
+ * theirs to edit, so it has no prompt.
  *
  * Row one is the name, a gray "Private" Badge when it is private, and ⋯; the
- * preview and the name are the links in. Row two is what is new, or the owner
- * and the meta when nothing is (`NewLine.vue`). Both rows are `h-7`, the height
- * of a `sm` Button, so the card never moves.
+ * preview and the name are the links in. Row two is "Updated 2 hours ago", and
+ * what is new is a pill on the preview (`PrototypeMarker.vue`). Row one is
+ * `h-7`, the height of a `sm` Button, row two `h-5`, so the card never moves.
  */
 import { computed, ref } from 'vue'
-import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
-import { avatarTheme } from '../../../runtime/shared/avatarTheme'
-import NewLine from './NewLine.vue'
+import { Badge, Button, Dropdown, toast } from 'frappe-ui'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
+import PrototypeMarker from './PrototypeMarker.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import { copyText, downloadPrototypeZip, session } from '../store'
 import type { SharedPrototype } from '../types'
@@ -90,7 +90,10 @@ const menuOptions = computed(() => [
 
 <template>
   <article class="flex min-w-0 flex-col">
-    <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+    <div class="relative">
+      <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+      <PrototypeMarker :news="prototype.new" :href="prototype.viewer_path" />
+    </div>
 
     <div class="mt-3 flex h-7 items-center gap-2">
       <h2 class="min-w-0 flex-1 truncate text-base-medium text-ink-gray-8">
@@ -111,18 +114,9 @@ const menuOptions = computed(() => [
       </Dropdown>
     </div>
 
-    <NewLine :news="prototype.new" :href="prototype.viewer_path">
-      <Avatar
-        :image="prototype.owner.user_image"
-        :label="prototype.owner.full_name"
-        :theme="avatarTheme(prototype.owner.username)"
-        size="xs"
-      />
-      <span class="min-w-0 truncate text-xs text-ink-gray-5">
-        <span :title="prototype.owner.full_name">{{ prototype.owner.username }}</span>
-        &middot; {{ prototype.description }} &middot; Updated {{ prototype.updated }}
-      </span>
-    </NewLine>
+    <div class="flex h-5 items-center text-xs text-ink-gray-5">
+      <span class="min-w-0 truncate">Updated {{ prototype.updated }}</span>
+    </div>
 
     <PrototypeFilesDialog
       v-model:open="filesOpen"

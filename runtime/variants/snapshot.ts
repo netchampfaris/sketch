@@ -1,16 +1,19 @@
 // Snapshots: a rendered frame turned into a static HTML string plus the scroll positions to restore.
 import { shallowReactive, shallowRef } from 'vue'
-import type { Opt, Reg, VSet } from './state'
+import { boxIn, lift } from './lift'
+import type { DGroup, Opt, Reg, VSet } from './state'
 
 export type Crop = { x: number; y: number; w: number; h: number }
 export type SetMeta = { key: string; x: number; y: number; w: number; h: number }
 export type RegInfo = {
-  states: { key: string; label: string; path: string; options: string[] }[]
+  states: { key: string; label: string; path: string; options: string[]; groups?: DGroup[]; of?: string }[]
   sets: { key: string; label: string; name: string; file: string; path: string; options: Opt[] }[]
 }
 export type Snap = {
   html: string
-  crop: Crop
+  // The target set was lifted out of the page (lift.ts): `html` carries its marks, and its entry in `sets` is where it
+  // sits in the lifted page.
+  lifted?: boolean
   scrolls: [number, number, number][]
   sets: SetMeta[]
   reg: RegInfo
@@ -23,12 +26,10 @@ export const cache = shallowReactive<Record<string, Snap>>({})
 export const session = {
   model: null as any[] | null,
   modelKey: '',
-  // The last thing shown, as it is written in the URL.
-  pick: null as string | null,
   // Whether the Show panel is open on desktop.
   panel: true,
 }
-// The pages the canvas found, once it has looked (reactive, so the canvas button can follow it).
+// The pages the canvas found, once it has looked (reactive, so the Demo card's Open canvas can follow it).
 export const pagesModel = shallowRef<any[] | null>(null)
 
 export const nextFrames = (n = 2) =>
@@ -39,37 +40,37 @@ export const nextFrames = (n = 2) =>
 
 export const errorSnap = (error: string): Snap => ({
   html: '',
-  crop: { x: 0, y: 0, w: 0, h: 0 },
   scrolls: [],
   sets: [],
   reg: { states: [], sets: [] },
   error,
 })
 
-function union(els: Element[], frame: DOMRect, scrollTop: number): Crop | null {
-  const rs = els.map((e) => e.getBoundingClientRect()).filter((r) => r.width || r.height)
-  if (!rs.length) return null
-  const x = Math.min(...rs.map((r) => r.left)), y = Math.min(...rs.map((r) => r.top))
-  return { x: x - frame.left, y: y - frame.top + scrollTop, w: Math.max(...rs.map((r) => r.right)) - x, h: Math.max(...rs.map((r) => r.bottom)) - y }
-}
-
-// Scroll the set into view inside its scroll container first, then measure and serialise.
-export function capture(frame: HTMLElement, reg: Reg, target: VSet | null): Snap {
-  if (target) target.elements()[0]?.scrollIntoView({ block: 'center', inline: 'center' })
-  const top = frame.scrollTop
+// Measure every set as the page lays it out, then lift the target set out of the page (lift.ts) and serialise. A set that
+// is the page keeps the whole window. `grow`: a state tile, where the set shows at its full content height (lift.ts).
+export function capture(frame: HTMLElement, reg: Reg, target: VSet | null, grow = false): Snap {
   frame.scrollTop = 0
   frame.scrollLeft = 0
-  const fr = frame.getBoundingClientRect()
+  const whole = { x: 0, y: 0, w: frame.offsetWidth, h: frame.offsetHeight }
 
   const sets: SetMeta[] = []
   for (const s of reg.sets) {
-    const c = union(s.elements(), fr, top)
+    const c = s.page() ? whole : boxIn(frame, s.elements())
     if (c) sets.push({ key: s.key, ...c })
   }
-  let crop: Crop = { x: 0, y: 0, w: fr.width, h: fr.height }
-  if (target) {
-    const c = union(target.elements(), fr, top)
-    if (c) crop = { x: c.x - 24, y: c.y - 24, w: c.w + 48, h: c.h + 48 }
+  let lifted = false
+  if (target && !target.page()) {
+    const els = target.elements()
+    if (els.length) {
+      lift(frame, els, grow)
+      const c = boxIn(frame, els)
+      if (c) {
+        const at = sets.findIndex((m) => m.key === target.key)
+        if (at >= 0) sets[at] = { key: target.key, ...c }
+        else sets.push({ key: target.key, ...c })
+        lifted = true
+      }
+    }
   }
 
   // Typed text lives in a property, not the markup, so copy it over.
@@ -82,11 +83,11 @@ export function capture(frame: HTMLElement, reg: Reg, target: VSet | null): Snap
 
   return {
     html: frame.innerHTML,
-    crop,
+    lifted,
     scrolls,
     sets,
     reg: {
-      states: reg.states.map((s) => ({ key: s.key, label: s.label, path: s.path, options: s.options })),
+      states: reg.states.map((s) => ({ key: s.key, label: s.label, path: s.path, options: s.options, groups: s.groups, of: s.of })),
       sets: reg.sets.map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, path: s.path, options: s.options() })),
     },
   }

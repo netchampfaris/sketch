@@ -4,10 +4,11 @@
 import { shallowReactive } from 'vue'
 import type { Component } from 'vue'
 import type { PageModel, TileBox } from './layout'
+import { slugOf } from './state'
 
 // A canvas tile in plain data: the page it belongs to (`route` sits beside it in an anchor), the variant option
 // or page state it shows, and the view it was pinned in. Options are named by their slot, never by their order,
-// so a tile keeps its comments when Make default reorders a set.
+// so a tile keeps its comments whatever else joins or leaves its set.
 export type TileRef = {
   kind: 'set' | 'state' | 'default'
   // The URL value of the pick the tile was pinned in: `set:overview/spend-summary`.
@@ -58,17 +59,25 @@ export const bridge = shallowReactive({
   // The pins drawn on the tiles, and the content of each extra tab.
   Pins: null as Component | null,
   tabs: {} as { comments?: Component; notes?: Component },
+  // Put a note for the agent on a tile (rejects with the reason it could not be saved), take one back, and find the one
+  // on a tile that was added with these opening words and is still waiting for the agent.
+  addNote: null as ((spot: TileSpot, text: string) => Promise<string>) | null,
+  removeNote: null as ((id: string) => void) | null,
+  pendingNote: null as ((spot: TileSpot, opening: string) => string | null) | null,
 })
 
 // ---- Tiles as data
 
 export function tileRefOf(t: TileBox, view: string): TileRef | null {
-  if (t.kind === 'gap') return null
+  // The one tile of an option that is still being drawn stands for no state yet, so nothing is pinned to it.
+  if (t.kind === 'default' && t.setKey) return null
   if (t.kind === 'set') {
     return { kind: 'set', view, page: t.pageTitle, group: t.setLabel ?? t.setKey ?? '', groupKey: t.setKey ?? '', option: t.option ?? '', optionLabel: t.opt ?? t.option ?? '' }
   }
   if (t.kind === 'state') {
-    return { kind: 'state', view, page: t.pageTitle, group: t.stateLabel ?? t.stateKey ?? '', groupKey: t.stateKey ?? '', option: t.option ?? '', optionLabel: t.option ?? '' }
+    // A component state names its set and option in its group, so the agent reads where it is; its key already carries them.
+    const group = t.setKey ? `${t.setLabel} › ${t.setOptionLabel} › ${t.stateLabel}` : (t.stateLabel ?? t.stateKey ?? '')
+    return { kind: 'state', view, page: t.pageTitle, group, groupKey: t.stateKey ?? '', option: t.option ?? '', optionLabel: t.option ?? '' }
   }
   return { kind: 'default', view, page: t.pageTitle, group: '', groupKey: '', option: '', optionLabel: 'Default' }
 }
@@ -97,7 +106,10 @@ export function tileExists(model: PageModel[] | null, spot: TileSpot): boolean |
   const { kind, groupKey, option } = spot.tile
   if (kind === 'default') return true
   if (kind === 'set') return !!page.sets.find((s) => s.key === groupKey)?.options.some((o) => o.value === option)
-  return !!page.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
+  if (page.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)) return true
+  // A component state's key ends in its set and option, "state@supplier-card-compact": it stands while that option does.
+  const of = groupKey.slice(groupKey.indexOf('@') + 1)
+  return groupKey.includes('@') && page.sets.some((s) => s.options.some((o) => slugOf(`${s.label}/${o.label}`) === of))
 }
 
 // The tile in plain words, the way the agent reads it: "Canvas · Overview › Spend summary › option Donut".

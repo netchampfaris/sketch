@@ -11,10 +11,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { useMobileNavHeight } from './mobileNav'
 import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
-import { applyPicks, bridge, closeCanvas, currentPicks, hasUnreadThreads, openCanvas, picksShown, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
+import { applyPicks, bridge, closeCanvas, currentPicks, hasUnreadThreads, openCanvas, picksShown, sameTile, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from 'sketch:variants'
 import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { canNote, isGuest } from './host'
-import { saveState } from './store'
+import { saveNow, saveState } from './store'
 import CommentPins from './CommentPins.vue'
 import CommentPopover from './CommentPopover.vue'
 import CanvasComments from './CanvasComments.vue'
@@ -411,12 +411,7 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 		applyPicks(t.anchor.picks, router)
 		await nextTick()
 	}
-	let el: Element | null = null
-	for (let i = 0; i < 30 && !unmounted; i++) {
-		el = resolve(t.anchor.selector)
-		if (el) break
-		await sleep(50)
-	}
+	const el = (await until(() => !!resolve(t.anchor.selector), 1500)) ? resolve(t.anchor.selector) : null
 	el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 	await sleep(el ? 250 : 0)
 	const r = el?.getBoundingClientRect()
@@ -457,13 +452,18 @@ const notesTab = markRaw(defineComponent({ setup: () => () => h(CanvasNotes, { s
 bridge.canComment = !guest
 bridge.canNote = noter
 bridge.pick = onTilePick
+if (noter) {
+	bridge.addNote = noteOnTile
+	bridge.removeNote = removeNote
+	bridge.pendingNote = pendingNoteOn
+}
 bridge.Pins = markRaw(TilePins)
 bridge.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
 handlers.thread = openThreadAt
 handlers.note = openEdit
 handlers.draft = reopenDraft
 onBeforeUnmount(() => {
-	Object.assign(bridge, { canComment: false, canNote: false, tool: '', pick: null, Pins: null, tabs: {}, tab: 'browse' })
+	Object.assign(bridge, { canComment: false, canNote: false, tool: '', pick: null, Pins: null, tabs: {}, tab: 'browse', addNote: null, removeNote: null, pendingNote: null })
 	handlers.thread = handlers.note = handlers.draft = null
 })
 // The canvas reads the threads as it opens, and its tab shows no count until it knows both the threads and the tiles:
@@ -471,6 +471,22 @@ onBeforeUnmount(() => {
 watch(canvasOpen, (open) => open && !guest && void load(true), { immediate: true })
 const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !bridge.model) ? 0 : openCount.value))
 watch([tabCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
+
+// The canvas's Ask agent: a note on a tile, on the server before the canvas says it is there. If it cannot be saved it
+// is taken back, and the reason goes to the canvas.
+async function noteOnTile(spot: TileSpot, text: string) {
+	const id = addNote({ ...tileAnchor(spot, { fx: 0.5, fy: 0.5 }), note: text })
+	const why = await saveNow()
+	if (why) {
+		removeNote(id)
+		throw new Error(why)
+	}
+	return id
+}
+// The note on a tile that opens with these words and has not gone to the agent yet.
+function pendingNoteOn(spot: TileSpot, opening: string) {
+	return notes.value.find((n) => !!n.tile && !n.sent && n.note.startsWith(opening) && sameTile({ route: n.route, tile: n.tile }, spot))?.id ?? null
+}
 
 // A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
 async function openNoteFromList(n: Note, row?: HTMLElement) {

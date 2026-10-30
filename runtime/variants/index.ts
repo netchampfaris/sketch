@@ -1,27 +1,31 @@
-// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `enableMakeDefault`,
-// `makeDefault` and `Chrome` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
+// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. The other exports are internal, for annotate
+// and the Viewer, and are deliberately left out of the skill.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
-import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
+import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Variants from './Variants.vue'
-import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sandboxKey, slugOf, stateValues, states } from './state'
+import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, readOptions, sandboxKey, slugOf, stateValues, states } from './state'
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { enableMakeDefault, makeDefault } from './default'
+export { enableMakeDefault } from './default'
 export { enableVariantEdit } from './edit'
-export { registerExtras } from './extras'
-export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
+export { registerExtras, registerSeen } from './extras'
+export { badges, hasUnreadThreads, initBadges, readThread, setUnread } from './badges'
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { menuBind } from './menus'
 export { closeCanvas, openCanvas } from './state'
-export { applyPicks, currentPicks, picksAvailable, picksShown, picksWords } from './picks'
+export { applyPicks, currentPicks, picksShown, picksWords } from './picks'
 export type { DemoPick } from './picks'
 
-// A demo value (a persona, a workflow phase). The first option is the default.
-export function useDemoState<T extends string>(name: string, options: readonly T[]) {
-  const key = slugOf(name)
+// A demo value (a persona, a workflow phase). The first option is the default. Options are a list, or an object of
+// groups ({ Data: ['Default', 'Loading'], Access: ['Read-only'] }). `of` ("Supplier card/Compact", a set's label and
+// an option's label) makes it a component state: drawn on the canvas, never in the Demo pill or the URL.
+export function useDemoState<T extends string>(name: string, input: readonly T[] | Record<string, readonly T[]>, config: { of?: string } = {}) {
+  const { options, groups } = readOptions(input)
+  const of = config.of?.trim() || undefined
+  const key = of ? `${slugOf(name)}@${slugOf(of)}` : slugOf(name)
   const path = pageKeyOf()
   const id = idOf(path, key)
   const route = useRoute()
@@ -30,11 +34,21 @@ export function useDemoState<T extends string>(name: string, options: readonly T
 
   // In a frame (a canvas tile): forced values only. Nothing reaches the live registry or the URL.
   if (sb) {
-    sb.reg.states.push({ key, label: name, path, options: [...options], count: 1 })
+    sb.reg.states.push({ key, label: name, path, options: [...options], count: 1, groups, of })
     return computed<T>({
       get: () => (options.includes(sb.states[id] as T) ? (sb.states[id] as T) : options[0]),
       set: (v) => {
         sb.states[id] = v
+      },
+    })
+  }
+
+  if (of) {
+    const own = ref<T>(options[0])
+    return computed<T>({
+      get: () => (options.includes(own.value) ? own.value : options[0]),
+      set: (v) => {
+        own.value = v
       },
     })
   }
@@ -51,7 +65,7 @@ export function useDemoState<T extends string>(name: string, options: readonly T
   onMounted(() => {
     const e = states[id]
     if (e) e.count++
-    else states[id] = { key, label: name, path, options: [...options], count: 1 }
+    else states[id] = { key, label: name, path, options: [...options], count: 1, groups }
     mirrorStates(router)
   })
   onBeforeUnmount(() => {

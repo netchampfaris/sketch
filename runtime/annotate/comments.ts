@@ -113,11 +113,15 @@ const RECENT_MS = 5000
 const readAt: Record<string, number> = {}
 let timer = 0
 let listening = false
+// Bumped by every write, so a read that left before it cannot put the old threads back.
+let writes = 0
 
 export async function load(silent = false) {
   if (!silent && status.value !== 'ready') status.value = 'loading'
   try {
+    const at = writes
     const r = await call<{ threads: Thread[]; people: Record<string, Person>; mentionable: Mentionable[] }>('comments_list')
+    if (at !== writes) return load(silent)
     // A thread opened a moment ago is read, even if the server has not heard yet.
     for (const t of r.threads) if (t.unread && Date.now() - (readAt[t.id] ?? 0) < RECENT_MS) t.unread = 0
     threads.value = r.threads
@@ -128,7 +132,7 @@ export async function load(silent = false) {
     // A thread that is open shows what came in: it stays read.
     const open = threadById(openThread.value)
     if (open?.unread) read(open.id)
-  } catch (e) {
+  } catch {
     // A quiet refresh that fails keeps what is on screen.
     if (!silent || status.value !== 'ready') status.value = 'error'
   }
@@ -153,6 +157,7 @@ export function stopListening() {
 
 // ---- Writing: one change, one call. Each answers with the thread as it now stands. ---------------
 function take(t: Thread | null, id?: string) {
+  writes++
   if (t) threads.value = threads.value.some((x) => x.id === t.id) ? threads.value.map((x) => (x.id === t.id ? t : x)) : [...threads.value, t]
   else if (id) threads.value = threads.value.filter((x) => x.id !== id)
   return t
@@ -182,6 +187,7 @@ export async function deleteResolved() {
   const gone = threads.value.filter((t) => !t.resolved && isGone(t)).map((t) => t.id)
   const r = await call<{ deleted: number }>('comments_delete_resolved', { also: JSON.stringify(gone) })
   const ids = new Set([...gone, ...threads.value.filter((t) => t.resolved).map((t) => t.id)])
+  writes++
   threads.value = threads.value.filter((t) => !ids.has(t.id))
   showResolved.value = false
   return r.deleted
@@ -218,7 +224,7 @@ export const whenOf = (ts: number) => new Date(ts * 1000).toLocaleString()
 
 // ---- Mentions ----------------------------------------------------------------------------------
 // A mention is stored in the text as `@[username]` (sketch/comments.py), and drawn as the person's full name.
-const TOKEN = /@\[([a-z][a-z0-9-]{2,29})\]/g
+export const TOKEN = /@\[([a-z][a-z0-9-]{2,29})\]/g
 export const nameOf = (username: string) => people.value[username]?.name || mentionable.value.find((m) => m.username === username)?.name || username
 
 // The words with each mention as "@Full Name", for a list row or a title.

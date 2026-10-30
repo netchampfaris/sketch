@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The "Show" list: search, then the groups of things to show. A floating card on the right on desktop; inside
-// the Show dropdown on a phone (`embedded`).
+// The "Show" list: search, then the groups of things to show: variant sets, and the pages that have states. A floating
+// card on the right on desktop; inside the Show dropdown on a phone (`embedded`).
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button, ScrollArea, TabButtons, TextInput, Tooltip } from 'frappe-ui'
 import { bridge } from './bridge'
@@ -13,8 +13,7 @@ const emit = defineEmits<{ choose: [value: string]; hide: [] }>()
 
 const GROUPS = [
   { key: 'sets', title: 'Variant sets' },
-  { key: 'states', title: 'States across pages' },
-  { key: 'pages', title: 'Pages' },
+  { key: 'pages', title: 'States' },
 ] as const
 
 const query = ref('')
@@ -48,7 +47,7 @@ function enter() {
 // Browse, and next to it Comments, or Notes for the owner while noting. The tab and the toolbar's tool follow
 // each other (the toolbar does the following). Without a tool to pick with (a guest) there is nothing to tab to.
 const tabbed = computed(() => !props.embedded && (bridge.canComment || bridge.canNote))
-// How many options of a set are new to this person and not looked at yet. Pages and states have none.
+// How many options of a set are new to this person and not looked at yet. A page's states have none.
 const freshOf = (i: PickItem) => (i.options ? freshIn(i.options) : 0)
 const second = computed<Tab>(() => (bridge.tab === 'notes' ? 'notes' : 'comments'))
 const tabOptions = computed(() => [
@@ -56,9 +55,7 @@ const tabOptions = computed(() => [
   { label: second.value === 'notes' ? 'Notes' : 'Comments', value: second.value, onClick: () => (bridge.tab = second.value) },
 ])
 const extra = computed(() => (bridge.tab === 'browse' ? null : (bridge.tabs[bridge.tab] ?? null)))
-// Incomplete states stand out; everything else is quiet.
-const countClass = (i: PickItem) =>
-  i.value === props.selected ? 'text-ink-gray-7' : i.group === 'states' && !i.complete ? 'text-ink-gray-8' : 'text-ink-gray-5'
+const countClass = (i: PickItem) => (i.value === props.selected ? 'text-ink-gray-7' : 'text-ink-gray-5')
 </script>
 
 <template>
@@ -87,7 +84,7 @@ const countClass = (i: PickItem) =>
         v-model="query"
         class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3"
         placeholder="Search"
-        aria-label="Search sets, states and pages"
+        aria-label="Search variant sets and states"
         autocomplete="off"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"

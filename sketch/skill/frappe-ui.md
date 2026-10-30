@@ -153,9 +153,41 @@ To undo or go back to an earlier state, call `list_versions` to find the sequenc
    Never hand-mount a `<Dialog>` to ask "are you sure?".
 9. **Style through `data-slot` and `data-state`, not class injection.** There is
    no `triggerClass` or `contentClass` prop, by design.
-10. **Sketch owns the theme.** Never call `useColorScheme` or `setColorScheme`.
-    Never render `ThemeSwitcher`. Never write to `localStorage`. Use semantic
-    tokens and both light and dark work with no effort from you.
+10. **Every app shell has a theme switch, built with `useColorScheme`.** Put
+    Light, Dark and System where the product would: the user menu in the
+    sidebar header, or a settings page. Mark the current one with `selected` and
+    a check in the row's `suffix` slot, so the row keeps its icon and the check
+    sits on the right and call
+    `setColorScheme(value)` on click. Sketch remembers the choice for
+    the person (on their account, or for the visit), applies it with no reload,
+    and the same choice opens every other prototype. Never render
+    `ThemeSwitcher`, never write `data-theme` or `localStorage` yourself. Use
+    semantic tokens and both light and dark work with no effort from you.
+
+    ```ts
+    import { computed, h } from 'vue'
+    import { useColorScheme } from 'frappe-ui'
+
+    const { colorScheme, setColorScheme } = useColorScheme()
+    const themes = [
+      { label: 'Light', value: 'light', icon: 'lucide-sun' },
+      { label: 'Dark', value: 'dark', icon: 'lucide-moon' },
+      { label: 'System', value: 'system', icon: 'lucide-monitor' },
+    ] as const
+    // A Dropdown row, inside a computed so the check follows the choice:
+    const theme = computed(() => ({
+      label: 'Theme',
+      icon: 'lucide-sun-moon',
+      submenu: themes.map((t) => ({
+        label: t.label,
+        icon: t.icon,
+        selected: colorScheme.value === t.value,
+        // `selected` shades the row; the check on the right is the suffix.
+        slots: { suffix: ({ selected }) => (selected ? h('span', { class: 'lucide-check size-4 shrink-0 text-ink-gray-7' }) : null) },
+        onClick: () => setColorScheme(t.value),
+      })),
+    }))
+    ```
 
 ## 4. What you can import
 
@@ -298,9 +330,15 @@ dayjs(row.modified).fromNow()        // "3 days ago"
 ### `sketch:variants`
 
 When the user asks for variants, options, alternatives or versions of anything,
-use `<Variants>`. Never build a switcher. Each named slot is one option, and the
-first slot is the default, so put the current design first. Sketch adds the
+use `<Variants>`. Never build a switcher. Each named slot is one option. Sketch adds the
 pill, the URL and the Keep button.
+
+The default is recorded on the tag: `<Variants name="Leave card" default="timeline">`
+shows `timeline` when nothing is picked. With no `default`, the first slot is the
+default, so a new set puts the current design first. Sketch writes `default` when
+the owner picks Make default; leave it as it is. Options show in the order they
+first appeared, oldest first, whatever their order in the file, so never reorder
+slots to change the default: set or change `default` instead.
 
 ```vue
 <script setup>
@@ -322,9 +360,32 @@ import { Variants } from 'sketch:variants'
   It is unique on a page.
 - A set covers the smallest part that differs. A whole page is fine when the
   whole page differs.
+- When the part repeats (a card in a list, a row in a table, an item in a
+  board), put the set inside the component that renders one item
+  (`src/components/DealCard.vue`), so every copy follows the pick: Sketch counts
+  every copy of one `<Variants>` tag as one set. Never wrap a single copy in the
+  page: the others would stay on the old design.
 - When a note says "Keep …", replace the `<Variants>` block with the kept
   slot's content, delete the other slots and any code only they used, then
   commit.
+- Add a new option as a new slot anywhere in the set; it shows last because it
+  is the newest. It never becomes the default unless the user asks.
+
+Making good options:
+
+- Asked for options with no direction, pick one thing to vary (layout, density,
+  emphasis, type or wording) and make each option a clearly different take on
+  it. Never vary only colour or copy. When the user says what to vary, vary
+  that. In a later round, refine the chosen direction; don't start a new one.
+- Use the page's real data, as many items as it really carries. No lorem
+  ipsum, no three-row lists.
+- Every option clears the same floor: reachable by keyboard with visible
+  focus, readable contrast, nothing clipped at phone width, truncated text
+  reachable in full.
+- Loading, empty, error and permission are component states (see States), not
+  options.
+- Don't name a favourite. Asked, say what each option is good for and what it
+  costs.
 
 #### Demo states
 
@@ -344,6 +405,46 @@ const phase = useDemoState('Cycle phase', ['Self', '360', 'Manager', 'Results'])
 - Declare a persona in `App.vue`. Declare a phase in the page that uses it.
 - The value is global by name: the same name in two components shares one value.
 - A demo flow can move it, for example `phase.value = '360'` on submit.
+- A long list of options goes in groups: pass an object instead of an array, and
+  the pill shows a heading for each group. The first option of the first group
+  is the default.
+
+```ts
+const state = useDemoState('State', {
+  Data: ['Default', 'Loading', 'Empty', 'Error'],
+  Access: ['Read-only'],
+})
+```
+
+- A third argument `{ of: 'Supplier card/Compact' }` says the states belong to
+  one option of a `<Variants>` set: the set's `name`, a slash, the option's
+  label. They show on the canvas under that option and never in the pill. See
+  States below.
+
+```ts
+const state = useDemoState('State', ['Default', 'Loading', 'Empty'], { of: 'Supplier card/Compact' })
+```
+
+#### States
+
+A state is a branch the code already has, drawn so the user can see it beside
+the others on the canvas.
+
+1. Take them from the branches in the code: data (loading, empty, error, one
+   item, many items, long text), access (a role or permission check), feature
+   (a limit reached, a locked feature). A state the code cannot reach is not a
+   state. Do not add a branch to show one.
+2. Name each in the product's words: "Payment failed", not "Error 2".
+3. One switch for each independent thing: State, Alert, Access. Never a cross
+   product. Combine two only where the code branches on the pair. Group a long
+   list with the object form above.
+4. Use data shaped like the real thing: real names, amounts and counts a user
+   actually has. Never "Test item".
+5. Loading is a state that holds still until it is switched. Never resolve it
+   on a timer.
+6. Do not build states for every option while exploring. Build an option's
+   states only when a note asks ("Build the states for Supplier card · Compact"):
+   declare them inside that option's code with `{ of: 'Supplier card/Compact' }`.
 
 ### Anything else
 
@@ -471,13 +572,14 @@ leading icon, `size-2` a status dot.
 **Empty, loading and hover states are part of the screen**, not a follow-up.
 Every list gets an empty state. Every screen that "loads" gets a skeleton.
 
-Loading, with no server: hold the fixture behind a short timer, so the skeleton
-and the empty state are both real and both visible.
+Loading, with no server: a screen that loads is shown through a Loading state
+(`useDemoState`), never a timer. The state holds the skeleton still until it is
+switched, so the skeleton and the empty state are both real and both visible.
 
 ```ts
-const rows = ref([])
-const loading = ref(true)
-onMounted(() => setTimeout(() => { rows.value = ISSUES; loading.value = false }, 600))
+const view = useDemoState('State', ['Default', 'Loading', 'Empty'])
+const loading = computed(() => view.value === 'Loading')
+const rows = computed(() => (view.value === 'Empty' ? [] : ISSUES))
 ```
 
 Empty state:
@@ -538,8 +640,9 @@ import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, ScrollArea } from 'f
 
 ```vue
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge, Button, Dialog, FormControl, PageHeader, toast } from 'frappe-ui'
+import { useDemoState } from 'sketch:variants'
 import {
   List,
   ListHeader,
@@ -553,26 +656,22 @@ import dayjs from 'dayjs'
 
 type Issue = { name: string; title: string; status: string; modified: string }
 
-const rows = ref<Issue[]>([])
-const loading = ref(true)
+const items = ref<Issue[]>([
+  { name: '1', title: 'Sidebar collapses on reload', status: 'open', modified: '2026-08-24' },
+  { name: '2', title: 'Empty state is missing', status: 'done', modified: '2026-08-21' },
+])
 
-// No server. Hold the fixture behind a short timer so the skeleton is real.
-onMounted(() =>
-  setTimeout(() => {
-    rows.value = [
-      { name: '1', title: 'Sidebar collapses on reload', status: 'open', modified: '2026-08-24' },
-      { name: '2', title: 'Empty state is missing', status: 'done', modified: '2026-08-21' },
-    ]
-    loading.value = false
-  }, 600),
-)
+// No server. Loading and Empty are states of the page, held until switched.
+const view = useDemoState('State', ['Default', 'Loading', 'Empty'])
+const loading = computed(() => view.value === 'Loading')
+const rows = computed(() => (view.value === 'Empty' ? [] : items.value))
 
 // Sort state is app code. The header cell only draws the direction you pass.
 const direction = ref<'asc' | 'desc'>('desc')
 function toggleSort() {
   direction.value = direction.value === 'asc' ? 'desc' : 'asc'
   const factor = direction.value === 'desc' ? -1 : 1
-  rows.value = [...rows.value].sort((a, b) => factor * a.modified.localeCompare(b.modified))
+  items.value = [...items.value].sort((a, b) => factor * a.modified.localeCompare(b.modified))
 }
 
 const themeFor = (s: string) =>
@@ -582,8 +681,8 @@ const showNew = ref(false)
 const form = ref({ title: '', status: 'open' })
 
 function create() {
-  rows.value.unshift({
-    name: String(rows.value.length + 1),
+  items.value.unshift({
+    name: String(items.value.length + 1),
     ...form.value,
     modified: dayjs().format('YYYY-MM-DD'),
   })
@@ -709,8 +808,8 @@ See section 1.
 **There is no type checking.** TypeScript annotations are stripped and thrown
 away. A wrong type is silent. A syntax error is fatal.
 
-**There is no `localStorage` you own,** and no theme control. Sketch sets
-`data-theme`. See rule 10.
+**There is no `localStorage` that lasts.** It works for the page and is gone
+on reload. The theme is the exception: `useColorScheme` saves it. See rule 10.
 
 **There is no `frappe-ui/experimental`.** `Accordion`, `Calendar`,
 `FloatingWindow`, `MultiEmailInput` and `CodeEditor` are not available.

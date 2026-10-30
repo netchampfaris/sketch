@@ -32,8 +32,8 @@ export const prototypes = useCall<Prototype[]>({
 })
 
 /**
- * Prototypes other people invited this user to. Empty for most users, and the
- * gallery draws nothing for it then.
+ * Prototypes other people invited this user to. Empty for most users. The
+ * gallery's Shared tab holds these and `conversationPrototypes`.
  */
 export const sharedPrototypes = useCall<SharedPrototype[]>({
   url: method('shared_prototypes'),
@@ -43,7 +43,7 @@ export const sharedPrototypes = useCall<SharedPrototype[]>({
 
 /**
  * Prototypes this user commented on or was mentioned in and neither owns nor edits.
- * The gallery draws a section for it only while there is one.
+ * They join the gallery's Shared tab.
  */
 export const conversationPrototypes = useCall<SharedPrototype[]>({
   url: method('conversations'),
@@ -168,7 +168,6 @@ export function takeAfterLogin(): string {
   return isSafePath(path) ? path : ''
 }
 
-/** Send a signed-out visitor to the login page and back again. */
 /**
  * The session ended while the gallery was open (signed out in another tab, or
  * it expired). Every call after that is refused with the server's own words,
@@ -200,9 +199,29 @@ export function errorText(error: unknown): string {
   return ((error as Error)?.message ?? '').replace(/^\w*(Error|Exception):\s*/, '') || 'Something went wrong. Try again.'
 }
 
+/** Send a signed-out visitor to the login page and back again. */
 export function goToLogin(): void {
   rememberAfterLogin(window.location.pathname + window.location.search)
   window.location.href = '/login'
+}
+
+/**
+ * "Continue with GitHub" on the feed: the provider's own page when the site has exactly one, else /login.
+ *
+ * Both remember the path first, so the visitor comes back to where they were (`goToLogin`). The server hands out the
+ * provider's address, because it carries a single-use state token (`sketch.api.sign_in_url`). A failed read is not an
+ * error to show: /login is the same way in, one page longer.
+ */
+const signInUrl = useCall<string | null>({
+  url: method('sign_in_url'),
+  method: 'POST',
+  immediate: false,
+})
+
+export async function continueWithProvider(): Promise<void> {
+  rememberAfterLogin(window.location.pathname + window.location.search)
+  const url = await signInUrl.reload()
+  window.location.href = !signInUrl.error && typeof url === 'string' && url ? url : '/login'
 }
 
 /**

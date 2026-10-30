@@ -64,11 +64,6 @@ def empty() -> dict:
 	return {"notes": [], "tweaks": [], "prompt": "", "updated": ""}
 
 
-def subject(name: str, username: str) -> str:
-	"""What an editor's notes signature covers: this Prototype, for this one person."""
-	return f"{name}|{username}"
-
-
 def read(name: str, for_update: bool = False, editor: str | None = None) -> dict:
 	"""The saved annotations, or the empty shape when there are none.
 
@@ -197,10 +192,6 @@ def epoch(name: str, editor: str | None = None) -> int:
 
 
 # ------------------------------------------------------------------ internals
-
-
-def _rows(notes) -> list[dict]:
-	return [n for n in notes or [] if isinstance(n, dict)]
 
 
 def _invite(name: str, editor: str) -> str:

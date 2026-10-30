@@ -1,11 +1,10 @@
-// "Make default": ask the server to move a variant to the front of its set, so the first slot (the
-// default) is the one the owner prefers. Internal: the pill uses it, and so
-// does the canvas tile. The Viewer is sandboxed with no cookie, so the write is authorised by the
+// "Make default": ask the server to record a variant as its set's default (the `default` prop on the tag, or the
+// lead flag of an adopted variant). No option moves. Internal: only the canvas tile's ⋯ uses it. The Viewer is sandboxed with no cookie, so the write is authorised by the
 // signature the payload carries (sketch.api.set_variant_default_signed). Only the owner's live page
 // gets one, so a Guest, a `check` and a framed card never see the button.
 import { shallowRef } from 'vue'
 import { toast } from 'frappe-ui'
-import { humanise, type Opt } from './state'
+import { defaultOf, humanise, type Opt } from './state'
 
 // The page reloads after a write, and a sandboxed page has no storage, so what the next page shows
 // rides in `window.name`, which survives a reload. MARK is a result to announce. PENDING is an Undo
@@ -141,27 +140,31 @@ function readError(body: any): string {
   }
 }
 
-async function post(method: string, params: Record<string, string>) {
-  const c = credential.value
-  if (!c) throw new Error('Only the owner can change the default.')
-  const form = new URLSearchParams({ name: c.name, exp: c.exp, sig: c.sig, ...params })
-  const res = await fetch(`/api/method/sketch.api.${method}`, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store' })
+// A cookie-less write to one of the signed endpoints. Rejects with the server's reason, fit for a toast. Shared with edit.ts.
+export async function signedPost(method: string, params: Record<string, string>) {
+  const res = await fetch(`/api/method/sketch.api.${method}`, { method: 'POST', body: new URLSearchParams(params), credentials: 'omit', cache: 'no-store' })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(readError(body))
   return body.message
+}
+
+function post(method: string, params: Record<string, string>) {
+  const c = credential.value
+  if (!c) return Promise.reject(new Error('Only the owner can change the default.'))
+  return signedPost(method, { name: c.name, exp: c.exp, sig: c.sig, ...params })
 }
 
 // What Make default needs of a set: a live `<Variants>` set on the page, or one the canvas learned from a frame.
 type Defaultable = { name: string; file: string; options: () => Opt[] }
 
 // True when the owner can make an option the default of `set` from this page.
-export const canMakeDefault = (set: Defaultable) => Boolean(credential.value && set.file && set.options()[0]?.value !== undefined)
+export const canMakeDefault = (set: Defaultable) => Boolean(credential.value && set.file && defaultOf(set.options()) !== undefined)
 
-// Moves `option` first in the source and saves a version. Resolves never on success, because the
+// Records `option` as the default and saves a version. Resolves never on success, because the
 // page reloads once it is written. Rejects with a message fit for a toast.
 export async function makeDefault(set: Defaultable, option: string) {
   const opts = set.options()
-  const previous = opts[0]
+  const previous = opts.find((o) => o.value === defaultOf(opts))
   const label = opts.find((o) => o.value === option)?.label ?? humanise(option)
   let done: any
   try {

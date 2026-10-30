@@ -15,7 +15,7 @@ import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
 import { restoreScrolls } from './snapshot'
-import type { Snap } from './snapshot'
+import type { Crop, Snap } from './snapshot'
 import type { Sandbox } from './state'
 import type { TileBox } from './layout'
 
@@ -27,7 +27,14 @@ const props = defineProps<{
   win: { w: number; h: number }
   sandbox?: Sandbox
 }>()
-const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; openPage: []; near: [near: boolean] }>()
+// `resize`: the live tile's set changed size (something expanded, a state switched), so the grid can follow it.
+const emit = defineEmits<{
+  activate: [e: MouseEvent | KeyboardEvent]
+  openPage: []
+  openStates: []
+  near: [near: boolean]
+  resize: [size: { w: number; h: number } | null]
+}>()
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -41,15 +48,31 @@ useIntersectionObserver(
   { rootMargin: `${window.innerHeight}px ${window.innerWidth}px` },
 )
 
-const isSet = computed(() => props.tile.kind === 'set')
-// The part of the page this tile shows: the set's own box, or the whole window.
+// A set tile, and a state tile of one option's component states, show the set's own box; the others the whole window.
+const isSet = computed(() => !!props.tile.setKey)
+// The part of the page this tile shows: the set lifted out of its page (lift.ts), or the whole window. Live, the frame
+// reports where the set is each time it moves or resizes.
+const liveBox = ref<Crop | null>(null)
+watch(
+  () => props.live,
+  (live) => {
+    if (live) return
+    liveBox.value = null
+    emit('resize', null)
+  },
+)
+function onAnchor(box: Crop | null) {
+  liveBox.value = box
+  emit('resize', box ? { w: box.w, h: box.h } : null)
+}
 const rect = computed(() => {
   if (!isSet.value) return { x: 0, y: 0, w: props.win.w, h: props.win.h }
+  if (props.live && liveBox.value) return liveBox.value
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
   return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
 })
-// Make default: the owner's page only, on the live tile, on an option that is not first. The page reloads once it is
-// saved, so the Default badge is on the new first tile when it comes back.
+// Make default: the owner's page only, on the live tile, on an option that is not the default. The page reloads once it
+// is saved, and the Default badge is on this same tile when it comes back: no option moves.
 const defaultable = computed(() => {
   const t = props.tile
   return t.kind === 'set' && !t.isDefault && t.setFile && t.setName && t.setOptions
@@ -98,10 +121,11 @@ async function keepIt() {
     toast.error(keepFailure(e as Error))
   }
 }
-// Every action of the live tile sits in its one ⋯ menu.
+// Every action of the live tile sits in its one ⋯ menu. A state tile of a component only opens its page.
 const menu = computed(() => [
   ...(canDefault.value && !bridge.tool ? [{ label: 'Make default', icon: 'lucide-star', onClick: makeIt }] : []),
   { label: 'Open page', icon: 'lucide-arrow-up-right', onClick: () => emit('openPage') },
+  ...(props.tile.kind === 'set' && props.tile.option ? [{ label: 'States', icon: 'lucide-layers', onClick: () => emit('openStates') }] : []),
   ...(keepable.value ? [{ label: 'Keep only this', icon: 'lucide-check', onClick: keepIt }] : []),
   ...(deletable.value ? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }] : []),
 ])
@@ -121,7 +145,7 @@ watch(
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The labels are laid out at 1x and scaled to their on-screen size (never larger than at the fit zoom), so a row
          wraps by what the eye sees. Above the tile: number, name, Default and New on the left; on the live tile, its ⋯ on
-         the right, holding Make default (owner), Open page, Keep only this, Delete variant. Under it: on a teammate's
+         the right, holding Make default (owner), Open page, States, Keep only this, Delete variant. Under it: on a teammate's
          option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
       class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
@@ -132,9 +156,12 @@ watch(
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
-          <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
-        </Dropdown>
+        <!-- The wrapper, not the Dropdown, takes ml-auto: the Dropdown does not pass a class to what it renders. -->
+        <span v-if="live" class="-mr-1.5 ml-auto flex shrink-0">
+          <Dropdown v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
+            <Button variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
+          </Dropdown>
+        </span>
       </div>
     </div>
     <div
@@ -149,18 +176,7 @@ watch(
       </div>
     </div>
 
-    <!-- A page that has a States set but not this state: same size, dashed, nothing to open. -->
     <div
-      v-if="tile.kind === 'gap'"
-      data-gap
-      class="absolute inset-0 flex items-center justify-center rounded-4 border-dashed border-outline-gray-3 px-4 text-center"
-      :style="{ borderWidth: 'calc(1px * var(--inv))' }"
-    >
-      <span class="text-ink-gray-5" :style="{ fontSize: 'calc(13px * var(--ls))' }">{{ tile.gapText }}</span>
-    </div>
-
-    <div
-      v-else
       ref="box"
       data-tile
       role="button"
@@ -182,10 +198,17 @@ watch(
       <!-- Only the set's own box shows; the rest of the tile is the tile background. -->
       <div class="absolute overflow-hidden" :style="clip">
         <div v-if="live && sandbox" data-live class="absolute left-0 top-0 cursor-auto" :style="shift">
-          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" />
+          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" :grow="!!tile.setOption" @anchor="onAnchor" />
         </div>
         <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0" :style="shift">
-          <div ref="snapEl" inert class="pointer-events-none" :style="{ width: win.w + 'px', height: win.h + 'px' }" v-html="snap.html" />
+          <div
+            ref="snapEl"
+            inert
+            class="pointer-events-none"
+            :data-sketch-lift="snap.lifted ? '' : undefined"
+            :style="{ width: win.w + 'px', height: win.h + 'px' }"
+            v-html="snap.html"
+          />
         </div>
       </div>
       <template v-if="!(live && sandbox)">

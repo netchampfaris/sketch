@@ -1,7 +1,7 @@
 // The Demo picks a live-page comment was made on: which option each variant set showed and which value each page state
 // held. A comment saves them so that, later, a person can see what it was about, and the page can be put back the same way.
 // Plain data in the anchor (sketch/comments.py `clean_picks`); a set or state that has since gone is simply skipped.
-import { choices, currentOf, idOf, isChoice, mirrorSets, mirrorStates, onPage, sets, stateOf, stateValues, states } from './state'
+import { choices, currentOf, defaultOf, idOf, isChoice, mirrorSets, mirrorStates, onPage, sets, stateOf, stateValues, states } from './state'
 
 export type DemoPick = {
   kind: 'set' | 'state'
@@ -23,7 +23,7 @@ export function currentPicks(route: any): DemoPick[] {
     const options = s.options()
     if (!onPage(route, s.path) || !isChoice(options)) continue
     const v = currentOf(s) ?? ''
-    out.push({ kind: 'set', path: s.path, key: s.key, label: s.label, option: v, optionLabel: options.find((o) => o.value === v)?.label ?? v, default: v === options[0]?.value })
+    out.push({ kind: 'set', path: s.path, key: s.key, label: s.label, option: v, optionLabel: options.find((o) => o.value === v)?.label ?? v, default: v === defaultOf(options) })
   }
   for (const s of Object.values(states)) {
     if (!onPage(route, s.path)) continue
@@ -47,9 +47,6 @@ export function picksShown(picks: DemoPick[] | undefined): boolean {
     return p.kind === 'set' ? currentOf(setOf(p)!) === p.option : stateOf(stateOfPick(p)!) === p.option
   })
 }
-
-// True once the page has registered every set and state a comment names (it is still mounting before that).
-export const picksAvailable = (picks: DemoPick[] | undefined) => (picks ?? []).every(reachable)
 
 // Put the Demo on these picks. The URL follows.
 export function applyPicks(picks: DemoPick[] | undefined, router: any) {

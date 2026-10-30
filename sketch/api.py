@@ -26,6 +26,7 @@ from sketch import (
 	editor_variants,
 	prototype,
 	prototype_files,
+	prototype_theme,
 	sharing,
 	signature,
 	snapshots,
@@ -294,6 +295,53 @@ def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 	}
 
 
+def _social_logins() -> list[str]:
+	"""The Social Login Keys a visitor can sign in with: enabled, with every credential set.
+
+	The same test core's login page applies before it draws a button
+	(`frappe/www/login.py`), so this never offers a provider that page would not.
+	"""
+	from frappe.utils.oauth import get_oauth_keys
+	from frappe.utils.password import get_decrypted_password
+
+	keys = frappe.get_all(
+		"Social Login Key",
+		filters={"enable_social_login": 1},
+		fields=["name", "client_id", "base_url"],
+		order_by="name",
+	)
+	return [
+		key.name
+		for key in keys
+		if key.client_id
+		and key.base_url
+		and get_decrypted_password("Social Login Key", key.name, "client_secret", raise_exception=False)
+		and get_oauth_keys(key.name)
+	]
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def sign_in_url() -> str | None:
+	"""Where "Continue with GitHub" goes, when the site has exactly one way in.
+
+	The provider's authorize URL, the one /login prints on its button. A visitor
+	on the feed skips the login page with it. None when the site has no provider
+	or several, and the caller falls back to /login, which lists them.
+
+	`allow_guest`, because the caller is signed out by definition. The URL holds a
+	single-use state token and no secret: it is the link the login page would
+	have handed the same visitor. It carries no `redirect-to`, as /login's own
+	button here does not: the path to come back to rides in a cookie
+	(`sketch/www/sketch.py`).
+	"""
+	from frappe.utils.oauth import get_oauth2_authorize_url
+
+	providers = _social_logins()
+	if len(providers) != 1:
+		return None
+	return get_oauth2_authorize_url(providers[0], "")
+
+
 @frappe.whitelist()
 def get_session() -> dict:
 	"""The signed-in user, plus what the Settings screen needs to render."""
@@ -320,6 +368,24 @@ def get_session() -> dict:
 		"mcp_endpoint": _public_base() + MCP_PATH,
 		"logout_url": "/api/method/logout",
 	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def prototype_theme_signed(username: str = "", exp: str = "", sig: str = "", theme: str = "") -> dict:
+	"""Save the theme this person's prototypes open in, from a Prototype's own theme switch (decision 84).
+
+	It is the one place the preference changes. The Viewer sends no session cookie, so the page's `theme` credential names the person (`signature.THEME`) and opens this one write. A bad
+	credential, or a person who is gone, is a 404.
+	"""
+	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
+	if not username or not signature.verify(prototype_theme.subject(username), exp, sig, signature.THEME):
+		raise frappe.DoesNotExistError
+
+	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	if not user:
+		raise frappe.DoesNotExistError
+
+	return {"prototype_theme": prototype_theme.write(user, theme)}
 
 
 @frappe.whitelist()
@@ -546,11 +612,11 @@ def restore_version(slug: str, sequence: int, dry_run: int = 0) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
-	"""Make `option` the first slot of `<Variants name="{name}">` in `file`.
+	"""Record `option` as the default of `<Variants name="{name}">` in `file`. No option moves.
 
 	`resolve_owned` is the permission check, so only the owner may rewrite the
 	source. Saves a version, so the change can be undone. See
-	`variant_default.move_slot` for what is refused.
+	`variant_default.record_slot` for what is refused.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return variant_default.set_default(doc, file, name, option)
@@ -744,10 +810,10 @@ def save_annotations(
 	if username:
 		# An invited editor's own notes: their signature covers the Prototype and their name together, and they
 		# must still be invited. The owner's notes are never reachable this way (decision 29).
-		if not signature.verify(annotations.subject(name, username), exp, sig, signature.ANNOTATE):
+		if not signature.verify(comments.subject(name, username), exp, sig, signature.ANNOTATE):
 			raise frappe.DoesNotExistError
 
-		user = frappe.db.get_value("User", {"username": username}, "name")
+		user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
 		if not user or not sharing.is_editor(name, user):
 			raise frappe.DoesNotExistError
 
@@ -1198,7 +1264,7 @@ def shared_prototypes() -> list[dict]:
 def conversations() -> list[dict]:
 	"""Every Prototype this user commented on or was mentioned in and neither owns nor edits, newest talk first.
 
-	The same card as "Shared with me", with the same news line, so a reply to someone who is not an
+	The same card as "Shared with me", with the same marker, so a reply to someone who is not an
 	editor still reaches them (decision 43). A Prototype made private since is not listed: they can no longer open it.
 	"""
 	user = frappe.session.user
@@ -1208,10 +1274,8 @@ def conversations() -> list[dict]:
 
 def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:
 	"""Who a variant credential speaks for, and whether they own the Prototype. Any refusal is a 404."""
-	from sketch.viewer import sharing_subject
-
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not username or not signature.verify(sharing_subject(name, username), exp, sig, signature.VARIANT_EDIT):
+	if not username or not signature.verify(comments.subject(name, username), exp, sig, signature.VARIANT_EDIT):
 		raise frappe.DoesNotExistError
 
 	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
@@ -1236,11 +1300,11 @@ def delete_variant_signed(name: str, username: str = "", exp: str = "", sig: str
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def undo_delete_variant_signed(
-	name: str, username: str = "", exp: str = "", sig: str = "", option: str = "", sequence: str = ""
+	name: str, username: str = "", exp: str = "", sig: str = "", sequence: str = ""
 ) -> dict:
 	"""Bring back the variant version `sequence` deleted, unless the tree changed since."""
 	doc, is_owner = _variant_person(name, username, exp, sig)
-	return editor_variants.undo_delete(doc, username, is_owner, sequence, option)
+	return editor_variants.undo_delete(doc, username, is_owner, sequence)
 
 
 @frappe.whitelist(methods=["POST"])

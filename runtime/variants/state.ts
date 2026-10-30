@@ -6,7 +6,10 @@ import type { InjectionKey } from 'vue'
 import { matchedRouteKey } from 'vue-router'
 
 // `author` is the username of the teammate who made the option, and absent for the owner's own.
-export type Opt = { value: string; label: string; author?: string }
+// `isDefault` marks the set's default, wherever it sits.
+export type Opt = { value: string; label: string; author?: string; isDefault?: boolean }
+// The option a set shows when nothing is picked.
+export const defaultOf = (o: readonly Opt[]) => (o.find((x) => x.isDefault) ?? o[0])?.value
 export type VSet = {
   key: string
   label: string
@@ -17,11 +20,19 @@ export type VSet = {
   // The matched route record's path, and '' for a set outside any RouterView.
   path: string
   options: () => Opt[]
-  // The slot's top-level elements, in document order.
+  // The slot's top-level elements, in document order: of the first copy in the page, when the tag is drawn many times.
   elements: () => Element[]
+  // Each copy's own `elements`, while it is mounted.
+  copies: (() => Element[])[]
+  // True when the set is the page: the root of the routed page component. Its tile shows the whole window.
+  page: () => boolean
 }
-// `path` is the matched route record's path for a page state, and '' for an app-wide state.
-export type DState = { key: string; label: string; path: string; options: string[]; count: number }
+// A heading over some of a state's options, when the caller grouped them.
+export type DGroup = { title: string; options: string[] }
+// `path` is the matched route record's path for a page state, and '' for an app-wide state. `options` is always the
+// flat list, first one the default; `groups` is there only when the caller wrote them in groups. `of` is set on a
+// component state ("Supplier card/Compact"): it is drawn on the canvas and never listed in the live registry.
+export type DState = { key: string; label: string; path: string; options: string[]; count: number; groups?: DGroup[]; of?: string }
 
 // What a frame (an offscreen or live render of a page) is told, and where it reports.
 export type Reg = { states: DState[]; sets: VSet[] }
@@ -32,6 +43,13 @@ export type Sandbox = {
   live: boolean
 }
 export const sandboxKey: InjectionKey<Sandbox> = Symbol('sketch-sandbox')
+
+// What `useDemoState` was given: a flat list, or an object of groups. The first option of the first group is the default.
+export function readOptions<T extends string>(input: readonly T[] | Record<string, readonly T[]>): { options: T[]; groups?: DGroup[] } {
+  if (Array.isArray(input)) return { options: [...input] }
+  const groups = Object.entries(input).map(([title, options]) => ({ title, options: [...options] }))
+  return { options: groups.flatMap((g) => g.options) as T[], groups }
+}
 
 export const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 export const idOf = (path: string, key: string) => `${path}::${key}`
@@ -61,7 +79,7 @@ export const choices = reactive<Record<string, string>>({})
 export const currentOf = (s: VSet) => {
   const o = s.options()
   const c = choices[setId(s)]
-  return o.some((x) => x.value === c) ? c : o[0]?.value
+  return o.some((x) => x.value === c) ? c : defaultOf(o)
 }
 // Demo states, listed while a caller is mounted. Values are kept per page for the session.
 export const states = reactive<Record<string, DState>>({})
@@ -107,7 +125,7 @@ export function mirrorSets(router: any) {
   const route = router.currentRoute.value
   const mine = sets.filter((s) => onPage(route, s.path))
   mine.forEach((s) => knownV.add(s.key))
-  const chosen = mine.filter((s) => currentOf(s) !== s.options()[0]?.value).map((s) => `${s.key}.${currentOf(s)}`)
+  const chosen = mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
   mirrorParam(router, 'v', knownV, chosen)
 }
 
