@@ -92,17 +92,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <h2 class="text-lg-semibold text-ink-gray-8">{{ entry.title }}</h2>
         <p class="mt-1.5 text-p-base text-ink-gray-6">{{ entry.line }}</p>
         <div class="mt-5 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
+          <!-- An 8px dot in a 24px button, so a thumb can hit it; the buttons touch, so the dots sit 16px apart. -->
+          <div class="-ml-2 flex items-center">
             <button
               v-for="(one, at) in slides"
               :key="one.id"
               type="button"
               :aria-label="`Show ${one.title}`"
               :aria-current="at === index"
-              class="size-2 rounded-full bg-current transition-colors focus-visible:ring-0 focus-visible:focus-ring"
-              :class="at === index ? 'text-ink-gray-8' : 'text-ink-gray-3'"
+              class="grid size-6 place-items-center rounded-full focus-visible:ring-0 focus-visible:focus-ring"
+              :class="at === index ? 'text-ink-gray-8' : 'text-ink-gray-3 hover:text-ink-gray-5'"
               @click="pick(at)"
-            />
+            >
+              <span class="size-2 rounded-full bg-current transition-colors" aria-hidden="true" />
+            </button>
           </div>
           <Button label="Got it" variant="solid" @click="close" />
         </div>

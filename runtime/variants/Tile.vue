@@ -81,7 +81,7 @@ watch(
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
         <Button
           v-if="live"
-          class="-mr-1.5"
+          class="-mr-1.5 ml-auto shrink-0"
           variant="ghost"
           size="xs"
           icon="lucide-ellipsis"
