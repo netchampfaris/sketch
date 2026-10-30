@@ -13,7 +13,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, PageHeader, Skeleton, TabButtons, TextInput, useCall } from 'frappe-ui'
+import { Button, Skeleton, TabButtons, TextInput, useCall } from 'frappe-ui'
 import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
 import SharedCard from '../components/SharedCard.vue'
@@ -299,69 +299,37 @@ onMounted(() => {
 </script>
 
 <template>
-  <!--
-    No rule under the title. The top bar already draws one, and a second line
-    12px below it read as a double border rather than as a section edge.
-
-    `border-b-0` beats `PageHeader.vue`'s own `border-b` on source order, not
-    on specificity: Tailwind emits `.border-b-0` after `.border-b`. The
-    component hard-codes the border and exposes no prop, and its class lands
-    on the same element as ours through `PageHeaderBase`'s `$attrs`.
-
-    `pt-6` matches the body's own top padding below, so the title sits on the
-    same rhythm as the grid. The component is `min-h-12 justify-center`, so
-    padding moves the content down and the header grows with it.
-  -->
-  <PageHeader class="border-b-0 pt-6">
-    <div class="min-w-0">
-      <h1 class="truncate text-2xl-semibold text-ink-gray-8">Prototypes</h1>
-    </div>
-    <!--
-      One action per screen (DESIGN.md principle 3), and it lives here in
-      every state. Finding 4.5 asked for one "New prototype" button, not for
-      the capability to disappear: hiding this one while the list was empty
-      left a user with no agent and no prototypes with no way to make one.
-      The empty state below therefore never repeats this label.
-
-      It waits for the first list only so the header does not offer an action
-      over skeleton cards. The button is 28px and the `h1` line box is 28px,
-      so the row height is the same whether or not the button is there.
-    -->
-    <Button
-      v-if="!firstLoad"
-      icon-left="lucide-plus"
-      label="New prototype"
-      theme="gray"
-      variant="subtle"
-      @click="showPicker = true"
-    />
-  </PageHeader>
+  <!-- No visible title: the top bar's "My prototypes" already names the page. Screen readers still get one. -->
+  <h1 class="sr-only">Prototypes</h1>
 
   <div class="px-3 pb-10 pt-6 sm:px-5">
     <!--
-      The tabs, and the search once the tab holds more than ten. 28px both,
-      so the row is one height whichever of them is there. On a phone the
-      search drops under the tabs onto its own line. With nothing shared there
-      are no tabs and the search keeps the right edge.
+      One toolbar: the tabs on the left; the search (once the tab holds more than ten) and "New prototype" on the right
+      edge. All 28px, so the row is one height whatever is in it. With nothing shared there are no tabs and the right
+      group keeps the right edge.
+
+      "New prototype" is the one action on this screen (DESIGN.md principle 3) and it is here in every state, the empty
+      one too: hiding it while the list was empty left a user with no way to make one (finding 4.5), so the empty state
+      below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
     -->
-    <div
-      v-if="!firstLoad && (showTabs || showSearch)"
-      class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
-    >
+    <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <TabButtons v-if="showTabs" v-model="tabModel" :options="tabs" size="sm">
         <template #suffix="{ button }">
           <span class="ml-1 tabular-nums text-ink-gray-5">{{ counts[button.value as Tab] }}</span>
         </template>
       </TabButtons>
-      <TextInput
-        v-if="showSearch"
-        v-model="query"
-        class="w-full sm:ml-auto sm:w-64"
-        aria-label="Search prototypes"
-        placeholder="Search prototypes"
-      >
-        <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
-      </TextInput>
+      <div class="ml-auto flex min-w-0 items-center gap-2">
+        <TextInput
+          v-if="showSearch"
+          v-model="query"
+          class="w-40 sm:w-64"
+          aria-label="Search prototypes"
+          placeholder="Search prototypes"
+        >
+          <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
+        </TextInput>
+        <Button icon-left="lucide-plus" label="New prototype" theme="gray" variant="subtle" @click="showPicker = true" />
+      </div>
     </div>
 
     <!--
