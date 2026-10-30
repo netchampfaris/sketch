@@ -17,7 +17,6 @@ import { Button, PageHeader, Skeleton, TabButtons, TextInput, useCall } from 'fr
 import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
 import SharedCard from '../components/SharedCard.vue'
-import WhatsNew from '../components/WhatsNew.vue'
 import { usePoll } from '../poll'
 import { conversationPrototypes, method, prototypes, session, sharedPrototypes } from '../store'
 import type { Prototype, SharedPrototype } from '../types'
@@ -448,5 +447,4 @@ onMounted(() => {
   </div>
 
   <NewPrototypeDialog v-model:open="showPicker" @created="prototypes.reload()" />
-  <WhatsNew />
 </template>

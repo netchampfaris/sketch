@@ -22,6 +22,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Avatar, Button, Combobox, Skeleton, TextInput } from 'frappe-ui'
 import FeedCard from '../components/FeedCard.vue'
+import { openWhatsNew } from '../whatsnew'
 import { continueWithProvider, publicPrototypes, sessionSettled, signedIn } from '../store'
 
 const items = computed(() => publicPrototypes.data ?? [])
@@ -117,8 +118,8 @@ onMounted(() => {
 
     "Continue with GitHub" is the only way in, so it covers sign-up too and no
     helper line follows it. It goes straight to the provider when the site has
-    one (`continueWithProvider`). "See what's new" is a route of the SPA that a
-    Guest may read. On a phone the two buttons stack, full width, in the same
+    one (`continueWithProvider`). "See what's new" opens the What's new modal,
+    which a Guest may open by hand and never sees on its own. On a phone the two buttons stack, full width, in the same
     order.
   -->
   <section v-if="showIntro" class="px-3 py-12 text-center sm:px-5 sm:py-16">
@@ -137,7 +138,7 @@ onMounted(() => {
         </template>
         Continue with GitHub
       </Button>
-      <Button label="See what's new" route="/whats-new" size="md" theme="gray" variant="outline" />
+      <Button label="See what's new" size="md" theme="gray" variant="outline" @click="openWhatsNew" />
     </div>
   </section>
 

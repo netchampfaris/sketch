@@ -56,12 +56,6 @@ export const router = createRouter({
       meta: { public: true },
     },
     {
-      path: '/whats-new',
-      name: 'WhatsNew',
-      component: () => import('./pages/WhatsNewScreen.vue'),
-      meta: { public: true },
-    },
-    {
       path: '/settings',
       name: 'Settings',
       component: () => import('./pages/SettingsScreen.vue'),

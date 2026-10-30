@@ -7,7 +7,7 @@ A signed-out visitor used to download the whole bundle on every path, watch it
 call `get_session`, and only then bounce to /login. `sketch/www/sketch.py`
 stops that at the server (problem B4).
 
-Three of the SPA's routes are public now, /feed, /about and /whats-new, and a Guest is
+Two of the SPA's routes are public now, /feed and /about, and a Guest is
 served the bundle on those. That is the trade: the feed was a server-rendered
 template and is a frappe-ui screen, so the page a signed-out visitor lands on
 costs a bundle. Every other path keeps the guard, and the destination is
@@ -90,7 +90,7 @@ class TestSpaAccess(IntegrationTestCase):
 		"""`sketch/www/sketch.py` PUBLIC_PATHS, and the same paths in
 		`hooks.py` `website_route_rules`. Either one missing is a 404 or a
 		redirect for the page the front door points at."""
-		for path in ("/feed", "/about", "/whats-new"):
+		for path in ("/feed", "/about"):
 			response = utils.request("GET", path)
 
 			self.assertEqual(response.status_code, 200, path)

@@ -100,7 +100,6 @@ website_route_rules = [
 	{"from_route": "/settings", "to_route": "sketch"},
 	{"from_route": "/feed", "to_route": "sketch"},
 	{"from_route": "/about", "to_route": "sketch"},
-	{"from_route": "/whats-new", "to_route": "sketch"},
 ]
 
 # The SPA answers the site root. `website_route_rules` cannot claim "/", because
