@@ -117,6 +117,9 @@ const canResolve = computed(() => !!props.thread && (props.thread.author === me 
 // What each ⋯ offers, only to whoever may use it. The thread's own Delete lives in the header menu.
 function startEdit(c: Reply) {
 	editing.value = { id: c.id, text: decode(c.text) }
+	// The ⋯ leaves the page while editing, before it can report itself closed, so close it here: else Cancel brings
+	// it back open.
+	menuModel(c.id)['onUpdate:open'](false)
 	// The menu hands focus back to its button as it closes; take it after that.
 	setTimeout(() => root.value?.querySelector<HTMLTextAreaElement>('[data-editing] textarea')?.focus(), 50)
 }
