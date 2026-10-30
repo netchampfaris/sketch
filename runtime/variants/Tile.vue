@@ -198,7 +198,7 @@ watch(
       <!-- Only the set's own box shows; the rest of the tile is the tile background. -->
       <div class="absolute overflow-hidden" :style="clip">
         <div v-if="live && sandbox" data-live class="absolute left-0 top-0 cursor-auto" :style="shift">
-          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" @anchor="onAnchor" />
+          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" :grow="!!tile.setOption" @anchor="onAnchor" />
         </div>
         <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0" :style="shift">
           <div

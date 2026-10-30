@@ -9,6 +9,9 @@ const SHOW = 'data-sketch-lift-show'
 const OPEN = 'data-sketch-lift-open'
 const MINW = 'data-sketch-lift-minw'
 const MINH = 'data-sketch-lift-minh'
+const GROW = 'data-sketch-lift-grow'
+const GROW_COL = 'data-sketch-lift-grow-col'
+const MARKS = [SHOW, OPEN, MINW, MINH, GROW, GROW_COL]
 
 // Paint containment and overflow would clip the element; layout containment stays, so `fixed` and `absolute` parts of the
 // page keep the frame as their containing block. A scroll container's automatic minimum size is 0 in flex and grid, so
@@ -19,6 +22,8 @@ const CSS = `
 [${OPEN}]{overflow:visible!important}
 [${MINW}]{min-width:0!important}
 [${MINH}]{min-height:0!important}
+[${GROW}]{overflow:visible!important;height:auto!important;max-height:none!important;align-self:flex-start!important;bottom:auto!important}
+[${GROW_COL}]{flex:none!important}
 `
 let styled = false
 function ensureStyle() {
@@ -31,11 +36,12 @@ function ensureStyle() {
 }
 
 // Marks `root` as a lifted page and `els` as what shows, clearing earlier marks. A snapshot keeps the marks inside the
-// root; its wrapper in the tile carries the root's own mark.
-export function lift(root: HTMLElement, els: Element[]) {
+// root; its wrapper in the tile carries the root's own mark. With `grow` (a state tile), the set and every box in it that
+// scrolls its overflow grow to their full content, so the whole of it shows.
+export function lift(root: HTMLElement, els: Element[], grow = false) {
   ensureStyle()
   root.setAttribute(ROOT, '')
-  for (const a of [SHOW, OPEN, MINW, MINH]) root.querySelectorAll(`[${a}]`).forEach((n) => n.removeAttribute(a))
+  for (const a of MARKS) root.querySelectorAll(`[${a}]`).forEach((n) => n.removeAttribute(a))
   for (const el of els) {
     el.setAttribute(SHOW, '')
     for (let n = el.parentElement; n && n !== root; n = n.parentElement) {
@@ -46,7 +52,20 @@ export function lift(root: HTMLElement, els: Element[]) {
       if (cs.minHeight === 'auto') n.setAttribute(MINH, '')
       n.setAttribute(OPEN, '')
     }
+    if (grow) for (const n of [el, ...el.querySelectorAll('*')]) unclip(n)
   }
+}
+
+// A box that scrolls its overflow grows to its content. Outer boxes go first (document order), so an inner one is judged
+// once the box around it has grown. Only the height changes: in a column flexbox it stops flexing, elsewhere it stops
+// stretching to its row.
+function unclip(n: Element) {
+  const cs = getComputedStyle(n)
+  // Scroll boxes only: a clamp or a crop that hides on purpose (`line-clamp`, `overflow-hidden`) stays as it is.
+  if (!/auto|scroll/.test(cs.overflowY) || n.scrollHeight <= n.clientHeight + 1) return
+  n.setAttribute(GROW, '')
+  const parent = n.parentElement ? getComputedStyle(n.parentElement) : null
+  if (parent?.display.includes('flex') && parent.flexDirection.startsWith('column')) n.setAttribute(GROW_COL, '')
 }
 
 // Where `els` sit in `root`, in `root`'s own px (the canvas may be zoomed).
@@ -85,7 +104,7 @@ export function firstCopy(copies: (() => Element[])[]): Element[] {
 
 // Keeps a live page lifted onto the set while it changes: a state switch re-renders the option, something expands, the
 // page scrolls itself. `report` gets the element's box each time it moves or resizes.
-export function follow(root: HTMLElement, els: () => Element[], report: (box: Crop | null) => void) {
+export function follow(root: HTMLElement, els: () => Element[], report: (box: Crop | null) => void, grow = false) {
   let raf = 0
   let last = ''
   let watched: Element[] = []
@@ -98,7 +117,7 @@ export function follow(root: HTMLElement, els: () => Element[], report: (box: Cr
       now.forEach((e) => ro.observe(e))
       watched = now
     }
-    lift(root, now)
+    lift(root, now, grow)
     const box = boxIn(root, now)
     const key = JSON.stringify(box)
     if (key !== last) {

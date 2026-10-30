@@ -18,6 +18,8 @@ const props = defineProps<{
   sandbox: Sandbox
   mode: 'offscreen' | 'live'
   targetSet?: string | null
+  // A state tile: the set grows to its full content height (lift.ts).
+  grow?: boolean
 }>()
 // `anchor`, live only: where the lifted set sits in the page each time it moves or resizes.
 const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null] }>()
@@ -55,12 +57,12 @@ onMounted(async () => {
     // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
     // page shows the whole window.
     const t = target()
-    if (t && !t.page()) stop = follow(el.value, () => t.elements(), (box) => emit('anchor', box))
+    if (t && !t.page()) stop = follow(el.value, () => t.elements(), (box) => emit('anchor', box), props.grow)
     return
   }
   try {
     reported = true
-    emit('ready', capture(el.value, props.sandbox.reg, target()))
+    emit('ready', capture(el.value, props.sandbox.reg, target(), props.grow))
   } catch (e) {
     emit('error', firstLine(e))
   }

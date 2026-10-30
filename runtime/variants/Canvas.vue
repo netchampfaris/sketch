@@ -103,7 +103,7 @@ const optView = computed(() => {
   if (p?.kind !== 'opt') return null
   const set = p.page.sets.find((s) => s.key === p.key)
   const opt = set?.options.find((o) => o.value === p.value)
-  return set && opt ? { page: p.page, set, opt, of: `${set.label}/${opt.label}`, cacheId: `${p.page.path}|v|${set.key}|${opt.value}` } : null
+  return set && opt ? { page: p.page, set, opt, of: `${set.label}/${opt.label}`, cacheId: `${p.page.path}|v|${set.key}|${opt.value}|full` } : null
 })
 const setViewValue = computed(() => (optView.value ? `set:${optView.value.page.slug}/${optView.value.set.key}` : ''))
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
@@ -168,7 +168,7 @@ const { view } = pz
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
 
 // ---- Drawing: one offscreen render at a time, in idle time, tiles in view first.
-type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null }
+type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null; grow?: boolean }
 const job = shallowRef<Job | null>(null)
 let seq = 0
 let pending: ((s: Snap) => void) | null = null
@@ -188,7 +188,7 @@ const makeSandbox = (t: Partial<TileBox> | null, live = false): Sandbox => {
   return reactive({ ...sb, reg: sb.reg as any })
 }
 
-function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
+function runJob(path: string, sandbox: Sandbox, targetSet?: string | null, grow = false) {
   return new Promise<Snap>((resolve) => {
     const timer = setTimeout(() => finish(errorSnap('Timed out while drawing')), 6000)
     const finish = (s: Snap) => {
@@ -198,7 +198,7 @@ function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
       resolve(s)
     }
     pending = finish
-    job.value = { n: ++seq, path, sandbox, targetSet }
+    job.value = { n: ++seq, path, sandbox, targetSet, grow }
   })
 }
 const onReady = (s: Snap) => pending?.(s)
@@ -265,7 +265,8 @@ async function pump() {
       const t = todo.find((x) => visible.has(x.id)) ?? todo[0]
       if (!t) break
       const k = keyOf(t.cacheId)
-      const snap = await runJob(t.path, makeSandbox(t), t.setKey ?? null)
+      // A state tile (one option's states) grows to the set's full content height.
+      const snap = await runJob(t.path, makeSandbox(t), t.setKey ?? null, !!t.setOption)
       if (!alive) return
       cache[k] = snap
       await idle()
@@ -624,7 +625,8 @@ watch(
             :key="h.text"
             role="heading"
             aria-level="2"
-            class="pointer-events-none absolute origin-top-left select-none truncate text-base font-medium text-ink-gray-8"
+            class="pointer-events-none absolute origin-top-left select-none truncate"
+            :class="h.small ? 'text-p-sm text-ink-gray-5' : 'text-base font-medium text-ink-gray-8'"
             :style="{ left: h.x + 'px', top: h.y + 'px', width: `calc(${layout.bounds.w}px / var(--ls))`, transform: 'scale(var(--ls))', lineHeight: '24px' }"
           >
             {{ h.text }}
@@ -732,6 +734,7 @@ watch(
     :h="win.h"
     :sandbox="job.sandbox"
     :target-set="job.targetSet"
+    :grow="job.grow"
     @ready="onReady"
     @error="onError"
   />

@@ -49,8 +49,8 @@ export const errorSnap = (error: string): Snap => ({
 })
 
 // Measure every set as the page lays it out, then lift the target set out of the page (lift.ts) and serialise. A set that
-// is the page keeps the whole window.
-export function capture(frame: HTMLElement, reg: Reg, target: VSet | null): Snap {
+// is the page keeps the whole window. `grow`: a state tile, where the set shows at its full content height (lift.ts).
+export function capture(frame: HTMLElement, reg: Reg, target: VSet | null, grow = false): Snap {
   frame.scrollTop = 0
   frame.scrollLeft = 0
   const whole = { x: 0, y: 0, w: frame.offsetWidth, h: frame.offsetHeight }
@@ -64,7 +64,7 @@ export function capture(frame: HTMLElement, reg: Reg, target: VSet | null): Snap
   if (target && !target.page()) {
     const els = target.elements()
     if (els.length) {
-      lift(frame, els)
+      lift(frame, els, grow)
       const c = boxIn(frame, els)
       if (c) {
         const at = sets.findIndex((m) => m.key === target.key)

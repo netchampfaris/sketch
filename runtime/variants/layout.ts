@@ -65,7 +65,8 @@ export type TileBox = {
   h: number
 }
 export type Fit = { x: number; y: number; z: number }
-export type Head = { text: string; x: number; y: number }
+// `small`: a state group's label at the start of its row in one option's states, rather than a section heading.
+export type Head = { text: string; x: number; y: number; small?: boolean }
 export type Layout = { tiles: TileBox[]; heads: Head[]; bounds: { w: number; h: number }; fit: Fit; invFit: number; sig: string }
 export type LayoutCtx = {
   win: { w: number; h: number }
@@ -129,7 +130,8 @@ function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
     const set = p.sets.find((s) => s.key === pick.key)
     const opt = set?.options.find((o) => o.value === pick.value)
     if (!set || !opt) return []
-    const cacheId = `${p.path}|v|${set.key}|${opt.value}`
+    // Its own drawings: a state tile shows the set at its full height, the set view's tile as the page shows it.
+    const cacheId = `${p.path}|v|${set.key}|${opt.value}|full`
     const pin = { setKey: set.key, setLabel: set.label, setOption: opt.value, setOptionLabel: opt.label, meta: set.meta ?? undefined }
     const found = ctx.statesOf(cacheId)
     // Declared nothing: no tiles, and the canvas says so. Until the option has been drawn once (or if it cannot be), there
@@ -137,10 +139,12 @@ function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
     if (Array.isArray(found) && !found.length) return []
     if (!Array.isArray(found)) return [{ id: `${cacheId}|probe`, cacheId, ...base(p), caption: 'Default', opt: 'Default', kind: 'default', ...pin }]
     const first = found[0]
+    const secs = sectionsOf(found, false)
+    // The option as it is opens the first row, the row of the switch it is the default of.
     const out: Desc[] = [
-      { id: `${cacheId}|s|${first.key}|${first.options[0]}`, cacheId, ...base(p), caption: first.options[0], opt: first.options[0], kind: 'state', stateKey: first.key, stateLabel: first.label, option: first.options[0], ...pin },
+      { id: `${cacheId}|s|${first.key}|${first.options[0]}`, cacheId, ...base(p), caption: first.options[0], opt: first.options[0], kind: 'state', stateKey: first.key, stateLabel: first.label, option: first.options[0], section: secs[0]?.title, ...pin },
     ]
-    for (const sec of sectionsOf(found, false))
+    for (const sec of secs)
       for (const { s, o } of sec.picks) {
         const id = `${cacheId}|s|${s.key}|${o}`
         out.push({ id, cacheId: id, ...base(p), caption: o, opt: o, kind: 'state', stateKey: s.key, stateLabel: s.label, option: o, section: sec.title, ...pin })
@@ -189,9 +193,53 @@ function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): F
   return { x: (vp.w - b.w * z) / 2, y: fitsHeight ? TOP + (room - b.h * z) / 2 : TOP, z }
 }
 
+// One option's states: one row per state group, side by side in the order they are declared, each tile its own size
+// (the set at its full content height) and the row's tiles sharing its top edge. A group's name labels its row's start.
+// The view opens on the start of the rows, fitted to the tallest tile when that is readable, and pans along them.
+const READABLE = 0.5
+function layoutRows(descs: Desc[], ctx: LayoutCtx): Layout {
+  const sizes = descs.map((d) => ctx.sizeOf(d.cacheId, d.setKey!))
+  const known = sizes.every(Boolean)
+  const dims = descs.map((d, i) => {
+    const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
+    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
+  })
+  const tallest = Math.max(...dims.map((d) => d.h))
+  const room = ctx.vp.h - TOP - PAD
+  const z = Math.max(MIN_Z, Math.min(1, Math.max(READABLE, room / tallest)))
+  const fit: Fit = { x: ctx.phone ? 16 : PAD, y: TOP, z }
+  const inv = 1 / z
+
+  const rows: number[][] = []
+  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? rows[rows.length - 1].push(i) : rows.push([i])))
+  const tiles: TileBox[] = []
+  const heads: Head[] = []
+  let y = 0
+  let w = 0
+  rows.forEach((row, ri) => {
+    if (ri) y += GAP
+    const title = descs[row[0]].section
+    if (title && rows.length > 1) {
+      heads.push({ text: title, x: 0, y, small: true })
+      y += HEAD * inv
+    }
+    y += LABEL * inv
+    let x = 0
+    for (const i of row) {
+      tiles.push({ ...descs[i], x, y, ...dims[i] })
+      x += dims[i].w + GAP
+    }
+    w = Math.max(w, x - GAP)
+    y += Math.max(...row.map((i) => dims[i].h)) + AUTHOR * inv
+  })
+  const sig = `rows|${dims.map((d) => `${d.w}x${d.h}`).join(',')}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}`
+  return { tiles, heads, bounds: { w, h: y }, fit, invFit: inv, sig }
+}
+
 export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx): Layout {
   const descs = pick ? descsOf(pick, pages, ctx) : []
   if (!descs.length) return empty
+  if (pick?.kind === 'opt') return layoutRows(descs, ctx)
   const isSet = !!descs[0].setKey
   // Set tiles take their real sizes only once every option has been drawn, so the grid settles once.
   const sizes = isSet ? descs.map((d) => ctx.sizeOf(d.cacheId, d.setKey!)) : []
