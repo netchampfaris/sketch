@@ -71,27 +71,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <!--
-    Manus's shape: no title row. The clip runs edge to edge across the top with the close button over its corner, then
-    the title and the line, then one row with the dots on the left and Got it on the right. `bare` drops the Dialog's own
-    padding and header; Esc and a click outside still close it.
+    A title row with the close button, the clip, the title and the line, the dots, then Got it on the right. `bare`
+    drops the Dialog's own padding (24px sides, 24px under the header, 28px under the actions), so this one can sit on a
+    tighter 16px all round. Esc and a click outside still close it.
   -->
-  <Dialog v-model:open="whatsNewOpen" size="lg" bare>
+  <Dialog v-model:open="whatsNewOpen" size="xl" bare>
     <template #default="{ close }">
-      <div class="relative">
-        <WhatsNewClip :key="entry.id" :entry="entry" play="now" @ended="clipEnded" />
-        <button
-          type="button"
-          aria-label="Close"
-          class="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/60 focus-visible:ring-0 focus-visible:focus-ring"
-          @click="close"
-        >
-          <span class="lucide-x size-4" aria-hidden="true" />
-        </button>
-      </div>
-      <div class="px-5 pb-5 pt-4">
-        <h2 class="text-lg-semibold text-ink-gray-8">{{ entry.title }}</h2>
-        <p class="mt-1.5 text-p-base text-ink-gray-6">{{ entry.line }}</p>
-        <div class="mt-5 flex items-center justify-between gap-3">
+      <div class="p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base-medium text-ink-gray-8">What's new</h2>
+          <Button variant="ghost" icon="lucide-x" aria-label="Close" @click="close" />
+        </div>
+        <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @ended="clipEnded" />
+        <h3 class="mt-3 text-lg-semibold text-ink-gray-8">{{ entry.title }}</h3>
+        <p class="mt-1 text-p-base text-ink-gray-6">{{ entry.line }}</p>
+        <div class="mt-4 flex items-center justify-between gap-3">
           <!-- An 8px dot in a 24px button, so a thumb can hit it; the buttons touch, so the dots sit 16px apart. -->
           <div class="-ml-2 flex items-center">
             <button
