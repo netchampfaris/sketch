@@ -122,6 +122,12 @@ const fullSize = ref({ w: win.w, h: win.h })
 useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
+// The live tile's set as it is now, while it differs from its drawing: the grid follows it, and goes back when it closes.
+const liveSize = reactive<Record<string, { w: number; h: number }>>({})
+const onResize = (t: TileBox, size: { w: number; h: number } | null) => {
+  if (size) liveSize[t.cacheId] = size
+  else delete liveSize[t.cacheId]
+}
 const vpSize = computed(() => ({ w: fullSize.value.w - (panelShown.value ? PANEL_W : 0), h: fullSize.value.h }))
 // The states a drawn option declared with `of` naming it: null until it is drawn.
 function statesOfOption(cacheId: string): StateInfo[] | 'error' | null {
@@ -137,7 +143,7 @@ const layout = computed(() =>
     vp: vpSize.value,
     phone: phone.value,
     sizeOf: (id, key) => {
-      const r = cache[keyOf(id)]?.sets.find((s) => s.key === key)
+      const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
       return r ? { w: r.w, h: r.h } : null
     },
     statesOf: (id) => statesOfOption(id),
@@ -590,6 +596,7 @@ watch(
             :win="win"
             @activate="(e) => activate(t, e)"
             @near="(n: boolean) => onNear(t.id, n)"
+            @resize="(size) => onResize(t, size)"
           />
           <!-- The headings over the sections of tiles, laid out at 1x and scaled like the captions. -->
           <div

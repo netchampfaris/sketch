@@ -8,6 +8,7 @@ import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmou
 import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extraOf, failed, mergeOptions } from './extras'
+import { firstCopy } from './lift'
 import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
 
 type Forward = { attrs: Record<string, unknown>; slots: Record<string, (...a: any[]) => VNodeChild> }
@@ -86,14 +87,25 @@ export default defineComponent({
 
     const own = () => Object.keys(slots).filter((k) => k !== 'default').map((value) => ({ value, label: humanise(value) }))
     const options = () => mergeOptions(own(), { name: props.name, wrapper: props.wrapper, file, default: props.default })
-    // The slot's elements sit between the Fragment's start and end anchors.
-    const elements = () => {
+    // This copy's elements sit between the Fragment's start and end anchors.
+    const mine = () => {
       const out: Element[] = []
       const end = inst.subTree?.anchor
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
       return out
     }
-    const set: VSet = twin && shared ? twin : { key, label, name: props.name, file, path, options, elements }
+    // The tag is the page: the root of the component a route renders.
+    const page = () => {
+      const p = inst.parent
+      return !!p && p.subTree === inst.vnode && !!router?.getRoutes().some((r) => Object.values(r.components ?? {}).includes(p.type as any))
+    }
+    const copies: (() => Element[])[] = []
+    const set: VSet = twin && shared ? twin : { key, label, name: props.name, file, path, options, elements: () => firstCopy(copies), copies, page }
+    set.copies.push(mine)
+    onBeforeUnmount(() => {
+      const i = set.copies.indexOf(mine)
+      if (i >= 0) set.copies.splice(i, 1)
+    })
     const id = setId(set)
     const draw = (cur: string | undefined) => {
       if (cur === undefined) return undefined
