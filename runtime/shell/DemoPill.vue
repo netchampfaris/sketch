@@ -168,11 +168,12 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 					:aria-label="`${freshOf(s)} new since you last looked`"
 				/>
 			</span>
-			<div v-if="isState(s)" class="justify-self-start"><LensMenu :state="s" :show-name="false" /></div>
-			<div v-else class="min-w-0 justify-self-start">
+			<!-- Pickers fill their column, so every chevron sits on the same right edge. -->
+			<div v-if="isState(s)" class="min-w-0"><LensMenu :state="s" :show-name="false" fill /></div>
+			<div v-else class="min-w-0">
 				<Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt((s as ModelSet).key))" :options="menuOf(s as ModelSet)">
-					<Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as ModelSet)}`">
-						<span class="flex items-center gap-1.5">
+					<Button class="w-full [&>span]:w-full" variant="ghost" :aria-label="`${s.label}: ${labelOf(s as ModelSet)}`">
+						<span class="flex w-full min-w-0 items-center justify-between gap-1.5">
 							<span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as ModelSet)">{{ labelOf(s as ModelSet) }}</span>
 							<span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
 						</span>

@@ -314,7 +314,8 @@ export type ModelSet = {
 	rect: Rect | null
 	options: ModelOption[]
 }
-export type ModelState = { id: string; label: string; path: string; value: string; options: string[] }
+// `groups` is there only when the state was declared in groups ({ Data: ['Default', 'Loading'], Access: [...] }).
+export type ModelState = { id: string; label: string; path: string; value: string; options: string[]; groups?: { title: string; options: string[] }[] }
 // `rect` is in the canvas's own coordinates: the screen point is pan + rect * zoom.
 // A set's tile also says which `<Variants>` it is (its name and file) and how many options the set has: what Make default
 // and Keep only this ask the server for. A lying frame can only name another option for the owner's real click.
@@ -382,10 +383,12 @@ const modelSet = (v: unknown): ModelSet | null => {
 	})
 	return base && { ...base, rect: v.rect == null ? null : rect(v.rect) }
 }
-const modelState = (v: unknown): ModelState | null =>
-	isObj(v)
-		? all<ModelState>({ id: str(v.id), label: str(v.label), path: str(v.path, CAPS.route), value: str(v.value), options: strings(v.options, CAPS.options) })
-		: null
+const stateGroup = (v: unknown) => (isObj(v) ? all<{ title: string; options: string[] }>({ title: str(v.title), options: strings(v.options, CAPS.options) }) : null)
+const modelState = (v: unknown): ModelState | null => {
+	if (!isObj(v)) return null
+	const base = all<Omit<ModelState, 'groups'>>({ id: str(v.id), label: str(v.label), path: str(v.path, CAPS.route), value: str(v.value), options: strings(v.options, CAPS.options) })
+	return base && some<ModelState>({ ...base, groups: v.groups === undefined ? null : list(v.groups, CAPS.options, stateGroup) })
+}
 const canvasTile = (v: unknown): CanvasTile | null =>
 	isObj(v)
 		? all<CanvasTile>({
