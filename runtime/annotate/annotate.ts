@@ -116,6 +116,7 @@ export function addNote(n: Omit<Note, 'id' | 'createdAt'>, els: Element[] = []) 
   const id = newId()
   els.forEach((el, i) => live.set(`${id}:${i}`, new WeakRef(el)))
   notes.value = [...notes.value, { ...n, id, createdAt: Date.now() }]
+  return id
 }
 // The note's i-th element (0 is the main one, then the extras): the live reference, else the selector.
 export function resolveNote(n: Note, i = 0): Element | null {

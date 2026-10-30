@@ -20,8 +20,12 @@ export type VSet = {
   // The slot's top-level elements, in document order.
   elements: () => Element[]
 }
-// `path` is the matched route record's path for a page state, and '' for an app-wide state.
-export type DState = { key: string; label: string; path: string; options: string[]; count: number }
+// A heading over some of a state's options, when the caller grouped them.
+export type DGroup = { title: string; options: string[] }
+// `path` is the matched route record's path for a page state, and '' for an app-wide state. `options` is always the
+// flat list, first one the default; `groups` is there only when the caller wrote them in groups. `of` is set on a
+// component state ("Supplier card/Compact"): it is drawn on the canvas and never listed in the live registry.
+export type DState = { key: string; label: string; path: string; options: string[]; count: number; groups?: DGroup[]; of?: string }
 
 // What a frame (an offscreen or live render of a page) is told, and where it reports.
 export type Reg = { states: DState[]; sets: VSet[] }
@@ -32,6 +36,13 @@ export type Sandbox = {
   live: boolean
 }
 export const sandboxKey: InjectionKey<Sandbox> = Symbol('sketch-sandbox')
+
+// What `useDemoState` was given: a flat list, or an object of groups. The first option of the first group is the default.
+export function readOptions<T extends string>(input: readonly T[] | Record<string, readonly T[]>): { options: T[]; groups?: DGroup[] } {
+  if (Array.isArray(input)) return { options: [...input] }
+  const groups = Object.entries(input).map(([title, options]) => ({ title, options: [...options] }))
+  return { options: groups.flatMap((g) => g.options) as T[], groups }
+}
 
 export const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 export const idOf = (path: string, key: string) => `${path}::${key}`

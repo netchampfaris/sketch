@@ -1,11 +1,11 @@
 // Snapshots: a rendered frame turned into a static HTML string plus the scroll positions to restore.
 import { shallowReactive, shallowRef } from 'vue'
-import type { Opt, Reg, VSet } from './state'
+import type { DGroup, Opt, Reg, VSet } from './state'
 
 export type Crop = { x: number; y: number; w: number; h: number }
 export type SetMeta = { key: string; x: number; y: number; w: number; h: number }
 export type RegInfo = {
-  states: { key: string; label: string; path: string; options: string[] }[]
+  states: { key: string; label: string; path: string; options: string[]; groups?: DGroup[]; of?: string }[]
   sets: { key: string; label: string; name: string; file: string; path: string; options: Opt[] }[]
 }
 export type Snap = {
@@ -86,7 +86,7 @@ export function capture(frame: HTMLElement, reg: Reg, target: VSet | null): Snap
     scrolls,
     sets,
     reg: {
-      states: reg.states.map((s) => ({ key: s.key, label: s.label, path: s.path, options: s.options })),
+      states: reg.states.map((s) => ({ key: s.key, label: s.label, path: s.path, options: s.options, groups: s.groups, of: s.of })),
       sets: reg.sets.map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, path: s.path, options: s.options() })),
     },
   }

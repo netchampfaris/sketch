@@ -10,15 +10,17 @@ import type { DState } from './state'
 const props = withDefaults(defineProps<{ state: DState; showName?: boolean }>(), { showName: true })
 const router = useRouter()
 const current = computed(() => stateOf(props.state))
+const item = (o: string) => ({
+  label: o,
+  selected: o === current.value,
+  onClick: () => {
+    stateValues[idOf(props.state.path, props.state.key)] = o
+    mirrorStates(router)
+  },
+})
+// Grouped options get a heading each; a flat list is as it always was.
 const options = computed(() =>
-  props.state.options.map((o) => ({
-    label: o,
-    selected: o === current.value,
-    onClick: () => {
-      stateValues[idOf(props.state.path, props.state.key)] = o
-      mirrorStates(router)
-    },
-  })),
+  props.state.groups ? props.state.groups.map((g) => ({ group: g.title, options: g.options.map(item) })) : props.state.options.map(item),
 )
 </script>
 
