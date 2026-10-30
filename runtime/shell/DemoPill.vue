@@ -1,15 +1,14 @@
 <script setup lang="ts">
 // The Demo pill at the bottom right, drawn by the Viewer shell over the frame. It opens a card with the app-wide states (Role), this page's states and this
-// page's Variants sets, one row each, as the frame reports them (demo.ts). The owner's rows also carry Make default and
-// Keep only this, which the shell saves over the session (actions.ts).
+// page's Variants sets, one row each, as the frame reports them (demo.ts): a name and its picker. Make default and Keep
+// only this live on the canvas tile's ⋯ only (TileMenu.vue).
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { createReusableTemplate, onClickOutside, useElementBounding, useElementSize, useEventListener } from '@vueuse/core'
-import { Button, Dropdown, toast } from 'frappe-ui'
+import { Button, Dropdown } from 'frappe-ui'
 import type { ModelSet, ModelState, Rect } from '../shared/protocol'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { choose, demo, measure } from './demo'
 import { onFrame, page, post } from './frame'
-import { isOwner, keepFailure, keepOnly, makeDefault, makeFailure, saving } from './actions'
 import LensMenu from './LensMenu.vue'
 import { canvas, showView } from './canvas'
 import { menuBind } from '../shared/menus'
@@ -147,33 +146,6 @@ function openHere() {
 	const first = setRows.value.find((s) => s.path !== '')
 	go(first ? first.view : pageStateRows.value.length ? `page:${pageStateRows.value[0].path}` : 'auto')
 }
-const off = (s: ModelSet) => s.value !== s.options[0]?.value
-// The owner's rows carry two more actions. The column is only there while a row is off its default; otherwise the
-// card is as narrow as a commenter's.
-const actionsShown = computed(() => isOwner() && setRows.value.some(off))
-const canMakeDefault = (s: ModelSet) => isOwner() && !!s.file && s.options[0]?.value !== undefined
-const canKeepOnly = (s: ModelSet) => isOwner() && !!s.file
-// Make default: the pick becomes the first slot in the source. The frame reloads once it is saved.
-const held = ref(0)
-async function makeIt(s: ModelSet, e: MouseEvent) {
-	if (!s.value || saving.value) return
-	held.value = (e.currentTarget as HTMLElement).offsetWidth
-	try {
-		await makeDefault({ name: s.name, file: s.file, first: s.options[0] }, s.value, s.id)
-	} catch (err) {
-		toast.error(makeFailure(err as Error))
-	}
-}
-// Keep only this: the same server action as the canvas tile's menu. The frame reloads, and the toast says "Kept …" with Undo.
-async function keepIt(s: ModelSet) {
-	if (!s.value || saving.value) return
-	hover(null)
-	try {
-		await keepOnly({ name: s.name, file: s.file }, s.value, s.id)
-	} catch (err) {
-		toast.error(keepFailure(err as Error))
-	}
-}
 const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.label)
 
 </script>
@@ -215,37 +187,6 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 					</template>
 				</Dropdown>
 			</div>
-			<template v-if="actionsShown">
-				<!-- On a phone the actions sit on their own line under the dropdown, and only a row that has something to do shows one. -->
-				<span
-					v-if="!isState(s)"
-					class="flex shrink-0 items-center justify-end gap-1 max-md:col-span-2 max-md:col-start-2 max-md:row-start-2 max-md:justify-start"
-					:class="!off(s as ModelSet) ? 'max-md:hidden' : ''"
-				>
-					<Button
-						v-if="canMakeDefault(s as ModelSet)"
-						:class="off(s as ModelSet) ? '' : 'invisible max-md:hidden'"
-						variant="ghost"
-						:loading="saving === s.id"
-						:disabled="!!saving"
-						:style="saving === s.id && held ? { width: `${held}px` } : undefined"
-						:tabindex="off(s as ModelSet) ? undefined : -1"
-						:aria-label="`Make ${labelOf(s as ModelSet)} the default for ${s.label}`"
-						@click="makeIt(s as ModelSet, $event)"
-					><span class="text-p-sm" :class="saving === s.id ? 'sr-only' : ''">Make default</span></Button>
-					<Button
-						v-if="canKeepOnly(s as ModelSet)"
-						:class="off(s as ModelSet) || hovered === s.id ? '' : 'invisible max-md:hidden'"
-						variant="ghost"
-						:loading="saving === s.id"
-						:disabled="!!saving"
-						:tabindex="off(s as ModelSet) || hovered === s.id ? undefined : -1"
-						:aria-label="`Keep only ${labelOf(s as ModelSet)} for ${s.label}`"
-						@click="keepIt(s as ModelSet)"
-					><span class="text-p-sm" :class="saving === s.id ? 'sr-only' : ''">Keep only this</span></Button>
-				</span>
-				<span v-else class="max-md:hidden" />
-			</template>
 		</div>
 	</DefineRow>
 
@@ -261,10 +202,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			id="sketch-demo-card"
 			class="pointer-events-auto max-h-[60vh] w-max max-w-full overflow-y-auto rounded-[16px] bg-surface-elevation-2 p-2 shadow-lg ring-1 ring-outline-gray-2"
 		>
-			<div
-				class="grid grid-cols-[auto_minmax(0,max-content)] items-center gap-x-2"
-				:class="actionsShown ? 'md:grid-cols-[auto_minmax(0,max-content)_auto]' : ''"
-			>
+			<div class="grid grid-cols-[auto_minmax(0,max-content)] items-center gap-x-2">
 				<RowOf v-for="s in appRows" :key="s.id" :s="s" role />
 				<RowOf v-for="s in pageStateRows" :key="s.id" :s="s" />
 				<RowOf v-for="s in setRows" :key="s.id" :s="s" />
