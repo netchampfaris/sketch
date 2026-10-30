@@ -396,7 +396,7 @@ function namedImports(code) {
 // Each module runs once, into its own exports object, and that object is
 // registered before the body runs. An import cycle therefore sees the partly
 // filled exports, the way Node and a bundler resolve one.
-function makeRegistry(files, factories, bare) {
+function makeRegistry(files, factories, bare, wrap) {
   const modules = new Map()
   const styles = new Map()
 
@@ -429,10 +429,60 @@ function makeRegistry(files, factories, bare) {
     if (!hit) throw new Error(`Cannot resolve "${spec}" from ${from}`)
     if (hit.endsWith('.css')) return inject(hit)
     if (!factories[hit]) throw new Error(`Cannot import "${spec}" from ${from}: not a module`)
-    return load(hit)
+    return wrap ? wrap(hit, load(hit)) : load(hit)
   }
 
   return load
+}
+
+// ------------------------------------------------------- teammates' variants
+// src/variants/@name/ is a teammate's folder, written only by that person's agent. src/variants/adopted/ holds the
+// ones the owner made the default; src/variants/adopted.json says who made each and which one leads its set.
+const GUEST = /^src\/variants\/@[a-z0-9-]+\//
+const ADOPTED = /^src\/variants\/adopted\/.+\.vue$/
+const REGISTRY = 'src/variants/adopted.json'
+const authorOf = (path) => path.split('/')[2].slice(1)
+
+function adoptedRows(files) {
+  try {
+    const rows = JSON.parse(files[REGISTRY] || '{}')
+    return rows && typeof rows === 'object' ? rows : {}
+  } catch {
+    return {}
+  }
+}
+
+// `<variant set="KPI strip" name="Compact" />` or `<variant component="src/components/KpiStrip.vue" name="Compact" />`.
+// The author is the folder the file is in, never a word in the file.
+function variantsOf(data, compiled, blocks, skip, loader) {
+  const adopted = adoptedRows(data.files || {})
+  const out = []
+  for (const path of Object.keys(compiled)) {
+    if (!path.endsWith('.vue')) continue
+    let author = ''
+    let lead = false
+    if (GUEST.test(path)) author = authorOf(path)
+    else if (ADOPTED.test(path)) {
+      author = String(adopted[path]?.author || '')
+      lead = Boolean(adopted[path]?.default)
+      if (!data.authors?.[author]) continue
+    } else continue
+
+    const tag = (blocks[path] || []).find((b) => b.type === 'variant')
+    if (!tag) continue
+    const text = (k) => (typeof tag.attrs[k] === 'string' ? tag.attrs[k].trim() : '')
+    const [name, set, component] = [text('name'), text('set'), text('component')]
+    if (!name || Boolean(set) === Boolean(component)) {
+      skip(path, '<variant> needs name="…" and exactly one of set="…" or component="…".')
+      continue
+    }
+    if (component && (!component.endsWith('.vue') || compiled[component] === undefined || GUEST.test(component))) {
+      skip(path, `${component} is not a component of this prototype.`)
+      continue
+    }
+    out.push({ value: path.slice('src/variants/'.length, -'.vue'.length), label: name, author, set, component, lead, load: () => loader(path) })
+  }
+  return out
 }
 
 // ------------------------------------------------------------------- run it
@@ -466,22 +516,48 @@ async function run() {
     })
   if (errors.length) return report('link-failed')
 
-  // 1. compile every file
+  // 1. compile every file. A teammate's file (src/variants/@name/) is compiled apart: a mistake in it is a warning
+  //    and the file is skipped, so it can never fail the owner's page. Its styles are dropped.
   t.compileStart = performance.now()
   const compiled = {}
+  const blocks = {}
+  const view = { ...files }
   let css = ''
+  const guests = new Set(Object.keys(files).filter((p) => GUEST.test(p)))
+  const skip = (path, message) => {
+    delete compiled[path]
+    delete view[path]
+    warnings.push({ kind: 'variant-skipped', file: path, message: `Skipped, so it is not an option. ${message}` })
+  }
+  const said = (list) => list.map((e) => (Number.isFinite(e.line) ? `Line ${e.line}: ` : '') + e.message).join(' ')
   for (const [path, source] of Object.entries(files)) {
+    const guest = guests.has(path)
+    if (guest && !data.authors?.[authorOf(path)]) {
+      skip(path, `${authorOf(path)} is not a Sketch user.`)
+      continue
+    }
     if (path.endsWith('.vue')) {
       const r = await compileSFC(path, source)
+      if (guest && r.errors.length) {
+        skip(path, said(r.errors))
+        continue
+      }
       errors.push(...r.errors.map((e) => ({ kind: 'compile', ...e })))
       for (const m of (r.code || '').matchAll(/_resolveComponent\(\s*"([^"]+)"/g))
         candidates.push({ file: path, tag: m[1] })
       compiled[path] = r.code
-      css += r.css
+      blocks[path] = r.blocks || []
+      if (!guest) css += r.css
     } else if (path.endsWith('.ts') || path.endsWith('.js')) {
       const r = compileTS(path, source)
+      if (guest && r.errors.length) {
+        skip(path, said(r.errors))
+        continue
+      }
       errors.push(...r.errors.map((e) => ({ kind: 'compile', ...e })))
       compiled[path] = r.code
+    } else if (guest) {
+      delete view[path]
     }
   }
   t.compileEnd = performance.now()
@@ -490,18 +566,22 @@ async function run() {
   // 2. link. Relative specifiers resolve inside the tree; bare ones load
   //    through the import map, once, before any module body runs.
   const bare = new Map()
-  for (const spec of bareSpecifiers(compiled)) {
+  const load1 = async (spec) => {
+    // A namespace object carries no __esModule, so sucrase's default-import
+    // interop would wrap it again. Copy it and mark it.
+    bare.set(spec, Object.freeze({ ...(await import(spec)), __esModule: true }))
+  }
+  const owned = Object.fromEntries(Object.entries(compiled).filter(([p]) => !guests.has(p)))
+  for (const spec of bareSpecifiers(owned)) {
     try {
-      // A namespace object carries no __esModule, so sucrase's default-import
-      // interop would wrap it again. Copy it and mark it.
-      bare.set(spec, Object.freeze({ ...(await import(spec)), __esModule: true }))
+      await load1(spec)
     } catch (e) {
       errors.push({ kind: 'resolve', message: `Cannot resolve "${spec}". ${String(e?.message || e)}` })
     }
   }
-  for (const [path, code] of Object.entries(compiled)) {
+  for (const [path, code] of Object.entries(owned)) {
     for (const m of code.matchAll(SPEC))
-      if (m[3].startsWith('.') && !resolve(files, path, m[3]))
+      if (m[3].startsWith('.') && !resolve(view, path, m[3]))
         errors.push({ kind: 'resolve', file: path, message: `Cannot resolve "${m[3]}"` })
     for (const { specifier, name } of namedImports(code)) {
       const ns = bare.get(specifier)
@@ -511,15 +591,81 @@ async function run() {
   }
   if (errors.length) return report('link-failed')
 
+  // A teammate's files link the same way, and the ones that do not are skipped, one at a time and then whatever
+  // imported them.
+  const badBare = new Set()
+  const guestCode = () => Object.fromEntries(Object.entries(compiled).filter(([p]) => guests.has(p)))
+  for (const spec of bareSpecifiers(guestCode()))
+    if (!bare.has(spec))
+      try {
+        await load1(spec)
+      } catch {
+        badBare.add(spec)
+      }
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const [path, code] of Object.entries(guestCode())) {
+      let why = ''
+      for (const m of code.matchAll(SPEC)) {
+        const bad = m[3].startsWith('.') ? !resolve(view, path, m[3]) : badBare.has(m[3])
+        if (bad) why = `Cannot resolve "${m[3]}".`
+      }
+      for (const { specifier, name } of namedImports(code)) {
+        const ns = bare.get(specifier)
+        if (ns && !(name in ns)) why = `"${specifier}" has no export named "${name}".`
+      }
+      if (why) {
+        skip(path, why)
+        changed = true
+      }
+    }
+  }
+
   const factories = {}
   for (const [path, code] of Object.entries(compiled)) {
     const cjs = toCJS(path, code)
+    if (guests.has(path) && cjs.errors.length) {
+      skip(path, said(cjs.errors))
+      continue
+    }
     errors.push(...cjs.errors.map((e) => ({ kind: 'compile', ...e })))
     if (cjs.errors.length) continue
     factories[path] = new Function('exports', 'require', 'module', `${cjs.code}\n//# sourceURL=${path}`)
   }
   if (errors.length) return report('link-failed')
-  const load = makeRegistry(files, factories, bare)
+
+  // The variants teammates made, and the ones the owner adopted: options of the set each one names. They
+  // load on first use, inside a boundary (runtime/variants/Variants.vue).
+  const extras = variantsOf(data, compiled, blocks, skip, (path) => load(path).default)
+  if (extras.length && !bare.has('sketch:variants')) {
+    try {
+      await load1('sketch:variants')
+    } catch (e) {
+      extras.length = 0
+      warnings.push({ kind: 'variant-skipped', message: `The variants could not load. ${String(e?.message || e)}` })
+    }
+  }
+  const targets = new Set(extras.map((e) => e.component).filter(Boolean))
+  const wrapped = new Map()
+  // A component a teammate made a variant for becomes a set whose first option is the component itself.
+  const wrap = (path, mod) => {
+    if (!targets.has(path) || !mod.default) return mod
+    if (!wrapped.has(path))
+      wrapped.set(
+        path,
+        Object.freeze({ ...mod, __esModule: true, default: bare.get('sketch:variants').wrapComponent(mod.default, path) }),
+      )
+    return wrapped.get(path)
+  }
+  const load = makeRegistry(view, factories, bare, wrap)
+  if (extras.length)
+    bare.get('sketch:variants').registerExtras(extras, data.authors || {}, (extra, err) =>
+      warnings.push({
+        kind: 'variant-failed',
+        file: `src/variants/${extra.value}.vue`,
+        message: `This option did not load. ${String(err?.message || err)}`,
+      }),
+    )
 
   // 3. styles before mount, so first paint is styled
   if (css) {
@@ -539,7 +685,10 @@ async function run() {
   // it `dialog.confirm()` and `toast.success()` do nothing and report no
   // error, so the Runtime mounts it rather than trusting every Prototype to.
   // It renders no wrapper element of its own.
-  const app = createApp(() => h(FrappeUIProvider, null, { default: () => h(App) }))
+  // A Prototype that imports `sketch:variants` gets the Demo pill and the canvas beside its App. The canvas draws
+  // that App in frames, so it is handed the component. It is inside the provider, so its toasts and dialogs work.
+  const Chrome = bare.get('sketch:variants')?.Chrome
+  const app = createApp(() => h(FrappeUIProvider, null, { default: () => [h(App), Chrome && h(Chrome, { shell: App })] }))
   app.config.errorHandler = (err, _i, info) =>
     errors.push({ kind: 'vue', message: String(err?.message || err), info })
   app.use(router).use(FrappeUI)
@@ -576,20 +725,60 @@ async function run() {
 
   report('ok')
   startAnnotate(data)
+  startMakeDefault(data)
+  startVariantEdit(data)
+  startBadges(data)
 }
 
-// The comment and tweak toolbar, for the owner's own live tab only. A Guest, a `check` request and
-// a framed gallery card never download it: it is a separate module, loaded after the Prototype
-// has mounted, so it cannot slow or break the first paint. A Prototype never imports it, and the
-// import map names it for this file alone. A toolbar that fails to load is never the Prototype's
-// error, so the failure is a warning and nothing more.
+// The annotate toolbar: Note, Tweak and Comment for the owner's own live tab, Comment alone for a
+// signed-in reader of a public Prototype (`commenter`), and a "Sign in to comment" button for a
+// Guest on one (`sign_in`). A `check` request and a framed gallery card never download it: it is a
+// separate module, loaded after the Prototype has mounted, so it cannot slow or break the first
+// paint. A Prototype never imports it, and the import map names it for this file alone. A toolbar
+// that fails to load is never the Prototype's error, so the failure is a warning and nothing more.
 async function startAnnotate(data) {
-  if (!data.is_owner || !data.live || framed || !data.annotate_sig) return
+  const owner = data.is_owner && data.live && data.annotate_sig
+  if (framed || !(owner || data.commenter || data.sign_in)) return
   try {
     const { mountAnnotate } = await import('sketch:annotate')
     mountAnnotate(data)
   } catch (e) {
     console.warn('[sketch] the annotate toolbar did not load:', e)
+  }
+}
+
+// Make default in the variants pill: the same pages as the toolbar, with a credential of its own.
+// `sketch:variants` is the module the Prototype imported, so this reaches the same state.
+async function startMakeDefault(data) {
+  if (!data.is_owner || !data.live || framed || !data.variant_sig) return
+  try {
+    const { enableMakeDefault } = await import('sketch:variants')
+    enableMakeDefault(data)
+  } catch (e) {
+    console.warn('[sketch] Make default did not load:', e)
+  }
+}
+
+// Deleting a variant a teammate made: the owner's, and an invited editor's own. Same rules as Make default.
+async function startVariantEdit(data) {
+  if (framed || !data.editor || !data.edit_sig) return
+  try {
+    const { enableVariantEdit } = await import('sketch:variants')
+    enableVariantEdit(data)
+  } catch (e) {
+    console.warn('[sketch] Delete variant did not load:', e)
+  }
+}
+
+// What is new for this person (sketch/badges.py): the server's snapshot, and the credential that reports what they look at.
+// Nobody else gets either, so a Guest, a `check` request and a framed card load nothing.
+async function startBadges(data) {
+  if (framed || !data.seen_sig) return
+  try {
+    const { initBadges } = await import('sketch:variants')
+    initBadges(data)
+  } catch (e) {
+    console.warn('[sketch] New badges did not load:', e)
   }
 }
 

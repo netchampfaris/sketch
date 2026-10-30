@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
- * One gallery item: preview, then two rows (spec 11).
+ * One gallery item: preview, then two rows, two controls (decision 60).
  *
- * Row one is the name, a Badge for the Public/Private state, and the action
- * rail: Open, then the overflow menu. Row two is every meta fact on one line,
- * with the copy-link button when there is a link.
+ * Row one is the name, a gray "Private" Badge only when it is private (public
+ * is the default, so it goes unsaid), the editors' stack, then the overflow
+ * menu. Row two is one line: what is new, or the meta when nothing is
+ * (`NewLine.vue`). The preview and the name are the ways in, both real links,
+ * so there is no Open button.
  *
- * Public/Private is one boolean and it is drawn once, by the Badge. The menu
- * sets it: Share makes it public, Make private takes it back. It was a Switch
- * on the card, which put a control that publishes to the internet one stray
- * click away from the artwork, and cost a row to say what the Badge says.
+ * Public/Private is set in the Share dialog, never on the card. Share has one
+ * home, "Share…" in the menu, and "Copy link" sits right after it while there
+ * is a public link to copy. The editors' stack says who it is shared with, and
+ * opens the same dialog. No editors, no stack.
  *
  * Rename, Files, Export as zip, History and Delete sit in the same menu,
  * because they are UI-only actions. Files reads the source the agent wrote,
@@ -20,23 +22,18 @@
  * the card.
  */
 import { computed, ref } from 'vue'
-import { Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
+import { avatarTheme } from '../../../runtime/shared/avatarTheme'
+import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
-import { copyText, downloadPrototypeZip, method } from '../store'
+import ShareDialog from './ShareDialog.vue'
+import { copyText, downloadPrototypeZip, method, errorText } from '../store'
 import type { Prototype } from '../types'
 
 const props = defineProps<{ prototype: Prototype }>()
 const emit = defineEmits<{ changed: []; removed: [] }>()
-
-const setPublic = useCall<Prototype, { slug: string; is_public: boolean }>({
-  url: method('set_public'),
-  method: 'POST',
-  immediate: false,
-  onSuccess: () => emit('changed'),
-  onError: (error) => toast.error(error.message),
-})
 
 const rename = useCall<Prototype, { slug: string; title: string }>({
   url: method('rename_prototype'),
@@ -46,7 +43,7 @@ const rename = useCall<Prototype, { slug: string; title: string }>({
     toast.success('Renamed')
     emit('changed')
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 /**
@@ -65,7 +62,7 @@ const refresh = useCall<Prototype, { slug: string }>({
     toast.success('Preview updated')
     emit('changed')
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 const remove = useCall<{ name: string }, { slug: string }>({
@@ -76,20 +73,36 @@ const remove = useCall<{ name: string }, { slug: string }>({
     toast.success('Deleted')
     emit('removed')
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 // Both dialogs fetch on open, so the gallery never loads history or source
 // per card.
 const historyOpen = ref(false)
 const filesOpen = ref(false)
+const shareOpen = ref(false)
+
+/** The editors as the stack and its tooltip tell it: the first three faces, the rest as +n. */
+const SHOWN = 3
+const NAMED = 6
+const sharedWith = computed(() => {
+  const people = props.prototype.editors ?? []
+  const names = people.map((p) => p.full_name.split(/\s+/)[0] || p.username)
+  const listed = names.slice(0, NAMED).join(', ')
+  const rest = names.length - NAMED
+  return {
+    length: people.length,
+    shown: people.slice(0, SHOWN),
+    more: Math.max(people.length - SHOWN, 0),
+    text: `Shared with ${listed}${rest > 0 ? ` and ${rest} more` : ''}`,
+  }
+})
 
 /** True while the zip is on the wire. It disables the menu, like a write. */
 const exporting = ref(false)
 
 const busy = computed(
   () =>
-    setPublic.loading ||
     rename.loading ||
     remove.loading ||
     refresh.loading ||
@@ -107,18 +120,6 @@ const subtitle = computed(() => {
   const count = props.prototype.file_count
   return `${count} ${count === 1 ? 'file' : 'files'}`
 })
-
-/**
- * A Prototype always opens in a new tab, so the gallery stays where it was.
- *
- * `noopener` is not optional here. The Viewer runs prototype code that the
- * user's own agent wrote, and without it that page holds a live
- * `window.opener` handle to Sketch. It also implies `noreferrer` in every
- * current browser, which is why only the one token is passed.
- */
-function openViewer(): void {
-  window.open(props.prototype.viewer_path, '_blank', 'noopener')
-}
 
 async function copyPublicUrl(): Promise<void> {
   try {
@@ -182,33 +183,12 @@ function askDelete(): void {
 // A write's `submit` rejects on failure. Its `onError` already shows a toast,
 // so each menu row drops the rejection with `.catch(() => {})`.
 const menuOptions = computed(() => [
-  // No Open row: the action has its own button beside this menu.
+  // No Open row: the preview and the name are links.
   //
-  // One row, two labels. It names what the click does next, not the state the
-  // card is already in: the Badge beside the title carries the state. It is
-  // disabled while a write is in flight, which is the job the switch's own
-  // `:disabled` used to do.
-  props.prototype.is_public
-    ? {
-        label: 'Make private',
-        icon: 'lucide-lock',
-        disabled: busy.value,
-        onClick: () =>
-          setPublic.submit({ slug: props.prototype.slug, is_public: false }).catch(() => {}),
-      }
-    : {
-        label: 'Share',
-        icon: 'lucide-globe',
-        disabled: busy.value,
-        onClick: () =>
-          setPublic.submit({ slug: props.prototype.slug, is_public: true }).catch(() => {}),
-      },
-  {
-    label: 'Copy public link',
-    icon: 'lucide-link',
-    disabled: !props.prototype.is_public,
-    onClick: copyPublicUrl,
-  },
+  // Share opens the dialog that holds who is invited and whether the link is
+  // public. Copy link follows it while there is a public link to copy.
+  { label: 'Share…', icon: 'lucide-users', onClick: () => (shareOpen.value = true) },
+  ...(props.prototype.is_public ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyPublicUrl }] : []),
   // Above Rename, because it is about the picture the row sits under, and the
   // rows below it are about the Prototype's name and history. It is one row
   // whatever the card is showing: "there is no picture yet" and "the picture
@@ -222,8 +202,7 @@ const menuOptions = computed(() => [
   },
   { label: 'Rename', icon: 'lucide-pencil', onClick: askRename },
   { label: 'Files', icon: 'lucide-file-code', onClick: () => (filesOpen.value = true) },
-  // Disabled on an empty tree, the same way Copy public link is disabled
-  // without a link. A zip of nothing is a file the user has to open to
+  // Disabled on an empty tree. A zip of nothing is a file the user has to open to
   // learn it holds nothing.
   {
     label: 'Export as zip',
@@ -240,14 +219,12 @@ const menuOptions = computed(() => [
 </script>
 
 <template>
-  <article class="min-w-0">
+  <article class="flex min-w-0 flex-col">
     <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
 
     <!--
-      Two rows under the preview, not four. Name and state on the first, every
-      meta fact on the second. `h-7` on both is the height of a `sm` Button
-      (`Button.vue:209`), so the action rail sets the rhythm and neither row
-      changes height when its contents change.
+      Two rows under the preview. `h-7` on both is the height of a `sm` Button
+      (`Button.vue:209`), so neither row changes height when its contents change.
     -->
     <div class="mt-3 flex h-7 items-center gap-2">
       <!--
@@ -266,71 +243,43 @@ const menuOptions = computed(() => [
           >{{ prototype.title }}</a
         >
       </h2>
+      <!-- Only the exception is drawn: public is the default. The Share dialog sets it, never the card. -->
+      <Badge v-if="!prototype.is_public" label="Private" size="sm" theme="gray">
+        <template #prefix><span class="lucide-lock size-3" aria-hidden="true" /></template>
+      </Badge>
       <!--
-        The Badge reports the state. It does not set it: Share and Make
-        private are in the menu, so nothing on the card can be toggled by a
-        stray click on the artwork. `sm` keeps it quieter than the name beside
-        it, and green reads as "anyone can reach this", which is the fact that
-        matters here.
+        Status, not a second Share button: who it is shared with, up to three faces and then +n.
+        It opens the dialog the menu opens. The ring gives the pale fill an edge.
       -->
-      <Badge
-        :label="prototype.is_public ? 'Public' : 'Private'"
-        size="sm"
-        :theme="prototype.is_public ? 'green' : 'gray'"
-      />
-      <!--
-        Open sits on the action rail beside the menu, not over the preview. A
-        button floating on the artwork needed a shadow to stay legible, and it
-        appeared on hover only, so it was invisible until the pointer arrived
-        and absent on touch. Here it is always on screen and always in the
-        same place.
-
-        Icon-only with a Tooltip, the same treatment as "Copy public link"
-        below. DESIGN principle 6 reserves that for universal actions, and the
-        card names the target three times over: the title, the preview and the
-        path. The menu drops its own Open row, which this replaces.
-      -->
-      <Tooltip text="Open prototype">
-        <Button
-          aria-label="Open prototype"
-          icon="lucide-external-link"
-          variant="ghost"
-          @click="openViewer"
-        />
+      <Tooltip v-if="sharedWith.length" :text="sharedWith.text">
+        <Button variant="ghost" :aria-label="sharedWith.text" @click="shareOpen = true">
+          <span class="flex items-center">
+            <span class="flex -space-x-1">
+              <Avatar
+                v-for="person in sharedWith.shown"
+                :key="person.username"
+                class="ring-1 ring-outline-gray-2"
+                size="xs"
+                :theme="avatarTheme(person.username)"
+                :image="person.user_image"
+                :label="person.full_name"
+              />
+            </span>
+            <span v-if="sharedWith.more" class="ml-1 text-xs tabular-nums text-ink-gray-5">+{{ sharedWith.more }}</span>
+          </span>
+        </Button>
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
 
-    <!--
-      Every meta fact on one line, in the order a user asks for them: how big
-      is it, when did the agent last touch it. One separator, one type step,
-      one ink step, so the line reads as a single caption and not as a list.
+    <!-- One line: what is new, or how big it is and when the agent last touched it. -->
+    <NewLine :news="prototype.new" :href="prototype.viewer_path">
+      <span class="min-w-0 truncate">{{ subtitle }} &middot; Updated {{ prototype.updated }}</span>
+    </NewLine>
 
-      The copy button only exists while there is a link to copy. The row keeps
-      its height either way, because `h-7` is the button's own height.
-    -->
-    <div class="flex h-7 items-center justify-between gap-2">
-      <span class="min-w-0 truncate text-xs text-ink-gray-5">
-        {{ subtitle }} &middot; Updated {{ prototype.updated }}
-      </span>
-      <!--
-        Icon-only because copy is universal, and the Badge above already says
-        the link exists. Its right edge lands on the same rail as the menu
-        button on the row above (`Button.vue:209`, `sm` is 28px square).
-      -->
-      <Tooltip v-if="prototype.is_public" text="Copy public link">
-        <Button
-          aria-label="Copy public link"
-          icon="lucide-copy"
-          size="sm"
-          variant="ghost"
-          @click="copyPublicUrl"
-        />
-      </Tooltip>
-    </div>
-
+    <ShareDialog v-model:open="shareOpen" :prototype="prototype" @changed="emit('changed')" />
     <PrototypeFilesDialog
       v-model:open="filesOpen"
       :slug="prototype.slug"

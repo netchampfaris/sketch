@@ -21,7 +21,20 @@ export type Payload = {
   annotations_epoch?: number
   annotate_exp?: string
   annotate_sig?: string
+  // A person who may comment: their username, and the right to ask for a pass (comments.ts).
+  commenter?: string
+  comment_exp?: string
+  comment_sig?: string
+  comments_open?: number
+  // A signed-out visitor to a public Prototype.
+  sign_in?: boolean
+  // owner, editor, viewer or guest (sketch/viewer.py `role`).
+  role?: string
 }
+
+// owner: notes, tweaks and comments, and resolves or deletes any comment. editor: their own notes and tweaks, and
+// comments. reader: comments only. guest: a "Sign in to comment" button.
+export type Role = 'owner' | 'editor' | 'reader' | 'guest'
 
 export const host = {
   name: '',
@@ -31,6 +44,13 @@ export const host = {
   epoch: 0,
   exp: '',
   sig: '',
+  // An editor's notes are saved under their own name (sketch/annotations.py).
+  editor: '',
+  role: 'owner' as Role,
+  me: '',
+  ticketExp: '',
+  ticketSig: '',
+  openCount: 0,
   router: null as Router | null,
 }
 
@@ -42,8 +62,20 @@ export function initHost(data: Payload, router: Router) {
   host.epoch = Number(data.annotations_epoch) || 0
   host.exp = data.annotate_exp ?? ''
   host.sig = data.annotate_sig ?? ''
+  host.editor = data.role === 'editor' ? (data.commenter ?? '') : ''
+  // Notes and tweaks come with their signature: the owner's page has one, and so does an invited editor's, for their own.
+  host.role = data.role === 'editor' && data.commenter ? 'editor' : data.annotate_sig ? 'owner' : data.commenter ? 'reader' : 'guest'
+  host.me = data.commenter ?? ''
+  host.ticketExp = data.comment_exp ?? ''
+  host.ticketSig = data.comment_sig ?? ''
+  host.openCount = Number(data.comments_open) || 0
   host.router = router
 }
+
+export const isOwner = () => host.role === 'owner'
+// Who has Note and Tweak: the owner, and an invited editor (their notes are their own).
+export const canNote = () => !!host.sig && (host.role === 'owner' || host.role === 'editor')
+export const isGuest = () => host.role === 'guest'
 
 // How the prompts name the Prototype.
 export const subject = () => (host.title ? `the ${host.title} prototype` : 'the prototype')

@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-28 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "prototype",
+  "user",
+  "annotations",
+  "annotations_epoch"
+ ],
+ "fields": [
+  {
+   "description": "The Prototype hash id. Data and not Link: the Prototype's own delete removes these rows (sketch_prototype.py on_trash).",
+   "fieldname": "prototype",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Prototype",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The invited person. Written by the owner's Share dialog and by nothing else.",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "This editor's own notes and tweaks for their agent (sketch/annotations.py). Never shown to the owner.",
+   "fieldname": "annotations",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Annotations",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "How many times this editor's agent has cleared their notes.",
+   "fieldname": "annotations_epoch",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Annotations Epoch",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sketch",
+ "name": "Sketch Prototype Editor",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 0
+}

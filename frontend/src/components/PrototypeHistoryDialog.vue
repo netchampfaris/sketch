@@ -32,7 +32,7 @@ import { Button, Dialog, Dropdown, ErrorMessage, LoadingText, TextInput, toast, 
 import PrototypeChangeList from './PrototypeChangeList.vue'
 import PrototypeDeleteVersionsDialog from './PrototypeDeleteVersionsDialog.vue'
 import PrototypeRestoreDialog from './PrototypeRestoreDialog.vue'
-import { method } from '../store'
+import { method, errorText } from '../store'
 import type { HistoryUsage, Prototype, PrototypeVersion, PruneResult, RestoreResult } from '../types'
 
 /** A prompt past this many lines or characters is clamped to two lines. */
@@ -224,7 +224,7 @@ async function undo(): Promise<void> {
       dry_run: 0,
     })
   } catch (error) {
-    toast.error((error as Error).message)
+    toast.error(errorText(error))
     return
   }
   await history.reload()
@@ -447,7 +447,7 @@ function fileLabel(count: number): string {
       <div class="-mx-3 h-96 overflow-y-auto px-3" :class="{ '!h-80': showSearch }">
         <LoadingText v-if="history.loading && !history.data?.length" />
 
-        <ErrorMessage v-else-if="history.error" :message="history.error.message" />
+        <ErrorMessage v-else-if="history.error" :message="errorText(history.error)" />
 
         <!--
           The one empty-state recipe the app uses: 48px circle, 24px glyph,
@@ -572,6 +572,14 @@ function fileLabel(count: number): string {
                   <span aria-hidden="true">&middot;</span>
                 </template>
                 <span :title="fullDate(version)">{{ timeLabel(version) }}</span>
+                <template v-if="version.author">
+                  <span aria-hidden="true">&middot;</span>
+                  <span class="truncate" :title="`@${version.author.username}`">by {{ version.author.full_name }}</span>
+                </template>
+                <template v-if="version.kind === 'request' && version.source === 'App'">
+                  <span aria-hidden="true">&middot;</span>
+                  <span>from the app</span>
+                </template>
                 <template v-if="version.kind === 'restore' && version.source === 'Agent'">
                   <span aria-hidden="true">&middot;</span>
                   <span>by agent</span>
@@ -601,7 +609,7 @@ function fileLabel(count: number): string {
         </template>
       </div>
 
-      <p v-if="nearlyFull" class="mt-3 text-sm" :class="isFull ? 'text-ink-red-4' : 'text-ink-gray-5'">
+      <p v-if="nearlyFull" class="mt-3 text-sm" :class="isFull ? 'text-ink-red-7' : 'text-ink-gray-5'">
         {{ usageText }}
       </p>
 

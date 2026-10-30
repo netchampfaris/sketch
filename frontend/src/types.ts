@@ -21,6 +21,34 @@ export interface SketchSession {
   logout_url: string
 }
 
+/** Someone who made something new on a prototype. `sketch.badges.card`. */
+export interface NewPerson {
+  username: string
+  /** Full name, or the username when there is none. */
+  name: string
+  /** `User.user_image`, or "" for a user who has none. */
+  image: string
+}
+
+/**
+ * What changed on a prototype since this person last looked: the line on its gallery card.
+ * Counts are what is still unseen. `by` is the first three people, `more` how many others.
+ * `mention` is set when someone named this person in a comment they have not opened.
+ * `invited` is set for an invited editor until they first open the prototype, and `adopted` while the owner's
+ * making their variant the default is still unseen.
+ */
+export interface PrototypeNew {
+  /** When the newest of it happened, as "2 hours ago". */
+  ago: string
+  variants: number
+  comments: number
+  by: NewPerson[]
+  more: number
+  mention: { by: NewPerson; thread: string } | null
+  invited: { by: NewPerson } | null
+  adopted: { label: string; by: NewPerson } | null
+}
+
 export interface Prototype {
   name: string
   title: string
@@ -43,6 +71,35 @@ export interface Prototype {
    * absent when that capture failed, so a reader falls back to `light`.
    */
   thumbnail: PrototypeThumbnail | null
+  /** Who it is shared with, oldest invite first. Empty on a shared card: that is the owner's to know. */
+  editors?: SharePerson[]
+  /** Null when nothing is new. Absent on rows the gallery does not draw for a person. */
+  new?: PrototypeNew | null
+}
+
+/** A person as the Share dialog and the shared cards draw them. */
+export interface SharePerson {
+  username: string
+  full_name: string
+  /** `User.user_image`, or "" for a user who has none. */
+  user_image: string
+}
+
+/** What the Share dialog draws. `sketch.api.share_info`, `invite_editor` and `remove_editor`. */
+export interface ShareState {
+  is_public: boolean
+  /** The address of the Viewer. It opens for the owner and the people invited, and for anyone when public. */
+  public_url: string
+  owner: SharePerson
+  /** In the order they were invited. */
+  editors: SharePerson[]
+  /** People who commented and are not invited, first to comment first. They lose access when the link goes private. */
+  commenters: { username: string; full_name: string }[]
+}
+
+/** A Prototype somebody invited you to edit (`sketch.api.shared_prototypes`), or one you only talked on (`conversations`). */
+export interface SharedPrototype extends Prototype {
+  owner: SharePerson
 }
 
 /**
@@ -105,6 +162,8 @@ export interface PrototypeVersion {
   sequence: number
   /** The user prompt, stored verbatim. */
   prompt: string
+  /** The invited editor whose agent made this version. Null for the owner's own. */
+  author?: { username: string; full_name: string } | null
   summary: string
   changes: PrototypeFileChange[]
   files_added: number

@@ -44,9 +44,38 @@ DEFAULT_TTL = 60
 #:   What it can do is put rows in front of the owner's agent, which is why the
 #:   save is size- and shape-checked and the MCP tool tells the agent to treat
 #:   the rows as requests to check, never as orders.
+#: - COMMENT writes and reads one signed-in person's comments on one Prototype
+#:   (`sketch.api.comment_*`). It is minted over the hash id and the username
+#:   together (`sketch.comments.subject`), so it speaks for that one person on
+#:   that one Prototype and nothing else. It lasts 15 minutes and is minted when
+#:   the person enters Comment mode, never into the page payload.
+#: - COMMENT_MINT is the one thing the payload carries for a commenter: it
+#:   opens `sketch.api.comment_pass` and nothing else. The Viewer sits in an
+#:   opaque origin and sends no cookie (measured: a fetch from it reaches the
+#:   server as Guest), so a call that only a session cookie could make is not
+#:   possible from the toolbar. This stands in for the cookie until the toolbar
+#:   moves out of the Prototype's page.
+#: - VARIANT_DEFAULT moves one slot of a `<Variants>` set to the front of its
+#:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
+#:   minted into the owner's live page only, and what it can do is reorder
+#:   slots in a `.vue` file the owner already owns, which Undo reverses.
+#: - VARIANT_EDIT deletes a variant (`sketch.api.delete_variant_signed`). It is
+#:   minted over the hash id and one username together, like COMMENT, into the
+#:   page of the owner and of each invited editor. The server reads the person
+#:   from it: an editor can delete files in their own folder, the owner any
+#:   variant, and what is deleted comes back with Undo.
+#: - SEEN marks what one signed-in person has looked at on one Prototype
+#:   (`sketch.api.seen_mark`). Minted over the hash id and the username together, like
+#:   COMMENT, into the page of anyone who may comment. It opens one write, a mark on that
+#:   person's own list of seen variants and threads, which the person could make by hand.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"
+COMMENT = "comment"
+COMMENT_MINT = "comment-mint"
+VARIANT_DEFAULT = "variant_default"
+VARIANT_EDIT = "variant_edit"
+SEEN = "seen"
 
 
 def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:

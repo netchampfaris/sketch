@@ -37,6 +37,10 @@ class SketchPrototype(Document):
 		from sketch.prototype_files import delete_tree
 
 		frappe.db.delete("Sketch Prototype Version", {"prototype": self.name})
+		frappe.db.delete("Sketch Comment", {"prototype": self.name})
+		frappe.db.delete("Sketch Prototype Editor", {"prototype": self.name})
+		frappe.db.delete("Sketch Seen", {"prototype": self.name})
+		frappe.db.delete("Sketch Variant Stamp", {"prototype": self.name})
 		delete_tree(self.name)
 		thumbnails.forget(self.name)
 		# After the commit, so a delete that rolls back keeps its history.

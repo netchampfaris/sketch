@@ -11,7 +11,7 @@ It runs the Viewer's access ladder minus the signature (spec 6.3):
 
     path is not a thumbnail path            -> False, so Frappe answers 404
     is_public                               -> serve
-    caller is the owner                     -> serve
+    caller is the owner or an invited editor -> serve
     otherwise                               -> False, so Frappe answers 404
 
 No signature step. A signature exists so `check` can open a private Prototype
@@ -26,7 +26,7 @@ ordinary case and not an error.
 import frappe
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
-from sketch import prototype, thumbnails
+from sketch import prototype, sharing, thumbnails
 
 #: A year, for the owner's own copy. The URL carries the capture stamp
 #: (`sketch/thumbnails.py` `stamp`), so the bytes at one URL never change and
@@ -69,7 +69,7 @@ class SketchThumbnailRenderer(BaseRenderer):
 		if not self.doc:
 			return False
 
-		return bool(self.doc.is_public) or frappe.session.user == self.doc.owner
+		return sharing.can_view(self.doc.name, frappe.session.user)
 
 	def render(self):
 		"""The PNG, or a 404 for a Prototype that has not been captured yet."""

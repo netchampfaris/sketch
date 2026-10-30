@@ -12,6 +12,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
+    // The avatar colour rule is shared with the runtime (runtime/shared).
+    fs: { allow: ['..'] },
   },
   resolve: {
     alias: {

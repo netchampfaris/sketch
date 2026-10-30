@@ -21,8 +21,20 @@ import os
 import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
+from frappe.website.page_renderers.template_page import TemplatePage
 
-from sketch import annotations, prototype, prototype_files, runtime_assets, signature, thumbnail, thumbnails
+from sketch import (
+	annotations,
+	badges,
+	comments,
+	prototype,
+	prototype_files,
+	runtime_assets,
+	sharing,
+	signature,
+	thumbnail,
+	thumbnails,
+)
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -116,12 +128,16 @@ class SketchViewerRenderer(BaseRenderer):
 	    path does not resolve to a Prototype  -> False, so Frappe answers 404
 	    is_public                             -> serve
 	    caller is the owner                   -> serve
+	    caller is an invited editor           -> serve
 	    valid unexpired signature             -> serve
+	    signed in, commented here before it
+	      was made private                    -> a short page saying so (403)
 	    otherwise                             -> False, so Frappe answers 404
 
 	A bad or expired signature is not an error. It falls through, so a stale
 	link to a public Prototype still works and a private one still answers 404.
-	The answer is always 404, never 403: a 403 confirms the URL exists.
+	The answer is 404, never 403, for everyone but a former commenter: a 403
+	confirms the URL exists, and that person has already seen it (decision 46).
 	"""
 
 	def __init__(self, path=None, http_status_code=None):
@@ -129,6 +145,7 @@ class SketchViewerRenderer(BaseRenderer):
 		self.doc = None
 		self.username = ""
 		self.is_owner = False
+		self.former_commenter = False
 
 	def can_render(self) -> bool:
 		"""True only when this path is a Prototype the caller may see."""
@@ -146,10 +163,22 @@ class SketchViewerRenderer(BaseRenderer):
 
 		self.username = parts[1]
 		self.is_owner = frappe.session.user == self.doc.owner
-		if self.doc.is_public or self.is_owner:
+		if sharing.can_view(self.doc.name, frappe.session.user):
 			return True
 
-		return signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig"))
+		if signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig")):
+			return True
+
+		self.former_commenter = self.is_former_commenter()
+		return self.former_commenter
+
+	def is_former_commenter(self) -> bool:
+		"""True for a signed-in person who commented here while it was public and cannot open it now."""
+		if frappe.session.user == "Guest" or self.doc.is_public:
+			return False
+
+		username = sharing.username_of(frappe.session.user)
+		return bool(username) and bool(frappe.db.exists(comments.COMMENT, {"prototype": self.doc.name, "author": username}))
 
 	def response_headers(self) -> dict:
 		"""The response headers for this caller. can_render() ran first.
@@ -197,6 +226,10 @@ class SketchViewerRenderer(BaseRenderer):
 		# script, so the sandbox changes nothing a reader sees. They still take
 		# the same headers as the document: one rule for the whole renderer is
 		# one rule to check.
+		if self.former_commenter:
+			# No Prototype source here, so no sandbox: the page loads core's own styles and font.
+			return self.build_response(private_html(self.doc.owner), 403, dict(HEADERS))
+
 		path = runtime_html_path(self.doc.pin)
 		if not path or not os.path.isfile(path):
 			# Trap 11. Never a blank iframe.
@@ -221,6 +254,13 @@ class SketchViewerRenderer(BaseRenderer):
 		# this test every check would be counted as a stranger reading a public
 		# link. Sketch drives that browser itself.
 		from sketch import events
+
+		if not frappe.form_dict.get("sig"):
+			# An invited editor who opens it has seen the invitation and any default made of their variant.
+			badges.opened(self.doc.name, frappe.session.user)
+			# A page load is a GET, which Frappe never commits. Without this the mark is rolled back and the
+			# invitation stays news for ever.
+			frappe.db.commit()
 
 		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
 		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
@@ -295,6 +335,43 @@ class SketchViewerRenderer(BaseRenderer):
 
 		return not frappe.form_dict.get("sig")
 
+	def commenter(self) -> str:
+		"""The username of a signed-in person who may comment here, else "".
+
+		The owner, or a signed-in reader of a public Prototype, in a real browser
+		session. A Guest has nobody to sign the comment, and a `check` request is
+		nobody at all. It is only a name for the toolbar to show; the pass that
+		lets the person write is minted later (`sketch.api.comment_pass`).
+		"""
+		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
+			return ""
+
+		if not comments.can_see(self.doc.name, frappe.session.user):
+			return ""
+
+		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+
+	def role(self) -> str:
+		"""owner, editor, viewer or guest, for the page's chrome. A `check` request is a guest."""
+		if frappe.form_dict.get("sig"):
+			return "guest"
+
+		return sharing.role_of(self.doc.name, frappe.session.user)
+
+	def variant_editor(self) -> str:
+		"""The username a variant credential speaks for, or "" for a `check` request."""
+		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
+			return ""
+
+		return sharing.username_of(frappe.session.user)
+
+	def offers_sign_in(self) -> bool:
+		"""True when a signed-out visitor to a public Prototype is shown "Sign in to comment".
+
+		Not for a `check` request, which is a Guest too and wants no toolbar.
+		"""
+		return frappe.session.user == "Guest" and bool(self.doc.is_public) and not frappe.form_dict.get("sig")
+
 	def payload(self) -> dict:
 		"""The data slot contents (contract 4).
 
@@ -322,6 +399,11 @@ class SketchViewerRenderer(BaseRenderer):
 		`annotations`, `annotations_epoch`, `annotate_exp` and `annotate_sig` feed the owner's
 		toolbar and follow the same rule: live owner pages only, so a Guest and
 		a `check` request carry none (sketch/annotations.py).
+
+		A signed-in person who may comment gets `commenter` (their username) and
+		`comments_open` (a count) and a ticket that can only ask for a pass. Never a
+		pass and never a comment: the toolbar mints its 15 minute pass when
+		Comment mode opens (`sketch.api.comment_pass`) and reads the threads with it.
 		"""
 		live = self.is_live()
 		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
@@ -329,8 +411,39 @@ class SketchViewerRenderer(BaseRenderer):
 		# separate scope, so the poll signature cannot write annotations and
 		# this one cannot read the revision (sketch/signature.py).
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
+		commenter = self.commenter()
+		ticket = comments.mint_ticket(self.doc.name, commenter) if commenter else {}
+		# An invited editor gets Note and Tweak for their own agent: their own notes, and a signature over their name
+		# that writes those and nothing else. The owner's notes never reach their page, nor theirs the owner's.
+		noting = commenter if commenter and self.role() == "editor" else ""
+		if noting:
+			mark = signature.mint(annotations.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
+		# Make default writes the source, so it has a scope of its own: neither
+		# the poll nor the toolbar signature can reorder a slot.
+		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
+		# Deleting a variant is the owner's, for any, and an invited editor's, for
+		# their own. The credential names the person, so the server reads who is
+		# asking from it and never from the page (`sketch.api.delete_variant_signed`).
+		role = self.role()
+		editing = self.variant_editor() if role in ("owner", "editor") else ""
+		delete = (
+			signature.mint(sharing_subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
+			if editing
+			else {}
+		)
+		# What is new for this person, and the right to say they have looked
+		# (`sketch.badges`, `sketch.api.seen_mark`). Nobody else gets either.
+		seen = signature.mint(comments.subject(self.doc.name, commenter), LIVE_TTL_SECONDS, signature.SEEN) if commenter else {}
+		fresh = badges.page(self.doc.name, frappe.session.user) if commenter else None
+		tree = prototype_files.read_tree(self.doc.name)
+		adopted = sharing.read_adopted(tree)
 		return {
-			"files": prototype_files.read_tree(self.doc.name),
+			"files": tree,
+			"role": role,
+			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
+			"editor": editing,
+			"edit_exp": delete.get("exp", ""),
+			"edit_sig": delete.get("sig", ""),
 			"name": self.doc.name,
 			"title": self.doc.title,
 			"slug": self.doc.slug,
@@ -341,12 +454,35 @@ class SketchViewerRenderer(BaseRenderer):
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"exp": stamp.get("exp", ""),
 			"sig": stamp.get("sig", ""),
-			"annotations": annotations.read(self.doc.name) if live else None,
-			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
+			"annotations": annotations.read(self.doc.name, editor=frappe.session.user)
+			if noting
+			else annotations.read(self.doc.name)
+			if live
+			else None,
+			"annotations_epoch": annotations.epoch(self.doc.name, frappe.session.user)
+			if noting
+			else annotations.epoch(self.doc.name)
+			if live
+			else 0,
 			"annotate_exp": mark.get("exp", ""),
 			"annotate_sig": mark.get("sig", ""),
+			"commenter": commenter,
+			"sign_in": self.offers_sign_in(),
+			"comment_exp": ticket.get("exp", ""),
+			"comment_sig": ticket.get("sig", ""),
+			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
+			"seen_exp": seen.get("exp", ""),
+			"seen_sig": seen.get("sig", ""),
+			"badges": fresh,
+			"variant_exp": variant.get("exp", ""),
+			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
 		}
+
+
+def sharing_subject(name: str, username: str) -> str:
+	"""What a variant credential covers: this Prototype, for this one person."""
+	return f"{name}|{username}"
 
 
 def meta_tag(attribute: str, key: str, content: str) -> str:
@@ -374,8 +510,46 @@ def bad_slot_html(pin: str, count: int) -> str:
 	)
 
 
-def _error_html(title: str, detail: str, action: str) -> str:
+def private_html(owner: str) -> str:
+	"""What a person who commented before the owner made the Prototype private is shown instead of a bare 404."""
+	name = (frappe.db.get_value("User", owner, "full_name") or "").split()
+	who = name[0] if name else sharing.username_of(owner) or "The owner"
+	page = PrivatePage(f"{who} made this prototype private", f"Ask {who} for access if you need it.")
+	return page.get_html()
+
+
+class PrivatePage(TemplatePage):
+	"""Core's "Page not found" look for the made-private page: the same template shell, with its own words.
+
+	The template sits in `sketch/templates`, outside `www` and `templates/pages`, so no URL reaches it.
+	"""
+
+	def __init__(self, heading: str, detail: str):
+		super().__init__(path="private-prototype", http_status_code=403)
+		self.heading = heading
+		self.detail = detail
+
+	def set_template_path(self):
+		self.app = "sketch"
+		self.app_path = frappe.get_app_path("sketch")
+		self.file_dir = "templates"
+		self.template_path = os.path.join("templates", "private_prototype.html")
+		self.basepath = os.path.join(self.app_path, "templates")
+		self.filename = os.path.basename(self.template_path)
+		self.name = "private_prototype"
+		self.basename = os.path.join(self.basepath, self.name)
+
+	def init_context(self):
+		super().init_context()
+		# Not `title`: core stamps the site name onto that one.
+		self.context.heading = self.heading
+		self.context.detail = self.detail
+		self.context.no_cache = 1
+
+
+def _error_html(title: str, detail: str, action: str = "") -> str:
 	"""A plain page a person can read. No Runtime, so no Runtime assets."""
+	note = f"<p style='margin:0;color:#666'>{action}</p>" if action else ""
 	return (
 		"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
 		"<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -383,6 +557,6 @@ def _error_html(title: str, detail: str, action: str) -> str:
 		'<body style="margin:0;padding:2rem;font:14px/1.6 ui-sans-serif,system-ui,sans-serif">'
 		f"<h1 style='font-size:1rem;margin:0 0 .5rem'>{title}</h1>"
 		f"<p style='margin:0 0 .5rem'>{detail}</p>"
-		f"<p style='margin:0;color:#666'>{action}</p>"
+		f"{note}"
 		"</body></html>"
 	)

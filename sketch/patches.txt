@@ -8,3 +8,4 @@ sketch.patches.v1_0.drop_foreign_sketch_tokens
 sketch.patches.v1_0.backfill_sketch_token_hash
 sketch.patches.v1_0.snapshot_latest_versions
 sketch.patches.v1_0.flag_restorable_versions
+sketch.patches.v1_0.move_reader_notes_to_comments
