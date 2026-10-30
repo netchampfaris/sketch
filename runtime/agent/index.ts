@@ -273,10 +273,6 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 			const point = (await variants?.bridge.reveal?.(spot, { fx, fy }).catch(() => null)) ?? null
 			post('canvas:revealed', { req, point })
 		},
-		theme: ({ theme: next }) => {
-			theme = next
-			document.documentElement.dataset.theme = next
-		},
 		copy: (hints) => repaint(hints),
 		nav: ({ path }) => {
 			if (router && path !== router.currentRoute.value.fullPath) router.push(path).catch(() => {})

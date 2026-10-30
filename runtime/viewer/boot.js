@@ -94,30 +94,109 @@ function readData() {
   return JSON.parse(raw)
 }
 
-// Sketch owns the theme. The order is fixed: the theme URL parameter, then
-// localStorage["theme"], then the browser preference. The renderer resolves
-// the URL parameter and sends null when there is none, because it can read
-// neither of the other two. "system" is not an answer, and the Viewer never
-// writes localStorage: the Sketch UI shares this origin and owns that key.
+// Sketch owns the theme (decision 84). The preference is light, dark or system, and the order is fixed: the theme
+// URL parameter, then the reader's prototype theme (`pref`, which the Viewer shell puts in this frame's URL: saved on
+// their account, apart from Sketch's own UI theme, or for a Guest the choice made earlier this visit), then system.
+// The renderer resolves the theme parameter and sends null when there is none.
+//
+// The page sits in an opaque origin, so `localStorage` and `sessionStorage` throw. frappe-ui's `useColorScheme`
+// reads and writes `localStorage["theme"]`, and a Prototype may keep its own keys, so the Viewer puts stand-ins there:
+// "theme" reads this preference and a write hands it to the shell, which saves it (to the account over the session,
+// or to the visit); every other key lives in memory for the page. frappe-ui paints `data-theme` itself on a write, so
+// a Prototype's switch applies with no reload.
 const THEMES = ['light', 'dark']
+const CHOICES = [...THEMES, 'system']
 const pick = (value) => (THEMES.includes(value) ? value : null)
+const choice = (value) => (CHOICES.includes(value) ? value : null)
+const dark = window.matchMedia?.('(prefers-color-scheme: dark)')
 
-function storedTheme() {
-  // A sandboxed or partitioned context can throw on the first read.
+let preference = 'system'
+
+function paintTheme() {
+  document.documentElement.dataset.theme = pick(preference) || (dark?.matches ? 'dark' : 'light')
+}
+
+function applyTheme(data) {
+  const params = new URLSearchParams(location.search)
+  preference = pick(data.theme) || pick(params.get('theme')) || choice(params.get('pref')) || 'system'
+  paintTheme()
+}
+
+// The Prototype chose a theme. Its own choice outranks a theme in the link from now on, so the parameter leaves the
+// URL and a reload keeps what was picked. The shell saves it (runtime/shell/theme.ts): this frame holds no credential.
+function saveTheme(value) {
+  const next = choice(value)
+  // frappe-ui writes back what it read when it starts: that is no choice.
+  if (!next || next === preference) return
+  preference = next
+  const url = new URL(location.href)
+  if (url.searchParams.has('theme')) {
+    url.searchParams.delete('theme')
+    history.replaceState(history.state, '', url)
+  }
+  if (parent !== window) parent.postMessage({ channel: 'sketch-shell', type: 'theme:choose', data: { theme: next } }, '*')
+}
+
+// System follows the computer while the page is open.
+dark?.addEventListener?.('change', () => {
+  if (preference === 'system') paintTheme()
+})
+
+function memoryBacking() {
+  const memory = new Map()
+  return {
+    get: (key) => (memory.has(key) ? memory.get(key) : null),
+    set: (key, value) => memory.set(key, value),
+    remove: (key) => memory.delete(key),
+    keys: () => [...memory.keys()],
+  }
+}
+
+// A Storage over `backing`. With `theme`, the "theme" key is the prototype theme above.
+function makeStorage(backing, theme) {
+  const own = (key) => theme && key === 'theme'
+  const others = () => backing.keys().filter((key) => !own(key))
+  return {
+    getItem: (key) => (own(String(key)) ? preference : backing.get(String(key))),
+    setItem: (key, value) => (own(String(key)) ? saveTheme(String(value)) : backing.set(String(key), String(value))),
+    removeItem: (key) => (own(String(key)) ? undefined : backing.remove(String(key))),
+    clear: () => others().forEach((key) => backing.remove(key)),
+    key: (index) => [...(theme ? ['theme'] : []), ...others()][index] ?? null,
+    get length() {
+      return others().length + (theme ? 1 : 0)
+    },
+  }
+}
+
+// The real storage, when this page can reach it (a `check` run, which is not sandboxed), else null.
+function realStorage(name) {
   try {
-    return localStorage.getItem('theme')
+    const real = window[name]
+    real.getItem('theme')
+    return {
+      get: (key) => real.getItem(key),
+      set: (key, value) => real.setItem(key, value),
+      remove: (key) => real.removeItem(key),
+      keys: () => Array.from({ length: real.length }, (_, i) => real.key(i)),
+    }
   } catch {
     return null
   }
 }
 
-function applyTheme(resolved) {
-  const url = new URLSearchParams(location.search).get('theme')
-  const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  const theme =
-    pick(resolved) || pick(url) || pick(storedTheme()) || (dark ? 'dark' : 'light')
-  document.documentElement.dataset.theme = theme
+// Before any Prototype code runs. The page's origin is opaque, so the real storage is normally out of reach; where it
+// is reachable it is Sketch's own, whose "theme" key is Sketch's UI theme, so "theme" is always this page's.
+function installStorage() {
+  for (const name of ['localStorage', 'sessionStorage']) {
+    const store = makeStorage(realStorage(name) ?? memoryBacking(), name === 'localStorage')
+    try {
+      Object.defineProperty(window, name, { value: store, configurable: true, enumerable: true })
+    } catch {
+      // A browser that will not let the property go keeps throwing, as it did before.
+    }
+  }
 }
+installStorage()
 
 // ------------------------------------------------------------------- chrome
 // Sketch's one piece of DOM inside a Viewer: the status screen. It is plain
@@ -403,7 +482,7 @@ async function run() {
   payload = data
   // Chrome.vue reads this: in the shell's frame the Demo pill is the shell's to draw (runtime/shell/DemoPill.vue).
   document.documentElement.dataset.sketchChrome = chromeOff(data) ? 'off' : 'shell'
-  applyTheme(data.theme)
+  applyTheme(data)
   setTitle(data)
   const files = data.files || {}
 

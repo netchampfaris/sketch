@@ -5,8 +5,9 @@
 // rebuilt it from scratch with every number clamped and every string and list capped. A validator
 // returns null for anything it cannot read, and the shell drops it.
 //
-// No message can cause a write. A write starts from a click or key on a shell element; a message can
-// only move what the shell draws. Strings from the frame are shown as text, never as HTML.
+// No message can cause a write, but one: `theme:choose`, the Prototype's own theme switch, which the shell saves only
+// as one of three values on the reader's own display preference, and only right after the person's own click or key.
+// Every other write starts from a click or key on a shell element; a message can only move what the shell draws. Strings from the frame are shown as text, never as HTML.
 //
 // The shell posts to the frame with targetOrigin '*' (an opaque origin has no name to target), so
 // nothing it sends is ever secret: never comment or note text, never people's data, never a token.
@@ -200,6 +201,9 @@ export type FromFrame = {
 	// `key` is the route a note belongs to (runtime/agent/dom.ts routeKey); `path` the route's path alone.
 	route: { fullPath: string; path: string; key: string }
 	theme: { theme: Theme }
+	// The Prototype's own theme switch chose light, dark or system (runtime/viewer/boot.js): the shell saves it, only
+	// on the person's own click or key (runtime/shell/theme.ts).
+	'theme:choose': { theme: Theme | 'system' }
 	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open), and `layers` the rects of
 	// what the page draws above it (the dialog's panel, a menu from it): the shell's Demo pill sits under both, as it
 	// did in the page.
@@ -493,6 +497,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 	ready: (d) => all({ status: str(d.status, 40), routes: strings(d.routes, CAPS.list, CAPS.route), pages: list(d.pages ?? [], CAPS.list, page) }),
 	route: (d) => all({ fullPath: str(d.fullPath, CAPS.route), path: str(d.path, CAPS.route), key: str(d.key, CAPS.route) }),
 	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
+	'theme:choose': (d) => all({ theme: oneOf(d.theme, [...THEMES, 'system'] as const) }),
 	layout: (d) =>
 		all({
 			vw: num(d.vw),
@@ -648,7 +653,6 @@ export type ToFrame = {
 	'model:measure': Obj
 	// The tile menu's Open page.
 	'tile:open': { tileId: string }
-	theme: { theme: Theme }
 	// The two facts the frame's status screen (empty, did not build) words itself by. Sent only with that screen up.
 	copy: { owner: boolean; reloads: boolean }
 	scrollTo: { selector: string; smooth: boolean }
@@ -746,7 +750,6 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 		}),
 	'model:measure': () => ({}),
 	'tile:open': (d) => all({ tileId: str(d.tileId) }),
-	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
 	copy: (d) => all({ owner: bool(d.owner), reloads: bool(d.reloads) }),
 	scrollTo: (d) => all({ selector: str(d.selector, CAPS.selector), smooth: bool(d.smooth ?? false) }),
 	escape: () => ({}),

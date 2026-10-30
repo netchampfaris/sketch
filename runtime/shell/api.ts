@@ -1,6 +1,7 @@
 // The shell's calls to the server: same-origin POSTs to sketch.viewer_api with the session cookie and Frappe's
 // CSRF token from the shell's boot JSON. Who is asking is the session's person (sketch/viewer_api.py `_actor`),
-// never anything this page names. Only the shell's own UI calls these; no frame message leads here.
+// never anything this page names. Only the shell's own UI calls these; no frame message leads here but the
+// Prototype's own theme switch, on the person's click (theme.ts).
 export class HttpError extends Error {
 	constructor(public status: number) {
 		super(String(status))

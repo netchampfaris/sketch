@@ -1,39 +1,65 @@
-// The shell owns the theme, in the Viewer's order: the theme URL parameter, then localStorage["theme"] (the
-// Sketch UI writes it, on this same origin), then the browser preference. The shell never writes the key.
-// It hands the answer to the frame in the iframe URL for the first paint, since an opaque origin cannot
-// read this origin's storage, and from then on follows what the frame reports.
+// The prototype theme (decision 84): light, dark or system, apart from Sketch's own UI theme, which the shell never
+// reads or writes. The order is the Viewer's: the theme URL parameter, then the reader's prototype theme (saved on
+// their account, `boot.prototype_theme`; a Guest's lives for the visit in this tab's sessionStorage), then system.
+// The shell hands the parameter and the preference to the frame in its URL; the frame paints the Prototype and reports
+// the theme it shows, and the shell's chrome follows it, as it did inside the page.
 import { THEMES, type Theme } from '../shared/protocol'
+import { write } from './api'
+
+export const CHOICES = [...THEMES, 'system'] as const
+export type Choice = (typeof CHOICES)[number]
 
 const pick = (v: unknown): Theme | null => ((THEMES as readonly unknown[]).includes(v) ? (v as Theme) : null)
-const DARK = '(prefers-color-scheme: dark)'
+const choice = (v: unknown): Choice | null => ((CHOICES as readonly unknown[]).includes(v) ? (v as Choice) : null)
+const VISIT = 'sketch:prototype-theme'
 
-function stored(): Theme | null {
+function visit(): Choice | null {
 	try {
-		return pick(localStorage.getItem('theme'))
+		return choice(sessionStorage.getItem(VISIT))
 	} catch {
 		return null
 	}
 }
 
-// The URL or a saved choice fixes the theme; with neither it follows the system.
-export const fixedTheme = (fromServer: Theme | null) =>
-	pick(fromServer) || pick(new URLSearchParams(location.search).get('theme')) || stored()
+// The theme the URL fixes, else null.
+export const urlTheme = () => pick(new URLSearchParams(location.search).get('theme'))
 
-export const resolveTheme = (fromServer: Theme | null): Theme =>
-	fixedTheme(fromServer) || (window.matchMedia?.(DARK).matches ? 'dark' : 'light')
+let signedIn = false
+let preference: Choice = 'system'
+export function initTheme(saved: string | null | undefined, reader: boolean) {
+	signedIn = reader
+	preference = (reader ? choice(saved) : visit()) ?? 'system'
+}
+export const preferenceNow = () => preference
+
+// What the chrome paints before the frame says: the same answer the frame will reach.
+export const resolveTheme = (): Theme =>
+	urlTheme() || pick(preference) || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 
 export function applyTheme(theme: Theme) {
 	document.documentElement.dataset.theme = theme
 }
 
-// Calls back when the answer may have moved: the system preference, or the Sketch UI saving one in another tab.
-export function watchTheme(changed: () => void): () => void {
-	const media = window.matchMedia?.(DARK)
-	const onStorage = (e: StorageEvent) => e.key === 'theme' && changed()
-	media?.addEventListener('change', changed)
-	window.addEventListener('storage', onStorage)
-	return () => {
-		media?.removeEventListener('change', changed)
-		window.removeEventListener('storage', onStorage)
+// The Prototype's own switch chose a theme (the frame's `theme:choose`). It is one of three values, on the reader's own
+// account, which they could set by hand from Sketch's avatar menu; the shell takes it only from a click or key the
+// person made (the frame's activation reaches the shell), so a page cannot change it on its own. Its choice outranks
+// a theme in the link from now on, so the parameter leaves the URL and a reload keeps it.
+export function chooseTheme(next: Choice) {
+	if (next === preference || !navigator.userActivation?.isActive) return
+	preference = next
+	const url = new URL(location.href)
+	if (url.searchParams.has('theme')) {
+		url.searchParams.delete('theme')
+		history.replaceState(history.state, '', url)
 	}
+	if (!signedIn) {
+		try {
+			sessionStorage.setItem(VISIT, next)
+		} catch {
+			// No storage: the choice lasts until the tab reloads.
+		}
+		return
+	}
+	// Quiet: the page already shows the choice.
+	write('sketch.api.set_prototype_theme', { theme: next }).catch(() => {})
 }
