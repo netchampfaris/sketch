@@ -4,7 +4,7 @@
  *
  * Sketch has two screens and one action, so a 14rem sidebar was furniture.
  * The mark goes left, the gallery switcher goes in the centre, and Settings
- * and the account menu go right. Settings is a labelled button rather than a
+ * and the account menu go right. Settings is an icon button with a tooltip rather than a
  * menu row, because it is the one page a user has to find again: it holds the
  * agent token.
  *
@@ -25,6 +25,7 @@ import {
   Button,
   Dropdown,
   TabButtons,
+  Tooltip,
   useColorScheme,
   type ColorScheme,
   type DropdownOptions,
@@ -244,40 +245,14 @@ const menu = computed<DropdownOptions>(() => [
         </template>
 
         <!--
-          Settings is a labelled control in the bar, not a row inside the
-          account menu. The token lives on that page, and the only route to it
-          used to be an unlabelled "S" avatar: a user reconnecting on a second
-          machine had to open a menu to find out. Ghost keeps it quiet next to
-          the page's own action, and the label matches the page title, which
-          the menu row's "Agent connection" did not.
+          Settings is its own control in the bar, not a row inside the account menu: the token lives on that page, and
+          a user reconnecting on a second machine should not have to open a menu to find it. Icon only at every width,
+          with a tooltip. `label` stays: on an icon-only Button it becomes the `aria-label` (`Button.vue:334`), so the
+          control is still named to a screen reader.
         -->
-        <Button
-          v-if="account"
-          class="hidden sm:inline-flex"
-          icon-left="lucide-settings"
-          label="Settings"
-          route="/settings"
-          theme="gray"
-          variant="ghost"
-        />
-
-        <!--
-          The same control, icon only, under 640px. The two gallery labels
-          take the width the "Settings" label used to have, and one 32px
-          target beside the Avatar is the mobile shape for a bar action
-          anyway. `label` stays: on an icon-only Button it becomes the
-          `aria-label` (`Button.vue:334`), so the control is still named to a
-          screen reader.
-        -->
-        <Button
-          v-if="account"
-          class="sm:hidden"
-          icon="lucide-settings"
-          label="Settings"
-          route="/settings"
-          theme="gray"
-          variant="ghost"
-        />
+        <Tooltip v-if="account" text="Settings">
+          <Button icon="lucide-settings" label="Settings" route="/settings" theme="gray" variant="ghost" />
+        </Tooltip>
 
         <Dropdown v-if="account" align="end" :options="menu">
           <template #default="{ open }">
