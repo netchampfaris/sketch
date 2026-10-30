@@ -1,7 +1,9 @@
 // The canvas world for one pick: one even grid of tiles in canvas units (CSS px at 100% zoom). It is computed
 // once per view, window size and panel state, with the largest gaps it needs, and zoom never touches it.
 import { defaultOf, type DGroup, type Opt } from './state'
+import { MIN_ZOOM } from './panzoom'
 import type { Pick } from './picker'
+import type { Crop } from './snapshot'
 
 export const GAP = 48
 // The tile's labels, in on-screen px at the fit zoom. Above: the name row (24, it holds the ⋯), 8 below it. Under: 8, the author row (24).
@@ -14,9 +16,7 @@ export const TOP = 60
 export const HEAD = 40
 // A set tile shows the set's own box with this much tile background around it.
 export const MARGIN = 16
-const MIN_Z = 0.05
 
-export type SetMeta = { x: number; y: number; w: number; h: number }
 // A state switch the canvas found: `options` is the flat list, first one the default. `of` is set on a component state
 // ("Supplier card/Compact"); one with no set to belong to is shown on its page, under that name.
 export type StateInfo = { key: string; label: string; options: string[]; groups?: DGroup[]; of?: string }
@@ -25,7 +25,7 @@ export type PageModel = {
   slug: string
   title: string
   states: StateInfo[]
-  sets: { key: string; label: string; name: string; file: string; options: Opt[]; meta: SetMeta | null }[]
+  sets: { key: string; label: string; name: string; file: string; options: Opt[]; meta: Crop | null }[]
 }
 export type TileBox = {
   id: string
@@ -58,7 +58,7 @@ export type TileBox = {
   option?: string
   isDefault?: boolean
   // Set tiles: the set's box when the page was first drawn.
-  meta?: SetMeta
+  meta?: Crop
   x: number
   y: number
   w: number
@@ -100,7 +100,7 @@ function sectionsOf(states: StateInfo[], byOf: boolean) {
   return out
 }
 
-function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
+function descsOf(pick: Pick, ctx: LayoutCtx): Desc[] {
   const base = (p: PageModel) => ({ path: p.path, slug: p.slug, pageTitle: p.title })
   if (pick.kind === 'set') {
     const set = pick.page.sets.find((s) => s.key === pick.key)
@@ -160,12 +160,30 @@ function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
   return out
 }
 
+// Runs of tiles under one heading, as index lists: consecutive descs with the same `section`.
+function runsOf(descs: Desc[]) {
+  const runs: number[][] = []
+  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? runs[runs.length - 1].push(i) : runs.push([i])))
+  return runs
+}
+
+// Each tile's size: a set's own box (its real size only once every option has been drawn, so the grid settles once)
+// with the margin around it, else the whole window.
+function dimsOf(descs: Desc[], ctx: LayoutCtx) {
+  const sizes = descs.map((d) => (d.setKey ? ctx.sizeOf(d.cacheId, d.setKey) : null))
+  const known = sizes.every((s, i) => s || !descs[i].setKey)
+  return descs.map((d, i) => {
+    if (!d.setKey) return { w: ctx.win.w, h: ctx.win.h }
+    const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
+    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
+  })
+}
+
 // The grid: sections one under another, a heading over each that has one, the same columns in all of them. Tiles share
 // the column width; each row is as tall as its tallest tile (`hs`, one height per desc), and its tiles share that height.
-function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; hs: number[] }, cols: number, inv: number) {
+function build(descs: Desc[], cell: { w: number; hs: number[] }, cols: number, inv: number) {
   const rowGap = GAP + (LABEL + AUTHOR) * inv
-  const sections: number[][] = []
-  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? sections[sections.length - 1].push(i) : sections.push([i])))
+  const sections = runsOf(descs)
   const tiles: TileBox[] = []
   const heads: Head[] = []
   let y = 0
@@ -190,11 +208,11 @@ function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; hs: number[] },
 
 function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): Fit {
   const { vp } = ctx
-  if (ctx.phone) return { x: 16, y: TOP, z: Math.max(MIN_Z, Math.min(1, (vp.w - 32) / b.w)) }
+  if (ctx.phone) return { x: 16, y: TOP, z: Math.max(MIN_ZOOM, Math.min(1, (vp.w - 32) / b.w)) }
   const room = vp.h - TOP - PAD
   let z = Math.min(1, (vp.w - PAD * 2) / b.w)
   if (!byWidth) z = Math.min(z, room / b.h)
-  z = Math.max(MIN_Z, z)
+  z = Math.max(MIN_ZOOM, z)
   const fitsHeight = b.h * z <= room
   return { x: (vp.w - b.w * z) / 2, y: fitsHeight ? TOP + (room - b.h * z) / 2 : TOP, z }
 }
@@ -204,20 +222,14 @@ function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): F
 // The view opens on the start of the rows, fitted to the tallest tile when that is readable, and pans along them.
 const READABLE = 0.5
 function layoutRows(descs: Desc[], ctx: LayoutCtx): Layout {
-  const sizes = descs.map((d) => ctx.sizeOf(d.cacheId, d.setKey!))
-  const known = sizes.every(Boolean)
-  const dims = descs.map((d, i) => {
-    const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
-    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
-  })
+  const dims = dimsOf(descs, ctx)
   const tallest = Math.max(...dims.map((d) => d.h))
   const room = ctx.vp.h - TOP - PAD
-  const z = Math.max(MIN_Z, Math.min(1, Math.max(READABLE, room / tallest)))
+  const z = Math.max(MIN_ZOOM, Math.min(1, Math.max(READABLE, room / tallest)))
   const fit: Fit = { x: ctx.phone ? 16 : PAD, y: TOP, z }
   const inv = 1 / z
 
-  const rows: number[][] = []
-  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? rows[rows.length - 1].push(i) : rows.push([i])))
+  const rows = runsOf(descs)
   const tiles: TileBox[] = []
   const heads: Head[] = []
   let y = 0
@@ -242,19 +254,12 @@ function layoutRows(descs: Desc[], ctx: LayoutCtx): Layout {
   return { tiles, heads, bounds: { w, h: y }, fit, invFit: inv, sig }
 }
 
-export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx): Layout {
-  const descs = pick ? descsOf(pick, pages, ctx) : []
+export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
+  const descs = pick ? descsOf(pick, ctx) : []
   if (!descs.length) return empty
   if (pick?.kind === 'opt') return layoutRows(descs, ctx)
   const isSet = !!descs[0].setKey
-  // Set tiles take their real sizes only once every option has been drawn, so the grid settles once.
-  const sizes = isSet ? descs.map((d) => ctx.sizeOf(d.cacheId, d.setKey!)) : []
-  const known = isSet && sizes.every(Boolean)
-  const dims = descs.map((d, i) => {
-    if (!d.setKey) return { w: ctx.win.w, h: ctx.win.h }
-    const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
-    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
-  })
+  const dims = dimsOf(descs, ctx)
   const cell = { w: Math.max(...dims.map((d) => d.w)), hs: dims.map((d) => d.h) }
   const n = descs.length
 
@@ -265,7 +270,7 @@ export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx
       // The column count that lets the whole grid fit at the largest zoom.
       let bestZ = -1
       for (let c = 1; c <= n; c++) {
-        const z = fitOf(build(descs, ctx, cell, c, 1).bounds, ctx, false).z
+        const z = fitOf(build(descs, cell, c, 1).bounds, ctx, false).z
         if (z >= bestZ - 0.005) {
           bestZ = Math.max(bestZ, z)
           cols = c
@@ -277,12 +282,12 @@ export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx
   // Captions keep their on-screen size at the fit zoom, so the room under a tile is sized for it: the
   // largest the layout needs. Zoom afterwards only scales this layout.
   let inv = 1
-  let out = build(descs, ctx, cell, cols, inv)
+  let out = build(descs, cell, cols, inv)
   for (let i = 0; i < 4; i++) {
     inv = Math.max(1, 1 / fitOf(out.bounds, ctx, isSet).z)
-    out = build(descs, ctx, cell, cols, inv)
+    out = build(descs, cell, cols, inv)
   }
   const fit = fitOf(out.bounds, ctx, isSet)
   inv = Math.max(inv, 1 / fit.z)
-  return { ...out, fit, invFit: inv, sig: `${cols}|${cell.w}x${cell.hs.join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${pick ? n : 0}|${descs.map((d) => d.id).join(',')}` }
+  return { ...out, fit, invFit: inv, sig: `${cols}|${cell.w}x${cell.hs.join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}` }
 }
