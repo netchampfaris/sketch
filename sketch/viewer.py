@@ -340,18 +340,13 @@ class SketchViewerRenderer(BaseRenderer):
 	def commenter(self) -> str:
 		"""The username of a signed-in person who may comment here, else "".
 
-		The owner, or a signed-in reader of a public Prototype, in a real browser
-		session. A Guest has nobody to sign the comment, and a `check` request is
-		nobody at all. It is only a name for the toolbar to show; the pass that
-		lets the person write is minted later (`sketch.api.comment_pass`).
+		The owner, an invited editor, or a signed-in reader of a public Prototype,
+		in a real browser session. A Guest has nobody to sign the comment, and a
+		`check` request is nobody at all. It is only a name for the toolbar to show;
+		the pass that lets the person write is minted later (`sketch.api.comment_pass`).
 		"""
-		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
-			return ""
-
-		if not comments.can_see(self.doc.name, frappe.session.user):
-			return ""
-
-		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+		reader = self.signed_in_username()
+		return reader if reader and comments.can_see(self.doc.name, frappe.session.user) else ""
 
 	def signed_in_username(self) -> str:
 		"""The username of the signed-in person reading this page, in a real browser session, else ""."""
@@ -366,13 +361,6 @@ class SketchViewerRenderer(BaseRenderer):
 			return "guest"
 
 		return sharing.role_of(self.doc.name, frappe.session.user)
-
-	def variant_editor(self) -> str:
-		"""The username a variant credential speaks for, or "" for a `check` request."""
-		if frappe.session.user == "Guest" or frappe.form_dict.get("sig"):
-			return ""
-
-		return sharing.username_of(frappe.session.user)
 
 	def offers_sign_in(self) -> bool:
 		"""True when a signed-out visitor to a public Prototype is shown "Sign in to comment".
@@ -420,23 +408,24 @@ class SketchViewerRenderer(BaseRenderer):
 		# separate scope, so the poll signature cannot write annotations and
 		# this one cannot read the revision (sketch/signature.py).
 		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
+		reader = self.signed_in_username()
+		role = self.role()
 		commenter = self.commenter()
 		ticket = comments.mint_ticket(self.doc.name, commenter) if commenter else {}
 		# An invited editor gets Note and Tweak for their own agent: their own notes, and a signature over their name
 		# that writes those and nothing else. The owner's notes never reach their page, nor theirs the owner's.
-		noting = commenter if commenter and self.role() == "editor" else ""
+		noting = commenter if commenter and role == "editor" else ""
 		if noting:
-			mark = signature.mint(annotations.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
+			mark = signature.mint(comments.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
 		# Make default writes the source, so it has a scope of its own: neither
 		# the poll nor the toolbar signature can reorder a slot.
 		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
 		# Deleting a variant is the owner's, for any, and an invited editor's, for
 		# their own. The credential names the person, so the server reads who is
 		# asking from it and never from the page (`sketch.api.delete_variant_signed`).
-		role = self.role()
-		editing = self.variant_editor() if role in ("owner", "editor") else ""
+		editing = reader if role in ("owner", "editor") else ""
 		delete = (
-			signature.mint(sharing_subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
+			signature.mint(comments.subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
 			if editing
 			else {}
 		)
@@ -446,7 +435,6 @@ class SketchViewerRenderer(BaseRenderer):
 		fresh = badges.page(self.doc.name, frappe.session.user) if commenter else None
 		# The theme this person's prototypes open in, and the right to save it from the Prototype's own switch
 		# (`sketch.prototype_theme`, `sketch.api.prototype_theme_signed`). A Guest and a `check` get neither.
-		reader = self.signed_in_username()
 		theming = signature.mint(prototype_theme.subject(reader), LIVE_TTL_SECONDS, signature.THEME) if reader else {}
 		tree = prototype_files.read_tree(self.doc.name)
 		adopted = sharing.read_adopted(tree)
@@ -497,11 +485,6 @@ class SketchViewerRenderer(BaseRenderer):
 			"theme_exp": theming.get("exp", ""),
 			"theme_sig": theming.get("sig", ""),
 		}
-
-
-def sharing_subject(name: str, username: str) -> str:
-	"""What a variant credential covers: this Prototype, for this one person."""
-	return f"{name}|{username}"
 
 
 def meta_tag(attribute: str, key: str, content: str) -> str:
@@ -566,9 +549,8 @@ class PrivatePage(TemplatePage):
 		self.context.no_cache = 1
 
 
-def _error_html(title: str, detail: str, action: str = "") -> str:
+def _error_html(title: str, detail: str, action: str) -> str:
 	"""A plain page a person can read. No Runtime, so no Runtime assets."""
-	note = f"<p style='margin:0;color:#666'>{action}</p>" if action else ""
 	return (
 		"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
 		"<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -576,6 +558,6 @@ def _error_html(title: str, detail: str, action: str = "") -> str:
 		'<body style="margin:0;padding:2rem;font:14px/1.6 ui-sans-serif,system-ui,sans-serif">'
 		f"<h1 style='font-size:1rem;margin:0 0 .5rem'>{title}</h1>"
 		f"<p style='margin:0 0 .5rem'>{detail}</p>"
-		f"{note}"
+		f"<p style='margin:0;color:#666'>{action}</p>"
 		"</body></html>"
 	)

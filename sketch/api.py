@@ -810,10 +810,10 @@ def save_annotations(
 	if username:
 		# An invited editor's own notes: their signature covers the Prototype and their name together, and they
 		# must still be invited. The owner's notes are never reachable this way (decision 29).
-		if not signature.verify(annotations.subject(name, username), exp, sig, signature.ANNOTATE):
+		if not signature.verify(comments.subject(name, username), exp, sig, signature.ANNOTATE):
 			raise frappe.DoesNotExistError
 
-		user = frappe.db.get_value("User", {"username": username}, "name")
+		user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
 		if not user or not sharing.is_editor(name, user):
 			raise frappe.DoesNotExistError
 
@@ -1274,10 +1274,8 @@ def conversations() -> list[dict]:
 
 def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:
 	"""Who a variant credential speaks for, and whether they own the Prototype. Any refusal is a 404."""
-	from sketch.viewer import sharing_subject
-
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not username or not signature.verify(sharing_subject(name, username), exp, sig, signature.VARIANT_EDIT):
+	if not username or not signature.verify(comments.subject(name, username), exp, sig, signature.VARIANT_EDIT):
 		raise frappe.DoesNotExistError
 
 	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")

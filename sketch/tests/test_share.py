@@ -22,7 +22,7 @@ from frappe.tests import IntegrationTestCase, set_user
 from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, versions
 from sketch.mcp import tools
 from sketch.tests import utils
-from sketch.viewer import SketchViewerRenderer, sharing_subject
+from sketch.viewer import SketchViewerRenderer
 
 HOME = """<script setup>
 import { Variants } from 'sketch:variants'
@@ -103,7 +103,7 @@ class ShareCase(IntegrationTestCase):
 			return renderer.payload()
 
 	def edit_credential(self, user):
-		stamp = signature.mint(sharing_subject(self.doc.name, utils.username_of(user)), 600, signature.VARIANT_EDIT)
+		stamp = signature.mint(comments.subject(self.doc.name, utils.username_of(user)), 600, signature.VARIANT_EDIT)
 		return {"username": utils.username_of(user), "exp": str(stamp["exp"]), "sig": stamp["sig"]}
 
 	def delete_as(self, user, option):
@@ -447,7 +447,7 @@ class TestEditorNotes(ShareCase):
 		self.assertTrue(page["annotate_sig"])
 		self.assertEqual(page["annotations"]["notes"], [])
 		self.assertTrue(
-			signature.verify(annotations.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
+			signature.verify(comments.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
 		)
 		self.assertFalse(
 			signature.verify(self.doc.name, page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE),
@@ -482,6 +482,13 @@ class TestEditorNotes(ShareCase):
 		page = self.page_data_for(self.ed)
 		with set_user(self.owner):
 			api.remove_editor(self.doc.slug, "d2tshed")
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.save_as_editor(page, "late")
+
+	def test_a_disabled_editors_signature_saves_nothing(self):
+		page = self.page_data_for(self.ed)
+		frappe.db.set_value("User", self.ed, "enabled", 0)
+		self.addCleanup(frappe.db.set_value, "User", self.ed, "enabled", 1)
 		with self.assertRaises(frappe.DoesNotExistError):
 			self.save_as_editor(page, "late")
 
