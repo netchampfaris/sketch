@@ -331,8 +331,8 @@ export type CanvasTile = {
 	setCount: number
 }
 // What the canvas found on a page, enough to tell whether a pinned tile still exists (sets by key with their option
-// values, states by key with their options).
-export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[] }
+// values, states by key with their options, and the set options a component state can name, as slugs).
+export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[]; ofs: string[] }
 // One row of the Show list (runtime/variants/picker.ts PickItem).
 export type PickItem = { value: string; label: string; sub: string; short: string; complete: boolean; group: 'sets' | 'states' | 'pages'; options: string[] }
 export type ComponentInfo = { component: string; chain: string[]; file: string }
@@ -409,6 +409,7 @@ const canvasPage = (v: unknown): CanvasPage | null =>
 				title: str(v.title),
 				sets: list(v.sets, CAPS.sets, keyed),
 				states: list(v.states, CAPS.sets, keyed),
+				ofs: strings(v.ofs ?? [], CAPS.tiles),
 			})
 		: null
 const pickItem = (v: unknown): PickItem | null =>

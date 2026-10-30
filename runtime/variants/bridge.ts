@@ -4,6 +4,7 @@
 import { shallowReactive, shallowRef } from 'vue'
 import type { PageModel, TileBox } from './layout'
 import type { PickItem } from './picker'
+import { slugOf } from './state'
 
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
@@ -53,12 +54,15 @@ export const bridge = shallowReactive({
 // ---- Tiles as data
 
 export function tileRefOf(t: TileBox, view: string): TileRef | null {
-  if (t.kind === 'gap') return null
+  // The one tile of an option that is still being drawn stands for no state yet, so nothing is pinned to it.
+  if (t.kind === 'default' && t.setKey) return null
   if (t.kind === 'set') {
     return { kind: 'set', view, page: t.pageTitle, group: t.setLabel ?? t.setKey ?? '', groupKey: t.setKey ?? '', option: t.option ?? '', optionLabel: t.opt ?? t.option ?? '' }
   }
   if (t.kind === 'state') {
-    return { kind: 'state', view, page: t.pageTitle, group: t.stateLabel ?? t.stateKey ?? '', groupKey: t.stateKey ?? '', option: t.option ?? '', optionLabel: t.option ?? '' }
+    // A component state names its set and option in its group, so the agent reads where it is; its key already carries them.
+    const group = t.setKey ? `${t.setLabel} › ${t.setOptionLabel} › ${t.stateLabel}` : (t.stateLabel ?? t.stateKey ?? '')
+    return { kind: 'state', view, page: t.pageTitle, group, groupKey: t.stateKey ?? '', option: t.option ?? '', optionLabel: t.option ?? '' }
   }
   return { kind: 'default', view, page: t.pageTitle, group: '', groupKey: '', option: '', optionLabel: 'Default' }
 }
@@ -121,6 +125,8 @@ export const pagesOf = (model: PageModel[] | null): CanvasPage[] | null =>
     title: p.title,
     sets: p.sets.map((s) => ({ key: s.key, options: s.options.map((o) => o.value) })),
     states: p.states.map((s) => ({ key: s.key, options: s.options })),
+    // A component state stands while its set's option does: the options as `of` names them ("Supplier card/Compact").
+    ofs: p.sets.flatMap((s) => s.options.map((o) => slugOf(`${s.label}/${o.label}`))),
   }))
 
 // The option a write has just put in place (Make default, Keep only this, or their Undo, saved by the shell): the canvas

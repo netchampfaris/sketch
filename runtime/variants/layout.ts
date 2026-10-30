@@ -1,6 +1,6 @@
 // The canvas world for one pick: one even grid of tiles in canvas units (CSS px at 100% zoom). It is computed
 // once per view, window size and panel state, with the largest gaps it needs, and zoom never touches it.
-import type { Opt } from './state'
+import type { DGroup, Opt } from './state'
 import type { Pick } from './picker'
 
 export const GAP = 48
@@ -10,16 +10,21 @@ export const AUTHOR = 32
 export const PAD = 32
 // The top keeps clear of the floating title pill (12 inset, 36 tall, 12 below it).
 export const TOP = 60
+// A heading over a section of tiles: its row (24) and the room under it (16), in on-screen px at the fit zoom.
+export const HEAD = 40
 // A set tile shows the set's own box with this much tile background around it.
 export const MARGIN = 16
 const MIN_Z = 0.05
 
 export type SetMeta = { x: number; y: number; w: number; h: number }
+// A state switch the canvas found: `options` is the flat list, first one the default. `of` is set on a component state
+// ("Supplier card/Compact"); one with no set to belong to is shown on its page, under that name.
+export type StateInfo = { key: string; label: string; options: string[]; groups?: DGroup[]; of?: string }
 export type PageModel = {
   path: string
   slug: string
   title: string
-  states: { key: string; label: string; options: string[] }[]
+  states: StateInfo[]
   sets: { key: string; label: string; name: string; file: string; options: Opt[]; meta: SetMeta | null }[]
 }
 export type TileBox = {
@@ -35,18 +40,23 @@ export type TileBox = {
   author?: string
   // The option this tile shows, for its accessible name.
   opt?: string
-  kind: 'default' | 'state' | 'set' | 'gap'
+  kind: 'default' | 'state' | 'set'
+  // The heading this tile sits under, when it has one.
+  section?: string
   stateKey?: string
   stateLabel?: string
   setKey?: string
   setLabel?: string
+  // A state tile of one option's component states: the option the page is pinned to, by value and by label. It is clipped
+  // to the set's box, as a set tile is.
+  setOption?: string
+  setOptionLabel?: string
   // What Make default needs to rewrite the source: the tag's name, its file and the set's options in order.
   setName?: string
   setFile?: string
   setOptions?: Opt[]
   option?: string
   isDefault?: boolean
-  gapText?: string
   // Set tiles: the set's box when the page was first drawn.
   meta?: SetMeta
   x: number
@@ -55,7 +65,8 @@ export type TileBox = {
   h: number
 }
 export type Fit = { x: number; y: number; z: number }
-export type Layout = { tiles: TileBox[]; bounds: { w: number; h: number }; fit: Fit; invFit: number; sig: string }
+export type Head = { text: string; x: number; y: number }
+export type Layout = { tiles: TileBox[]; heads: Head[]; bounds: { w: number; h: number }; fit: Fit; invFit: number; sig: string }
 export type LayoutCtx = {
   win: { w: number; h: number }
   // The room the grid has on screen.
@@ -63,13 +74,32 @@ export type LayoutCtx = {
   phone: boolean
   // The size of one option's own set box once it has been drawn.
   sizeOf: (cacheId: string, setKey: string) => { w: number; h: number } | null
+  // The states a drawn page declared, by tile: null until it is drawn, 'error' when it could not be.
+  statesOf: (cacheId: string) => StateInfo[] | 'error' | null
 }
 
 type Desc = Omit<TileBox, 'x' | 'y' | 'w' | 'h'>
 
-const empty: Layout = { tiles: [], bounds: { w: 0, h: 0 }, fit: { x: 0, y: 0, z: 1 }, invFit: 1, sig: '' }
+const empty: Layout = { tiles: [], heads: [], bounds: { w: 0, h: 0 }, fit: { x: 0, y: 0, z: 1 }, invFit: 1, sig: '' }
 
-function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
+// The tiles of some state switches, in sections: one per switch, or per group of a grouped switch. A switch's first option
+// is the default, so it has no tile of its own. A state that belongs to a set nobody has any more is headed by that
+// set and option ("Supplier card · Compact"); `byOf` is off in a set option's own view, where that is the whole view.
+function sectionsOf(states: StateInfo[], byOf: boolean) {
+  const out: { title: string; picks: { s: StateInfo; o: string }[] }[] = []
+  for (const s of states)
+    for (const g of s.groups ?? [{ title: '', options: s.options }]) {
+      const title = s.of && byOf ? s.of.replace('/', ' · ') : g.title ? `${s.label} · ${g.title}` : s.label
+      const picks = g.options.filter((o) => o !== s.options[0]).map((o) => ({ s, o }))
+      if (!picks.length) continue
+      const last = out[out.length - 1]
+      if (last?.title === title) last.picks.push(...picks)
+      else out.push({ title, picks })
+    }
+  return out
+}
+
+function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
   const base = (p: PageModel) => ({ path: p.path, slug: p.slug, pageTitle: p.title })
   if (pick.kind === 'set') {
     const set = pick.page.sets.find((s) => s.key === pick.key)
@@ -94,34 +124,58 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
       meta: set.meta ?? undefined,
     }))
   }
-  if (pick.kind === 'state') {
-    const name = pick.name
-    const out: Desc[] = []
-    for (const p of pages) {
-      if (!p.states.length) continue
-      const s = p.states.find((x) => x.options.slice(1).includes(name))
-      if (s) {
-        out.push({ id: `f:${p.path}`, cacheId: `${p.path}|s|${s.key}|${name}`, ...base(p), caption: p.title, opt: name, kind: 'state', stateKey: s.key, stateLabel: s.label, option: name })
-      } else {
-        out.push({ id: `gap:${p.path}`, cacheId: '', ...base(p), caption: p.title, kind: 'gap', gapText: 'Not designed yet' })
+  const p = pick.page
+  if (pick.kind === 'opt') {
+    const set = p.sets.find((s) => s.key === pick.key)
+    const opt = set?.options.find((o) => o.value === pick.value)
+    if (!set || !opt) return []
+    const cacheId = `${p.path}|v|${set.key}|${opt.value}`
+    const pin = { setKey: set.key, setLabel: set.label, setOption: opt.value, setOptionLabel: opt.label, meta: set.meta ?? undefined }
+    const found = ctx.statesOf(cacheId)
+    // Declared nothing: no tiles, and the canvas says so. Until the option has been drawn once (or if it cannot be), there
+    // is this one tile: the option as it is.
+    if (Array.isArray(found) && !found.length) return []
+    if (!Array.isArray(found)) return [{ id: `${cacheId}|probe`, cacheId, ...base(p), caption: 'Default', opt: 'Default', kind: 'default', ...pin }]
+    const first = found[0]
+    const out: Desc[] = [
+      { id: `${cacheId}|s|${first.key}|${first.options[0]}`, cacheId, ...base(p), caption: first.options[0], opt: first.options[0], kind: 'state', stateKey: first.key, stateLabel: first.label, option: first.options[0], ...pin },
+    ]
+    for (const sec of sectionsOf(found, false))
+      for (const { s, o } of sec.picks) {
+        const id = `${cacheId}|s|${s.key}|${o}`
+        out.push({ id, cacheId: id, ...base(p), caption: o, opt: o, kind: 'state', stateKey: s.key, stateLabel: s.label, option: o, section: sec.title, ...pin })
       }
-    }
     return out
   }
-  const p = pick.page
   const out: Desc[] = [{ id: `${p.path}|default`, cacheId: `${p.path}|default`, ...base(p), caption: 'Default', kind: 'default' }]
-  for (const s of p.states)
-    for (const o of s.options.slice(1))
-      out.push({ id: `${p.path}|s|${s.key}|${o}`, cacheId: `${p.path}|s|${s.key}|${o}`, ...base(p), caption: o, kind: 'state', stateKey: s.key, stateLabel: s.label, option: o })
+  for (const sec of sectionsOf(p.states, true))
+    for (const { s, o } of sec.picks) {
+      const id = `${p.path}|s|${s.key}|${o}`
+      out.push({ id, cacheId: id, ...base(p), caption: o, kind: 'state', stateKey: s.key, stateLabel: s.label, option: o, section: sec.title })
+    }
   return out
 }
 
+// The grid: sections one under another, a heading over each that has one, the same columns in all of them.
 function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; h: number }, cols: number, inv: number) {
   const rowGap = GAP + (LABEL + AUTHOR) * inv
-  const rows = Math.ceil(descs.length / cols)
-  const top = LABEL * inv
-  const tiles: TileBox[] = descs.map((d, i) => ({ ...d, x: (i % cols) * (cell.w + GAP), y: top + Math.floor(i / cols) * (cell.h + rowGap), w: cell.w, h: cell.h }))
-  return { tiles, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: rows * cell.h + (rows - 1) * rowGap + (LABEL + AUTHOR) * inv } }
+  const sections: Desc[][] = []
+  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? sections[sections.length - 1].push(d) : sections.push([d])))
+  const tiles: TileBox[] = []
+  const heads: Head[] = []
+  let y = 0
+  sections.forEach((sec, si) => {
+    if (si) y += GAP
+    if (sec[0].section) {
+      heads.push({ text: sec[0].section, x: 0, y })
+      y += HEAD * inv
+    }
+    y += LABEL * inv
+    sec.forEach((d, i) => tiles.push({ ...d, x: (i % cols) * (cell.w + GAP), y: y + Math.floor(i / cols) * (cell.h + rowGap), w: cell.w, h: cell.h }))
+    const rows = Math.ceil(sec.length / cols)
+    y += rows * cell.h + (rows - 1) * rowGap + AUTHOR * inv
+  })
+  return { tiles, heads, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: y } }
 }
 
 function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): Fit {
@@ -136,14 +190,14 @@ function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): F
 }
 
 export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx): Layout {
-  const descs = pick ? descsOf(pick, pages) : []
+  const descs = pick ? descsOf(pick, pages, ctx) : []
   if (!descs.length) return empty
-  const isSet = descs[0].kind === 'set'
+  const isSet = !!descs[0].setKey
   // Set tiles take their real sizes only once every option has been drawn, so the grid settles once.
   const sizes = isSet ? descs.map((d) => ctx.sizeOf(d.cacheId, d.setKey!)) : []
   const known = isSet && sizes.every(Boolean)
   const dims = descs.map((d, i) => {
-    if (d.kind !== 'set') return { w: ctx.win.w, h: ctx.win.h }
+    if (!d.setKey) return { w: ctx.win.w, h: ctx.win.h }
     const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
     return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
   })

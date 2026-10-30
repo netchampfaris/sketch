@@ -344,6 +344,46 @@ const phase = useDemoState('Cycle phase', ['Self', '360', 'Manager', 'Results'])
 - Declare a persona in `App.vue`. Declare a phase in the page that uses it.
 - The value is global by name: the same name in two components shares one value.
 - A demo flow can move it, for example `phase.value = '360'` on submit.
+- A long list of options goes in groups: pass an object instead of an array, and
+  the pill shows a heading for each group. The first option of the first group
+  is the default.
+
+```ts
+const state = useDemoState('State', {
+  Data: ['Default', 'Loading', 'Empty', 'Error'],
+  Access: ['Read-only'],
+})
+```
+
+- A third argument `{ of: 'Supplier card/Compact' }` says the states belong to
+  one option of a `<Variants>` set: the set's `name`, a slash, the option's
+  label. They show on the canvas under that option and never in the pill. See
+  States below.
+
+```ts
+const state = useDemoState('State', ['Default', 'Loading', 'Empty'], { of: 'Supplier card/Compact' })
+```
+
+#### States
+
+A state is a branch the code already has, drawn so the user can see it beside
+the others on the canvas.
+
+1. Take them from the branches in the code: data (loading, empty, error, one
+   item, many items, long text), access (a role or permission check), feature
+   (a limit reached, a locked feature). A state the code cannot reach is not a
+   state. Do not add a branch to show one.
+2. Name each in the product's words: "Payment failed", not "Error 2".
+3. One switch for each independent thing: State, Alert, Access. Never a cross
+   product. Combine two only where the code branches on the pair. Group a long
+   list with the object form above.
+4. Use data shaped like the real thing: real names, amounts and counts a user
+   actually has. Never "Test item".
+5. Loading is a state that holds still until it is switched. Never resolve it
+   on a timer.
+6. Do not build states for every option while exploring. Build an option's
+   states only when a note asks ("Build the states for Supplier card · Compact"):
+   declare them inside that option's code with `{ of: 'Supplier card/Compact' }`.
 
 ### Anything else
 
@@ -471,13 +511,14 @@ leading icon, `size-2` a status dot.
 **Empty, loading and hover states are part of the screen**, not a follow-up.
 Every list gets an empty state. Every screen that "loads" gets a skeleton.
 
-Loading, with no server: hold the fixture behind a short timer, so the skeleton
-and the empty state are both real and both visible.
+Loading, with no server: a screen that loads is shown through a Loading state
+(`useDemoState`), never a timer. The state holds the skeleton still until it is
+switched, so the skeleton and the empty state are both real and both visible.
 
 ```ts
-const rows = ref([])
-const loading = ref(true)
-onMounted(() => setTimeout(() => { rows.value = ISSUES; loading.value = false }, 600))
+const view = useDemoState('State', ['Default', 'Loading', 'Empty'])
+const loading = computed(() => view.value === 'Loading')
+const rows = computed(() => (view.value === 'Empty' ? [] : ISSUES))
 ```
 
 Empty state:
@@ -538,8 +579,9 @@ import { DesktopShell, Sidebar, SidebarHeader, SidebarItem, ScrollArea } from 'f
 
 ```vue
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge, Button, Dialog, FormControl, PageHeader, toast } from 'frappe-ui'
+import { useDemoState } from 'sketch:variants'
 import {
   List,
   ListHeader,
@@ -553,26 +595,22 @@ import dayjs from 'dayjs'
 
 type Issue = { name: string; title: string; status: string; modified: string }
 
-const rows = ref<Issue[]>([])
-const loading = ref(true)
+const items = ref<Issue[]>([
+  { name: '1', title: 'Sidebar collapses on reload', status: 'open', modified: '2026-08-24' },
+  { name: '2', title: 'Empty state is missing', status: 'done', modified: '2026-08-21' },
+])
 
-// No server. Hold the fixture behind a short timer so the skeleton is real.
-onMounted(() =>
-  setTimeout(() => {
-    rows.value = [
-      { name: '1', title: 'Sidebar collapses on reload', status: 'open', modified: '2026-08-24' },
-      { name: '2', title: 'Empty state is missing', status: 'done', modified: '2026-08-21' },
-    ]
-    loading.value = false
-  }, 600),
-)
+// No server. Loading and Empty are states of the page, held until switched.
+const view = useDemoState('State', ['Default', 'Loading', 'Empty'])
+const loading = computed(() => view.value === 'Loading')
+const rows = computed(() => (view.value === 'Empty' ? [] : items.value))
 
 // Sort state is app code. The header cell only draws the direction you pass.
 const direction = ref<'asc' | 'desc'>('desc')
 function toggleSort() {
   direction.value = direction.value === 'asc' ? 'desc' : 'asc'
   const factor = direction.value === 'desc' ? -1 : 1
-  rows.value = [...rows.value].sort((a, b) => factor * a.modified.localeCompare(b.modified))
+  items.value = [...items.value].sort((a, b) => factor * a.modified.localeCompare(b.modified))
 }
 
 const themeFor = (s: string) =>
@@ -582,8 +620,8 @@ const showNew = ref(false)
 const form = ref({ title: '', status: 'open' })
 
 function create() {
-  rows.value.unshift({
-    name: String(rows.value.length + 1),
+  items.value.unshift({
+    name: String(items.value.length + 1),
     ...form.value,
     modified: dayjs().format('YYYY-MM-DD'),
   })

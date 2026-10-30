@@ -38,7 +38,8 @@ useIntersectionObserver(
   { rootMargin: `${window.innerHeight}px ${window.innerWidth}px` },
 )
 
-const isSet = computed(() => props.tile.kind === 'set')
+// A set tile, and a state tile of one option's component states, show the set's own box; the others the whole window.
+const isSet = computed(() => !!props.tile.setKey)
 // The part of the page this tile shows: the set's own box, or the whole window.
 const rect = computed(() => {
   if (!isSet.value) return { x: 0, y: 0, w: props.win.w, h: props.win.h }
@@ -67,7 +68,7 @@ watch(
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The labels are laid out at 1x and scaled to their on-screen size (never larger than at the fit zoom), so a row
          wraps by what the eye sees. Above the tile: number, name, Default and New on the left; on the live tile, its ⋯ on
-         the right, holding Make default (owner), Open page, Keep only this, Delete variant. Under it: on a teammate's
+         the right, holding Make default (owner), Open page, States, Keep only this, Delete variant. Under it: on a teammate's
          option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
       class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
@@ -105,18 +106,7 @@ watch(
       </div>
     </div>
 
-    <!-- A page that has a States set but not this state: same size, dashed, nothing to open. -->
     <div
-      v-if="tile.kind === 'gap'"
-      data-gap
-      class="absolute inset-0 flex items-center justify-center rounded-4 border-dashed border-outline-gray-3 px-4 text-center"
-      :style="{ borderWidth: 'calc(1px * var(--inv))' }"
-    >
-      <span class="text-ink-gray-5" :style="{ fontSize: 'calc(13px * var(--ls))' }">{{ tile.gapText }}</span>
-    </div>
-
-    <div
-      v-else
       ref="box"
       data-tile
       role="button"

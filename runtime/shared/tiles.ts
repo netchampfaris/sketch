@@ -18,7 +18,9 @@ export function tileExists(pages: CanvasPage[] | null, spot: TileSpot): boolean 
   const { kind, groupKey, option } = spot.tile
   if (kind === 'default') return true
   if (kind === 'set') return !!p.sets.find((s) => s.key === groupKey)?.options.includes(option)
-  return !!p.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
+  if (p.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)) return true
+  // A component state's key ends in its set and option, "state@supplier-card-compact": it stands while that option does.
+  return groupKey.includes('@') && p.ofs.includes(groupKey.slice(groupKey.indexOf('@') + 1))
 }
 
 // The tile in plain words, the way the agent reads it: "Canvas · Overview › Spend summary › option Donut".
