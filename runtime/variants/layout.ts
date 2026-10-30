@@ -4,8 +4,9 @@ import type { Opt } from './state'
 import type { Pick } from './picker'
 
 export const GAP = 48
-// The caption under a tile, in on-screen px at the fit zoom: 8 above, the name row (20), 4 between, the actions row (24).
-export const CAPTION = 56
+// The tile's labels, in on-screen px at the fit zoom. Above: the name row (20), 8 below it. Under: 8, the actions row (24).
+export const LABEL = 28
+export const ACTIONS = 32
 export const PAD = 32
 // The top keeps clear of the floating title pill (12 inset, 36 tall, 12 below it).
 export const TOP = 60
@@ -116,10 +117,11 @@ function descsOf(pick: Pick, pages: PageModel[]): Desc[] {
 }
 
 function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; h: number }, cols: number, inv: number) {
-  const rowGap = GAP + CAPTION * inv
+  const rowGap = GAP + (LABEL + ACTIONS) * inv
   const rows = Math.ceil(descs.length / cols)
-  const tiles: TileBox[] = descs.map((d, i) => ({ ...d, x: (i % cols) * (cell.w + GAP), y: Math.floor(i / cols) * (cell.h + rowGap), w: cell.w, h: cell.h }))
-  return { tiles, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: rows * cell.h + (rows - 1) * rowGap + CAPTION * inv } }
+  const top = LABEL * inv
+  const tiles: TileBox[] = descs.map((d, i) => ({ ...d, x: (i % cols) * (cell.w + GAP), y: top + Math.floor(i / cols) * (cell.h + rowGap), w: cell.w, h: cell.h }))
+  return { tiles, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: rows * cell.h + (rows - 1) * rowGap + (LABEL + ACTIONS) * inv } }
 }
 
 function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): Fit {
