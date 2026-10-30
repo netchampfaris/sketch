@@ -127,7 +127,7 @@ onMounted(() => {
   -->
   <section v-if="showIntro" class="px-3 py-12 text-center sm:px-5 sm:py-16">
     <img alt="" aria-hidden="true" class="mx-auto mb-4 size-10 dark:invert" :src="logo" />
-    <h1 class="text-2xl-semibold text-ink-gray-8">Prototypes your agent builds</h1>
+    <h1 class="text-2xl-semibold text-ink-gray-8">Design with your agent</h1>
     <p class="mx-auto mt-2 max-w-[560px] text-p-base text-ink-gray-6">
       Sketch renders frappe-ui prototypes that your own agent writes over MCP.
     </p>
