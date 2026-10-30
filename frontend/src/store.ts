@@ -206,6 +206,25 @@ export function goToLogin(): void {
 }
 
 /**
+ * "Continue with GitHub" on the feed: the provider's own page when the site has exactly one, else /login.
+ *
+ * Both remember the path first, so the visitor comes back to where they were (`goToLogin`). The server hands out the
+ * provider's address, because it carries a single-use state token (`sketch.api.sign_in_url`). A failed read is not an
+ * error to show: /login is the same way in, one page longer.
+ */
+const signInUrl = useCall<string | null>({
+  url: method('sign_in_url'),
+  method: 'POST',
+  immediate: false,
+})
+
+export async function continueWithProvider(): Promise<void> {
+  rememberAfterLogin(window.location.pathname + window.location.search)
+  const url = await signInUrl.reload()
+  window.location.href = !signInUrl.error && typeof url === 'string' && url ? url : '/login'
+}
+
+/**
  * End the session, then send the browser to the login page.
  *
  * `logout` is POST only, so `call` is the right door: it posts, and it adds

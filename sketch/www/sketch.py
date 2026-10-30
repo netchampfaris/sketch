@@ -24,7 +24,7 @@ FEED_PATH = "/feed"
 #:
 #: `website_route_rules` in hooks.py has to name each one as well, or a direct
 #: load of it is a 404.
-PUBLIC_PATHS = ("/feed", "/about")
+PUBLIC_PATHS = ("/feed", "/about", "/whats-new")
 
 #: The request paths that count as the site root. `/` resolves through
 #: `home_page`, and `/index` reaches the same renderer, so both are the root as

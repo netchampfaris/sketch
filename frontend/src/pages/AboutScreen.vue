@@ -49,7 +49,7 @@ const action = computed(() =>
     </div>
   </PageHeader>
 
-  <!-- The reading measure, not the 940px column: this page is prose. -->
+  <!-- The reading measure, not the gallery's column: this page is prose. -->
   <div class="max-w-[640px] px-3 pb-10 pt-6 sm:px-5">
     <p class="text-p-base text-ink-gray-7">
       Sketch renders frappe-ui prototypes that your own agent writes over MCP.
