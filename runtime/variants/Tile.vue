@@ -120,32 +120,32 @@ watch(
 <template>
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
     <!-- The labels are laid out at 1x and scaled to their on-screen size (never larger than at the fit zoom), so a row
-         wraps by what the eye sees. Above the tile: number, name, Default and New on the left; on a teammate's option,
-         their face and "by Arohi" on the right (the owner's own options say nothing there). Under it: the live tile's
-         ⋯, left-aligned, holding Make default (owner), Open page, Keep only this, Delete variant. Other tiles keep that row empty, so tiles line up. -->
+         wraps by what the eye sees. Above the tile: number, name, Default and New on the left; on the live tile, its ⋯ on
+         the right, holding Make default (owner), Open page, Keep only this, Delete variant. Under it: on a teammate's
+         option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
       class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
       :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
     >
-      <div data-tile-row="1" class="flex h-5 min-w-0 items-center gap-1.5 text-ink-gray-5">
+      <div data-tile-row="1" data-ui class="flex h-6 min-w-0 items-center gap-1.5 text-ink-gray-5">
         <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <span v-if="tile.author" class="ml-auto flex min-w-0 shrink-[3] items-center gap-1 pl-1.5 text-ink-gray-5">
-          <Avatar class="shrink-0" size="xs" :theme="avatarTheme(tile.author)" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
-          <span class="truncate">by {{ shortName(tile.author) }}</span>
-        </span>
+        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
+          <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
+        </Dropdown>
       </div>
     </div>
     <div
       class="absolute left-0 top-full origin-top-left text-p-sm"
       :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
-      <div data-tile-row="2" data-ui class="flex h-6 min-w-0 items-center gap-1">
-        <Dropdown v-if="live" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-start">
-          <Button class="-ml-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
-        </Dropdown>
+      <div data-tile-row="2" class="flex h-6 min-w-0 items-center gap-1">
+        <span v-if="tile.author" class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-5">
+          <Avatar class="shrink-0" size="xs" :theme="avatarTheme(tile.author)" :image="people[tile.author]?.image || undefined" :label="personName(tile.author)" />
+          <span class="truncate">by {{ shortName(tile.author) }}</span>
+        </span>
       </div>
     </div>
 
