@@ -32,7 +32,7 @@ onBeforeUnmount(() => watcher?.disconnect())
 </script>
 
 <template>
-  <div ref="frame" class="relative aspect-video w-full overflow-hidden rounded-6 bg-surface-gray-2">
+  <div ref="frame" class="relative aspect-video w-full overflow-hidden bg-surface-gray-2">
     <video
       v-if="entry.video && !failed"
       ref="video"

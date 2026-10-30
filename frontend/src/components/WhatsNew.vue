@@ -70,30 +70,42 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <Dialog v-model:open="whatsNewOpen" size="xl">
-    <template #title><span class="text-base-medium text-ink-gray-8">What's new</span></template>
-
-    <div>
-      <WhatsNewClip :key="entry.id" :entry="entry" play="now" @ended="clipEnded" />
-      <h3 class="mt-4 text-lg-semibold text-ink-gray-8">{{ entry.title }}</h3>
-      <p class="mt-1 text-p-base text-ink-gray-6">{{ entry.line }}</p>
-      <div class="mt-4 flex items-center gap-2">
+  <!--
+    Manus's shape: no title row. The clip runs edge to edge across the top with the close button over its corner, then
+    the title and the line, then one row with the dots on the left and Got it on the right. `bare` drops the Dialog's own
+    padding and header; Esc and a click outside still close it.
+  -->
+  <Dialog v-model:open="whatsNewOpen" size="lg" bare>
+    <template #default="{ close }">
+      <div class="relative">
+        <WhatsNewClip :key="entry.id" :entry="entry" play="now" @ended="clipEnded" />
         <button
-          v-for="(one, at) in slides"
-          :key="one.id"
           type="button"
-          :aria-label="`Show ${one.title}`"
-          :aria-current="at === index"
-          class="size-2 rounded-full bg-current transition-colors focus-visible:ring-0 focus-visible:focus-ring"
-          :class="at === index ? 'text-ink-gray-8' : 'text-ink-gray-3'"
-          @click="pick(at)"
-        />
+          aria-label="Close"
+          class="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/60 focus-visible:ring-0 focus-visible:focus-ring"
+          @click="close"
+        >
+          <span class="lucide-x size-4" aria-hidden="true" />
+        </button>
       </div>
-    </div>
-
-    <template #actions="{ close }">
-      <div class="flex justify-end">
-        <Button label="Got it" variant="solid" @click="close" />
+      <div class="px-5 pb-5 pt-4">
+        <h2 class="text-lg-semibold text-ink-gray-8">{{ entry.title }}</h2>
+        <p class="mt-1.5 text-p-base text-ink-gray-6">{{ entry.line }}</p>
+        <div class="mt-5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <button
+              v-for="(one, at) in slides"
+              :key="one.id"
+              type="button"
+              :aria-label="`Show ${one.title}`"
+              :aria-current="at === index"
+              class="size-2 rounded-full bg-current transition-colors focus-visible:ring-0 focus-visible:focus-ring"
+              :class="at === index ? 'text-ink-gray-8' : 'text-ink-gray-3'"
+              @click="pick(at)"
+            />
+          </div>
+          <Button label="Got it" variant="solid" @click="close" />
+        </div>
       </div>
     </template>
   </Dialog>
