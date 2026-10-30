@@ -174,6 +174,15 @@ class TestLoginPage(IntegrationTestCase):
 		body = self.sent_from(doc)
 		self.assertIn(f"Sign in to comment on {doc.title}", body)
 
+	def test_the_title_in_the_reason_is_text_not_markup(self):
+		owner = utils.make_user("loginown", "d2tloginown")
+		self.addCleanup(utils.drop_user, owner)
+		doc = utils.make_prototype(owner, "d2t-login-markup", is_public=True, title="<i>Bold</i> co")
+		self.addCleanup(utils.drop_prototype, doc.name)
+		body = self.sent_from(doc)
+		self.assertNotIn("<i>Bold</i>", body)
+		self.assertIn("Sign in to comment on &lt;i&gt;Bold&lt;/i&gt; co", body)
+
 	def test_the_page_they_were_on_survives_the_trip_in_the_cookie(self):
 		owner = utils.make_user("loginown", "d2tloginown")
 		self.addCleanup(utils.drop_user, owner)

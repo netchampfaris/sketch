@@ -5,7 +5,7 @@
 #}
 {% extends "templates/web.html" %}
 
-{%- block title -%}{{ heading }}{%- endblock -%}
+{%- block title -%}{{ heading | e }}{%- endblock -%}
 
 {% block navbar %}{% endblock %}
 {% block footer %}{% endblock %}
@@ -20,9 +20,9 @@
 
 <div class="error-page">
 	<div>
-		<h4>{{ heading }}</h4>
+		<h4>{{ heading | e }}</h4>
 		<div class="details">
-			<p>{{ detail }}</p>
+			<p>{{ detail | e }}</p>
 			<a href="/" class="text-muted">{{ _("Back to Sketch") }}</a>
 		</div>
 	</div>
