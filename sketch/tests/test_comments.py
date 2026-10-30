@@ -905,6 +905,14 @@ class TestFormerCommenter(CommentCase):
 		self.assertNotIn("hello", page)
 		self.assertNotIn("sketch-data", page)
 
+	def test_the_owners_name_on_that_page_is_text_not_markup(self):
+		self.start(self.reader_name)
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		frappe.db.set_value("User", self.owner, "full_name", "<i>Ann</i> Lee")
+		page = self.render(self.reader).get_data(as_text=True)
+		self.assertNotIn("<i>Ann</i>", page)
+		self.assertIn("&lt;i&gt;Ann&lt;/i&gt; made this prototype private", page)
+
 	def test_someone_who_never_commented_gets_the_plain_404(self):
 		self.start(self.reader_name)
 		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
