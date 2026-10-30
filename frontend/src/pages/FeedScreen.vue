@@ -70,6 +70,7 @@ const ownerOptions = computed(() => [
     value: one.username,
     username: one.username,
     image: one.user_image,
+    count: one.count,
   })),
 ])
 
@@ -147,7 +148,7 @@ onMounted(() => {
   <div class="px-3 pb-10 sm:px-5" :class="showIntro ? '' : 'pt-6'">
     <!--
       The toolbar, whenever anything is public, on the left: a search by title,
-      then an owner picker (avatar and name), both 28px. On a phone each takes its own line.
+      then an owner picker (avatar, name, and how many they have public), both 28px. On a phone each takes its own line.
     -->
     <div v-if="showFilters" class="mb-4 flex flex-col gap-2 sm:flex-row">
       <TextInput v-model="query" class="w-full sm:w-64" aria-label="Search prototypes" placeholder="Search prototypes">
@@ -162,6 +163,9 @@ onMounted(() => {
       >
         <template #item-prefix="{ item }">
           <Avatar v-if="item.username" :image="item.image" :label="item.label" size="sm" />
+        </template>
+        <template #item-suffix="{ item }">
+          <span v-if="item.count" class="text-xs tabular-nums text-ink-gray-5">{{ item.count }}</span>
         </template>
       </Combobox>
     </div>
