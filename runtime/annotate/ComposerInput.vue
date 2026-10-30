@@ -13,23 +13,19 @@ const MAX_ROWS = 5
 const root = ref<HTMLElement | null>(null)
 
 // The box is 28px at rest, a default Button's height: a 20px line, 3px of padding and a 1px border, top and bottom
-// (frappe-ui's smallest Textarea is 32px, so the class below sets it). If a minimum height is ever taller than one
-// line, the padding takes up the difference so the words sit in the middle until they grow past it.
+// (frappe-ui's smallest Textarea is 36px). The sizes are set here rather than read from classes: the page's Tailwind
+// draws classes after mount, so a box measured from them came out 34px.
+const LINE = 20
+const PAD = 3
+const BORDER = 1
 function fit() {
 	const ta = root.value?.querySelector('textarea')
 	if (!ta) return
-	ta.style.paddingTop = ta.style.paddingBottom = ''
-	const cs = getComputedStyle(ta)
-	const line = parseFloat(cs.lineHeight) || 20
-	const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
-	const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
-	ta.style.height = 'auto'
-	const content = ta.scrollHeight - pad
-	const extra = Math.max(0, (parseFloat(cs.minHeight) || 0) - border - pad - content)
-	if (extra) ta.style.paddingTop = ta.style.paddingBottom = `${parseFloat(cs.paddingTop) + extra / 2}px`
-	const chrome = pad + extra + border
-	ta.style.height = `${Math.min(content + chrome, MAX_ROWS * line + chrome)}px`
-	ta.style.overflowY = content > MAX_ROWS * line ? 'auto' : 'hidden'
+	Object.assign(ta.style, { lineHeight: `${LINE}px`, paddingTop: `${PAD}px`, paddingBottom: `${PAD}px`, minHeight: '0px', height: 'auto' })
+	const content = ta.scrollHeight - PAD * 2
+	const chrome = (PAD + BORDER) * 2
+	ta.style.height = `${Math.max(LINE, Math.min(content, MAX_ROWS * LINE)) + chrome}px`
+	ta.style.overflowY = content > MAX_ROWS * LINE ? 'auto' : 'hidden'
 }
 onMounted(fit)
 watch(() => props.modelValue, () => nextTick(fit))
@@ -49,7 +45,7 @@ defineExpose({ focus: () => root.value?.querySelector('textarea')?.focus() })
 	<div ref="root" class="flex items-end gap-2">
 		<div class="min-w-0 flex-1">
 			<MentionField :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)">
-				<Textarea :model-value="modelValue" :rows="1" :placeholder="placeholder" class="w-full resize-none !min-h-7 !py-[3px] !leading-5" @update:model-value="emit('update:modelValue', $event)" @keydown="onKey" />
+				<Textarea :model-value="modelValue" :rows="1" :placeholder="placeholder" class="w-full resize-none" @update:model-value="emit('update:modelValue', $event)" @keydown="onKey" />
 			</MentionField>
 		</div>
 		<Tooltip :text="sendLabel" :hover-delay="600">
