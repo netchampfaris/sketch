@@ -5,8 +5,10 @@
  * The Dialog opens by itself on the gallery, for a signed-in person, when this browser has not seen the newest entry.
  * Anyone can open it by hand from anywhere (`openWhatsNew`): the corner card, the avatar menu, the signed-out hero. It
  * is a carousel of one feature per slide. The slide moves on when its clip ends, never on a timer, so with no clip, or
- * with reduced motion, it stays where it is. A dot or an arrow key moves it and stops that for this open. After the last
- * clip it stays on the last slide. Every way out writes the seen id, so the release shows once.
+ * with reduced motion, it stays where it is. A row of pills under the clip says where you are: the ones before are
+ * full, the current one fills as its clip plays (so you can see it is about to move on), and it is simply full when
+ * nothing will move it. A pill or an arrow key moves it and stops the moving on for this open. After the last clip it
+ * stays on the last slide. Every way out writes the seen id, so the release shows once.
  *
  * The corner card is what is left of it: signed in, on the gallery, while the Dialog is closed, until it is clicked or
  * its × is pressed. A phone has no room for it, so it is hidden under 640px.
@@ -27,8 +29,18 @@ const advance = ref(true)
 const entry = computed(() => slides[index.value])
 const last = slides.length - 1
 
+/** How far the current clip has played, 0 to 1; null until it reports, and whenever no clip is playing. */
+const played = ref<number | null>(null)
+
 function go(to: number): void {
   index.value = Math.min(Math.max(to, 0), last)
+  played.value = null
+}
+
+/** A pill's fill: the ones before are full, the ones after empty, the current one follows its clip while it moves on. */
+function fill(at: number): string {
+  if (at !== index.value) return at < index.value ? '100%' : '0%'
+  return advance.value && played.value !== null ? `${played.value * 100}%` : '100%'
 }
 
 function pick(to: number): void {
@@ -47,7 +59,7 @@ function onKey(event: KeyboardEvent): void {
 
 watch(whatsNewOpen, (isOpen) => {
   if (isOpen) {
-    index.value = 0
+    go(0)
     advance.value = true
     window.addEventListener('keydown', onKey)
   } else {
@@ -71,7 +83,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <!--
-    A title row with the close button, the clip, the title and the line, the dots, then Got it on the right. `bare`
+    A title row with the close button, the clip with its pills right under it, the title and the line, then Got it. `bare`
     drops the Dialog's own padding (24px sides, 24px under the header, 28px under the actions), so this one can sit on a
     tighter 16px all round. Esc and a click outside still close it.
   -->
@@ -82,25 +94,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <h2 class="text-base-medium text-ink-gray-8">What's new</h2>
           <Button variant="ghost" icon="lucide-x" aria-label="Close" @click="close" />
         </div>
-        <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @ended="clipEnded" />
-        <h3 class="mt-3 text-lg-semibold text-ink-gray-8">{{ entry.title }}</h3>
+        <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
+        <!-- The pills sit right under the clip, 4px apart. Each is a 24px-tall button around a 4px bar, so it is easy to hit. -->
+        <div class="mt-1 flex gap-1">
+          <button
+            v-for="(one, at) in slides"
+            :key="one.id"
+            type="button"
+            :aria-label="`Show ${one.title}`"
+            :aria-current="at === index"
+            class="group h-6 flex-1 rounded-full focus-visible:ring-0 focus-visible:focus-ring"
+            @click="pick(at)"
+          >
+            <span class="block h-1 overflow-hidden rounded-full bg-surface-gray-3 group-hover:bg-surface-gray-4">
+              <span
+                class="block h-full rounded-full bg-ink-gray-8"
+                :class="at === index && advance && played !== null ? 'transition-[width] duration-300 ease-linear' : ''"
+                :style="{ width: fill(at) }"
+              />
+            </span>
+          </button>
+        </div>
+        <h3 class="mt-2 text-lg-semibold text-ink-gray-8">{{ entry.title }}</h3>
         <p class="mt-1 text-p-base text-ink-gray-6">{{ entry.line }}</p>
-        <div class="mt-4 flex items-center justify-between gap-3">
-          <!-- An 8px dot in a 24px button, so a thumb can hit it; the buttons touch, so the dots sit 16px apart. -->
-          <div class="-ml-2 flex items-center">
-            <button
-              v-for="(one, at) in slides"
-              :key="one.id"
-              type="button"
-              :aria-label="`Show ${one.title}`"
-              :aria-current="at === index"
-              class="grid size-6 place-items-center rounded-full focus-visible:ring-0 focus-visible:focus-ring"
-              :class="at === index ? 'text-ink-gray-8' : 'text-ink-gray-3 hover:text-ink-gray-5'"
-              @click="pick(at)"
-            >
-              <span class="size-2 rounded-full bg-current transition-colors" aria-hidden="true" />
-            </button>
-          </div>
+        <div class="mt-4 flex justify-end">
           <Button label="Got it" variant="solid" @click="close" />
         </div>
       </div>

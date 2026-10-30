@@ -11,7 +11,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { WhatsNewEntry } from '../whatsnew'
 
 const props = defineProps<{ entry: WhatsNewEntry; play: 'now' | 'visible' }>()
-const emit = defineEmits<{ ended: [] }>()
+const emit = defineEmits<{ ended: []; progress: [part: number] }>()
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const failed = ref(false)
@@ -45,6 +45,7 @@ onBeforeUnmount(() => watcher?.disconnect())
       :controls="play === 'visible' && reduced"
       :aria-label="entry.title"
       @error="failed = true"
+      @timeupdate="video && video.duration && emit('progress', video.currentTime / video.duration)"
       @ended="emit('ended')"
     />
     <div v-else class="absolute inset-0 grid place-items-center">
