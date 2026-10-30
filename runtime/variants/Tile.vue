@@ -98,7 +98,10 @@ async function keepIt() {
     toast.error(keepFailure(e as Error))
   }
 }
+// Every action of the live tile sits in its one ⋯ menu.
 const menu = computed(() => [
+  ...(canDefault.value && !bridge.tool ? [{ label: 'Make default', icon: 'lucide-star', onClick: makeIt }] : []),
+  { label: 'Open page', icon: 'lucide-arrow-up-right', onClick: () => emit('openPage') },
   ...(keepable.value ? [{ label: 'Keep only this', icon: 'lucide-check', onClick: keepIt }] : []),
   ...(deletable.value ? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }] : []),
 ])
@@ -116,14 +119,13 @@ watch(
 
 <template>
   <div class="group/tile absolute" :data-tile-id="tile.id" :style="{ left: tile.x + 'px', top: tile.y + 'px', width: tile.w + 'px', height: tile.h + 'px' }">
-    <!-- The caption sits under the tile. It is laid out at 1x and scaled to its on-screen size (never larger than at the
-         fit zoom), so the row wraps by what the eye sees. Two rows, the same heights on every tile, so tiles in a row
-         line up. Row 1: number, name, Default and New on the left; on a teammate's option, their face and "by Arohi"
-         on the right (the owner's own options say nothing there). Row 2: the live tile's actions, left-aligned: Make
-         default (owner), Open page, ⋯. Other tiles keep the row empty. -->
+    <!-- The labels are laid out at 1x and scaled to their on-screen size (never larger than at the fit zoom), so a row
+         wraps by what the eye sees. Above the tile: number, name, Default and New on the left; on a teammate's option,
+         their face and "by Arohi" on the right (the owner's own options say nothing there). Under it: the live tile's
+         ⋯, left-aligned, holding Make default (owner), Open page, Keep only this, Delete variant. Other tiles keep that row empty, so tiles line up. -->
     <div
-      class="absolute left-0 top-full origin-top-left text-p-sm"
-      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
+      class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
+      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="1" class="flex h-5 min-w-0 items-center gap-1.5 text-ink-gray-5">
         <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
@@ -135,24 +137,15 @@ watch(
           <span class="truncate">by {{ shortName(tile.author) }}</span>
         </span>
       </div>
-      <div data-tile-row="2" data-ui class="mt-1 flex h-6 min-w-0 items-center gap-1">
-        <template v-if="live">
-          <Button
-            v-if="canDefault && !bridge.tool"
-            class="-ml-1.5"
-            variant="ghost"
-            size="xs"
-            :loading="saving"
-            :aria-label="`Make ${tile.opt} the default for ${tile.setName}`"
-            @click.stop="makeIt"
-          >
-            <span :class="saving ? 'sr-only' : ''">Make default</span>
-          </Button>
-          <Button :class="canDefault && !bridge.tool ? '' : '-ml-1.5'" variant="ghost" size="xs" label="Open page" icon-right="lucide-arrow-up-right" @click.stop="emit('openPage')" />
-          <Dropdown v-if="menu.length" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
-            <Button variant="ghost" size="xs" icon="lucide-ellipsis" aria-label="More actions for this variant" @click.stop />
-          </Dropdown>
-        </template>
+    </div>
+    <div
+      class="absolute left-0 top-full origin-top-left text-p-sm"
+      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
+    >
+      <div data-tile-row="2" data-ui class="flex h-6 min-w-0 items-center gap-1">
+        <Dropdown v-if="live" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-start">
+          <Button class="-ml-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
+        </Dropdown>
       </div>
     </div>
 
