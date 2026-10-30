@@ -117,14 +117,14 @@ def _of_set(name: str, host_file: str, set_name: str, paths: list[str]) -> list[
 	}
 	found = []
 	for path in paths:
-		meta = _meta(name, path)
+		meta = meta_of(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
 
 	return found
 
 
-def _meta(name: str, path: str) -> dict | None:
+def meta_of(name: str, path: str) -> dict | None:
 	"""A variant file's `<variant>` tag, or None when the file is gone or the tag does not parse."""
 	try:
 		return sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
@@ -266,7 +266,7 @@ def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
 	path = path_of(option)
 	versions.lock(doc.name)
 	registry = read_registry(doc.name)
-	meta = _meta(doc.name, path)
+	meta = meta_of(doc.name, path)
 	if path not in registry or not meta:
 		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
 

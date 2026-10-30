@@ -442,7 +442,8 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 			found = editor_variants.adoptable(doc, file, name, option)
 			label = found["meta"]["name"]
 		else:
-			label = (editor_variants._meta(doc.name, kept_path) or {}).get("name") or option.rsplit("/", 1)[-1]
+			meta = editor_variants.meta_of(doc.name, kept_path) or {}
+			label = meta.get("name") or option.rsplit("/", 1)[-1]
 
 	others = [path for path in extras if path != kept_path]
 	leads = bool(extra and found is None and not replaced and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
