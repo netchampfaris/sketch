@@ -3,36 +3,21 @@
  * One entry's silent clip in a 16:9 frame (decision 72). With no clip, or a clip that fails to load, the frame holds the
  * entry's icon instead, so a missing file reads as a quiet placeholder and never as a broken player.
  *
- * `play` decides what the clip does on its own. 'now' plays once and says when it ended (the modal moves on then).
- * 'visible' loops while it is on screen and holds still off it (the page). With reduced motion nothing plays by itself
- * and the page's clips show controls.
+ * It plays once and says when it ended (the modal moves on then). With reduced motion nothing plays by itself.
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import type { WhatsNewEntry } from '../whatsnew'
 
-const props = defineProps<{ entry: WhatsNewEntry; play: 'now' | 'visible' }>()
+defineProps<{ entry: WhatsNewEntry }>()
 const emit = defineEmits<{ ended: []; progress: [part: number] }>()
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const failed = ref(false)
-const frame = ref<HTMLElement | null>(null)
 const video = ref<HTMLVideoElement | null>(null)
-let watcher: IntersectionObserver | null = null
-
-onMounted(() => {
-  if (props.play !== 'visible' || reduced || !frame.value) return
-  watcher = new IntersectionObserver(([seen]) => {
-    if (seen.isIntersecting) video.value?.play().catch(() => {})
-    else video.value?.pause()
-  })
-  watcher.observe(frame.value)
-})
-
-onBeforeUnmount(() => watcher?.disconnect())
 </script>
 
 <template>
-  <div ref="frame" class="relative aspect-video w-full overflow-hidden bg-surface-gray-2">
+  <div class="relative aspect-video w-full overflow-hidden bg-surface-gray-2">
     <video
       v-if="entry.video && !failed"
       ref="video"
@@ -40,9 +25,7 @@ onBeforeUnmount(() => watcher?.disconnect())
       :src="entry.video"
       muted
       playsinline
-      :autoplay="play === 'now' && !reduced"
-      :loop="play === 'visible'"
-      :controls="play === 'visible' && reduced"
+      :autoplay="!reduced"
       :aria-label="entry.title"
       @error="failed = true"
       @timeupdate="video && video.duration && emit('progress', video.currentTime / video.duration)"

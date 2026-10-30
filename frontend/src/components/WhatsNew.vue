@@ -94,7 +94,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <h2 class="text-base-medium text-ink-gray-8">What's new</h2>
           <Button variant="ghost" icon="lucide-x" aria-label="Close" @click="close" />
         </div>
-        <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
+        <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" @progress="played = $event" @ended="clipEnded" />
         <!--
           The progress row right under the clip, centred, 4px gaps. Clips not on screen are 8px dots; the current one
           grows to a 32px capsule and fills as it plays. Clips already seen stay filled, so the row shows how many
