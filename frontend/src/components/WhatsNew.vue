@@ -37,6 +37,13 @@ function go(to: number): void {
   played.value = null
 }
 
+/** A part's corners, set inline so no utility can win over them: round outer ends, 2px at every join. */
+function corners(at: number): string {
+  if (at === 0) return '9999px 2px 2px 9999px'
+  if (at === last) return '2px 9999px 9999px 2px'
+  return '2px'
+}
+
 /** A pill's fill: the ones before are full, the ones after empty, the current one follows its clip while it moves on. */
 function fill(at: number): string {
   if (at !== index.value) return at < index.value ? '100%' : '0%'
@@ -109,12 +116,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             :aria-label="`Show ${one.title}`"
             :aria-current="at === index"
             class="group h-6 w-7 focus-visible:ring-0 focus-visible:focus-ring"
-            :class="at === 0 ? 'rounded-l-full' : at === last ? 'rounded-r-full' : ''"
-            @click="pick(at)"
+                        @click="pick(at)"
           >
             <span
               class="block h-2 overflow-hidden bg-surface-gray-3 group-hover:bg-surface-gray-4"
-              :class="at === 0 ? 'rounded-l-full rounded-r-[2px]' : at === last ? 'rounded-l-[2px] rounded-r-full' : 'rounded-[2px]'"
+              :style="{ borderRadius: corners(at) }"
             >
               <span
                 class="block h-full bg-[color:var(--ink-gray-8)]"
