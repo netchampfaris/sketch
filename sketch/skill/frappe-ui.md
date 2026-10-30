@@ -155,22 +155,38 @@ To undo or go back to an earlier state, call `list_versions` to find the sequenc
    no `triggerClass` or `contentClass` prop, by design.
 10. **Every app shell has a theme switch, built with `useColorScheme`.** Put
     Light, Dark and System where the product would: the user menu in the
-    sidebar header, or a settings page. Read `colorScheme` for the check mark
-    and call `setColorScheme(value)` on click. Sketch remembers the choice for
+    sidebar header, or a settings page. Mark the current one with `selected` and
+    a check in the row's `suffix` slot, so the row keeps its icon and the check
+    sits on the right and call
+    `setColorScheme(value)` on click. Sketch remembers the choice for
     the person (on their account, or for the visit), applies it with no reload,
     and the same choice opens every other prototype. Never render
     `ThemeSwitcher`, never write `data-theme` or `localStorage` yourself. Use
     semantic tokens and both light and dark work with no effort from you.
 
     ```ts
+    import { computed, h } from 'vue'
+    import { useColorScheme } from 'frappe-ui'
+
     const { colorScheme, setColorScheme } = useColorScheme()
     const themes = [
       { label: 'Light', value: 'light', icon: 'lucide-sun' },
       { label: 'Dark', value: 'dark', icon: 'lucide-moon' },
       { label: 'System', value: 'system', icon: 'lucide-monitor' },
     ] as const
-    // A Dropdown row: { label: 'Theme', icon: 'lucide-sun-moon', submenu: themes.map((t) => ({
-    //   label: t.label, icon: t.icon, onClick: () => setColorScheme(t.value) })) }
+    // A Dropdown row, inside a computed so the check follows the choice:
+    const theme = computed(() => ({
+      label: 'Theme',
+      icon: 'lucide-sun-moon',
+      submenu: themes.map((t) => ({
+        label: t.label,
+        icon: t.icon,
+        selected: colorScheme.value === t.value,
+        // `selected` shades the row; the check on the right is the suffix.
+        slots: { suffix: ({ selected }) => (selected ? h('span', { class: 'lucide-check size-4 shrink-0 text-ink-gray-7' }) : null) },
+        onClick: () => setColorScheme(t.value),
+      })),
+    }))
     ```
 
 ## 4. What you can import

@@ -19,8 +19,6 @@ export interface SketchSession {
   last_used_pretty?: string | null
   mcp_endpoint: string
   logout_url: string
-  /** The theme this person's prototypes open in, apart from Sketch's own (`sketch.prototype_theme`). */
-  prototype_theme?: 'light' | 'dark' | 'system'
 }
 
 /** Someone who made something new on a prototype. `sketch.badges.card`. */

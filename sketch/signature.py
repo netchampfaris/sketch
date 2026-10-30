@@ -71,7 +71,7 @@ DEFAULT_TTL = 60
 #: - THEME saves one signed-in person's prototype theme (`sketch.api.prototype_theme_signed`). Minted over
 #:   the username alone (`sketch.prototype_theme.subject`) into every page that person opens, so a
 #:   Prototype's own theme switch can save it. It opens one write: light, dark or system, on that person's
-#:   account, which the person could make by hand from Sketch's avatar menu.
+#:   account, the one way that preference changes.
 VIEW = "view"
 REVISION = "revision"
 ANNOTATE = "annotate"

@@ -6,8 +6,8 @@
 The rules this file holds:
 
 - It is light, dark or system, kept on the account, and "system" until the person chooses.
-- Sketch's avatar menu saves it with the session; a Prototype's own switch saves it with the page's
-  `theme` credential, which names one person and opens nothing else.
+- Only a Prototype's own switch saves it, with the page's `theme` credential, which names one person and
+  opens nothing else. Sketch's own UI has no control for it.
 - A signed-in person's page carries the preference and the credential. A Guest's and a `check` page carry neither.
 """
 
@@ -49,20 +49,16 @@ class TestPrototypeTheme(IntegrationTestCase):
 
 	def test_it_is_system_until_the_person_chooses(self):
 		self.assertEqual(prototype_theme.read(self.owner), "system")
-		with set_user(self.owner):
-			self.assertEqual(api.get_session()["prototype_theme"], "system")
-
-	def test_the_avatar_menu_saves_it_on_the_account(self):
-		with set_user(self.owner):
-			self.assertEqual(api.set_prototype_theme("light")["prototype_theme"], "light")
-			self.assertEqual(api.get_session()["prototype_theme"], "light")
-		self.assertEqual(prototype_theme.read(self.other), "system")
 
 	def test_only_the_three_choices_are_saved(self):
-		with set_user(self.owner), self.assertRaises(frappe.ValidationError):
-			api.set_prototype_theme("sepia")
-		with set_user("Guest"), self.assertRaises(frappe.PermissionError):
-			api.set_prototype_theme("dark")
+		with set_user("Guest"), self.assertRaises(frappe.ValidationError):
+			api.prototype_theme_signed(**self.credential(self.owner), theme="sepia")
+		self.assertEqual(prototype_theme.read(self.owner), "system")
+
+	def test_sketch_itself_has_no_way_to_set_it(self):
+		self.assertFalse(hasattr(api, "set_prototype_theme"))
+		with set_user(self.owner):
+			self.assertNotIn("prototype_theme", api.get_session())
 
 	def test_a_prototypes_switch_saves_it_with_the_pages_credential(self):
 		with set_user("Guest"):

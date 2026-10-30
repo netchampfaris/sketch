@@ -9,7 +9,8 @@ Viewer is sandboxed into an opaque origin with no storage, so it cannot read
 Sketch's key anyway: the renderer hands it this preference in the payload.
 
 Kept as a user default (`frappe.defaults`), so it needs no field and no
-migration. A person who never chose has "system".
+migration. A person who never chose has "system". It changes only from inside a
+Prototype, through that Prototype's own theme switch (`sketch.api.prototype_theme_signed`).
 """
 
 import frappe
