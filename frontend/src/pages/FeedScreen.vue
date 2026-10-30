@@ -47,11 +47,10 @@ const firstLoad = computed(() => !settled.value)
  */
 const showIntro = computed(() => sessionSettled.value && !signedIn.value)
 
-/** The toolbar appears once there are more than ten public prototypes to look through. */
-const FILTER_ABOVE = 10
+/** The toolbar shows whenever there is anything public to look through. */
 const query = ref('')
 const owner = ref<string | null>(null)
-const showFilters = computed(() => items.value.length > FILTER_ABOVE)
+const showFilters = computed(() => items.value.length > 0)
 
 /** Owners of what is public, most prototypes first, with how many each has. */
 const owners = computed(() => {
@@ -148,7 +147,7 @@ onMounted(() => {
 
   <div class="px-3 pb-10 sm:px-5" :class="showIntro ? '' : 'pt-6'">
     <!--
-      The toolbar, only past ten public prototypes: a search by title and an
+      The toolbar, whenever anything is public: a search by title and an
       owner picker, both 28px. On a phone each takes its own line.
     -->
     <div v-if="showFilters" class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
