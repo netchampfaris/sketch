@@ -95,20 +95,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <Button variant="ghost" icon="lucide-x" aria-label="Close" @click="close" />
         </div>
         <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
-        <!-- The pills sit right under the clip, 4px apart. Each is a 24px-tall button around a 4px bar, so it is easy to hit. -->
-        <div class="mt-1 flex gap-1">
+        <!--
+          One segmented bar right under the clip: 2px gaps, the outer ends fully round, the joins only 2px round, so it
+          reads as one pill cut into parts. Each part is a 24px-tall button around the 6px bar, so it is easy to hit.
+          Filled parts use the ink colour through its variable: Tailwind has no `bg-ink-*`.
+        -->
+        <div class="mt-1 flex gap-0.5">
           <button
             v-for="(one, at) in slides"
             :key="one.id"
             type="button"
             :aria-label="`Show ${one.title}`"
             :aria-current="at === index"
-            class="group h-6 flex-1 rounded-full focus-visible:ring-0 focus-visible:focus-ring"
+            class="group h-6 flex-1 focus-visible:ring-0 focus-visible:focus-ring"
+            :class="at === 0 ? 'rounded-l-full' : at === last ? 'rounded-r-full' : ''"
             @click="pick(at)"
           >
-            <span class="block h-1 overflow-hidden rounded-full bg-surface-gray-3 group-hover:bg-surface-gray-4">
+            <span
+              class="block h-1.5 overflow-hidden bg-surface-gray-3 group-hover:bg-surface-gray-4"
+              :class="at === 0 ? 'rounded-l-full rounded-r-[2px]' : at === last ? 'rounded-l-[2px] rounded-r-full' : 'rounded-[2px]'"
+            >
               <span
-                class="block h-full rounded-full bg-ink-gray-8"
+                class="block h-full bg-[color:var(--ink-gray-8)]"
                 :class="at === index && advance && played !== null ? 'transition-[width] duration-300 ease-linear' : ''"
                 :style="{ width: fill(at) }"
               />
