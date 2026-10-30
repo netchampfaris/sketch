@@ -194,10 +194,6 @@ def epoch(name: str, editor: str | None = None) -> int:
 # ------------------------------------------------------------------ internals
 
 
-def _rows(notes) -> list[dict]:
-	return [n for n in notes or [] if isinstance(n, dict)]
-
-
 def _invite(name: str, editor: str) -> str:
 	"""The editor's invitation row. One that is not invited has none, and nothing of theirs is read or written."""
 	row = frappe.db.get_value(EDITOR, {"prototype": name, "user": editor}, "name")
