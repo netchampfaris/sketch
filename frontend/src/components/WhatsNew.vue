@@ -96,23 +96,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <WhatsNewClip :key="entry.id" class="rounded-6" :entry="entry" play="now" @progress="played = $event" @ended="clipEnded" />
         <!--
-          One segmented bar right under the clip: 2px gaps, the outer ends fully round, the joins only 2px round, so it
-          reads as one pill cut into parts. Each part is a 24px-tall button around the 6px bar, so it is easy to hit.
+          One segmented pill right under the clip, on the left: parts 28 × 8px with 2px gaps, the outer ends fully round,
+          the joins only 2px round, so it reads as one pill cut into parts. Each part is a 24px-tall button around its
+          bar, so it is easy to hit.
           Filled parts use the ink colour through its variable: Tailwind has no `bg-ink-*`.
         -->
-        <div class="mt-1 flex gap-0.5">
+        <div class="mt-1 flex gap-0.5 self-start">
           <button
             v-for="(one, at) in slides"
             :key="one.id"
             type="button"
             :aria-label="`Show ${one.title}`"
             :aria-current="at === index"
-            class="group h-6 flex-1 focus-visible:ring-0 focus-visible:focus-ring"
+            class="group h-6 w-7 focus-visible:ring-0 focus-visible:focus-ring"
             :class="at === 0 ? 'rounded-l-full' : at === last ? 'rounded-r-full' : ''"
             @click="pick(at)"
           >
             <span
-              class="block h-1.5 overflow-hidden bg-surface-gray-3 group-hover:bg-surface-gray-4"
+              class="block h-2 overflow-hidden bg-surface-gray-3 group-hover:bg-surface-gray-4"
               :class="at === 0 ? 'rounded-l-full rounded-r-[2px]' : at === last ? 'rounded-l-[2px] rounded-r-full' : 'rounded-[2px]'"
             >
               <span
