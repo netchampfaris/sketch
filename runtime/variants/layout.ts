@@ -160,24 +160,30 @@ function descsOf(pick: Pick, pages: PageModel[], ctx: LayoutCtx): Desc[] {
   return out
 }
 
-// The grid: sections one under another, a heading over each that has one, the same columns in all of them.
-function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; h: number }, cols: number, inv: number) {
+// The grid: sections one under another, a heading over each that has one, the same columns in all of them. Tiles share
+// the column width; each row is as tall as its tallest tile (`hs`, one height per desc), and its tiles share that height.
+function build(descs: Desc[], ctx: LayoutCtx, cell: { w: number; hs: number[] }, cols: number, inv: number) {
   const rowGap = GAP + (LABEL + AUTHOR) * inv
-  const sections: Desc[][] = []
-  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? sections[sections.length - 1].push(d) : sections.push([d])))
+  const sections: number[][] = []
+  descs.forEach((d, i) => (i && d.section === descs[i - 1].section ? sections[sections.length - 1].push(i) : sections.push([i])))
   const tiles: TileBox[] = []
   const heads: Head[] = []
   let y = 0
   sections.forEach((sec, si) => {
     if (si) y += GAP
-    if (sec[0].section) {
-      heads.push({ text: sec[0].section, x: 0, y })
+    if (descs[sec[0]].section) {
+      heads.push({ text: descs[sec[0]].section!, x: 0, y })
       y += HEAD * inv
     }
     y += LABEL * inv
-    sec.forEach((d, i) => tiles.push({ ...d, x: (i % cols) * (cell.w + GAP), y: y + Math.floor(i / cols) * (cell.h + rowGap), w: cell.w, h: cell.h }))
-    const rows = Math.ceil(sec.length / cols)
-    y += rows * cell.h + (rows - 1) * rowGap + AUTHOR * inv
+    for (let r = 0; r < sec.length; r += cols) {
+      const row = sec.slice(r, r + cols)
+      const h = Math.max(...row.map((i) => cell.hs[i]))
+      if (r) y += rowGap
+      row.forEach((i, c) => tiles.push({ ...descs[i], x: c * (cell.w + GAP), y, w: cell.w, h }))
+      y += h
+    }
+    y += AUTHOR * inv
   })
   return { tiles, heads, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: y } }
 }
@@ -249,7 +255,7 @@ export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx
     const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
     return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
   })
-  const cell = { w: Math.max(...dims.map((d) => d.w)), h: Math.max(...dims.map((d) => d.h)) }
+  const cell = { w: Math.max(...dims.map((d) => d.w)), hs: dims.map((d) => d.h) }
   const n = descs.length
 
   let cols = 1
@@ -278,5 +284,5 @@ export function layoutPick(pick: Pick | null, pages: PageModel[], ctx: LayoutCtx
   }
   const fit = fitOf(out.bounds, ctx, isSet)
   inv = Math.max(inv, 1 / fit.z)
-  return { ...out, fit, invFit: inv, sig: `${cols}|${cell.w}x${cell.h}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${pick ? n : 0}|${descs.map((d) => d.id).join(',')}` }
+  return { ...out, fit, invFit: inv, sig: `${cols}|${cell.w}x${cell.hs.join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${pick ? n : 0}|${descs.map((d) => d.id).join(',')}` }
 }
