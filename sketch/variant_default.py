@@ -254,23 +254,14 @@ def label_of(option: str) -> str:
 
 def set_default(doc, file: str, name: str, option: str) -> dict:
 	"""Rewrite `file` of the Prototype and save a version. The caller has checked ownership."""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
+	_check_vue(file)
 	if editor_variants.is_extra(option):
 		# An invited editor's option: Sketch copies it into the owner's files. One adopted before leads again.
 		if option.startswith("adopted/"):
 			return editor_variants.lead_adopted(doc, file, name, option)
 		return editor_variants.adopt(doc, file, name, option)
 
-	absolute = prototype_files.safe_join(doc.name, file)
-	versions.lock(doc.name)
-	try:
-		with open(absolute, encoding="utf-8", newline="") as handle:
-			source = handle.read()
-	except FileNotFoundError:
-		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
-
+	source = _locked_source(doc, file)
 	# An editor's option the owner made the default leads this set until one of
 	# the owner's own options takes the lead back. The `default` prop on the tag
 	# says which of the owner's own options that is.
@@ -293,7 +284,7 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 
 	if leading:
 		editor_variants.clear_defaults(doc.name, file, name)
-		versions.note(doc.name, "src/variants/adopted.json", versions.MODIFIED)
+		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 
 	label = label_of(option)
 	version = versions.commit(
@@ -324,14 +315,8 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	default, or the owner's option taking the lead back) restores every file it
 	changed, under the same refusal (`versions.undo`).
 	"""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
-	try:
-		sequence = int(sequence)
-	except (TypeError, ValueError):
-		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
-
+	_check_vue(file)
+	sequence = editor_variants._int(sequence)
 	done = versions.action_of(doc.name, sequence)
 	if not done or done.action != versions.MADE_DEFAULT:
 		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
@@ -389,17 +374,8 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 
 	Returns `removed`, how many options went.
 	"""
-	if not isinstance(file, str) or not file.endswith(".vue"):
-		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
-
-	absolute = prototype_files.safe_join(doc.name, file)
-	versions.lock(doc.name)
-	try:
-		with open(absolute, encoding="utf-8", newline="") as handle:
-			source = handle.read()
-	except FileNotFoundError:
-		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
-
+	_check_vue(file)
+	source = _locked_source(doc, file)
 	extra = editor_variants.is_extra(option)
 	sets = find_sets(source, name)
 	label = label_of(option)
@@ -503,10 +479,7 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 
 def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 	"""Bring back everything version `sequence` removed. Refused when any of it changed since."""
-	try:
-		sequence = int(sequence)
-	except (TypeError, ValueError):
-		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+	sequence = editor_variants._int(sequence)
 
 	done = versions.action_of(doc.name, sequence)
 	if not done or done.action != versions.KEPT_ONLY:
@@ -522,3 +495,19 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 		"label": label,
 		**versions.undo(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
 	}
+
+
+def _check_vue(file) -> None:
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+
+def _locked_source(doc, file: str) -> str:
+	"""The text of `file`, read after the Prototype's version lock is taken."""
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	try:
+		with open(absolute, encoding="utf-8", newline="") as handle:
+			return handle.read()
+	except FileNotFoundError:
+		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
