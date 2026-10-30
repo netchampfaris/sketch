@@ -649,7 +649,7 @@ watch(
       <div
         data-ui
         data-canvas-title
-        class="absolute left-3 top-3 z-10 flex h-9 min-w-0 items-center gap-1 rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute left-3 top-3 z-10 flex min-w-0 items-center gap-1 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ maxWidth: `calc(100% - ${panelShown ? PANEL_W + 12 : 24}px)` }"
       >
         <Tooltip text="Back (Esc)">
@@ -686,12 +686,12 @@ watch(
         </div>
       </div>
 
-      <!-- Bottom right: zoom, left of the panel when it is open. -->
+      <!-- Bottom right: zoom, left of the panel when it is open. Title and zoom wear the notes toolbar's surface: elevation 2, border, shadow-lg, 40px tall. -->
       <div
         ref="zoomPill"
         data-ui
         data-canvas-zoom
-        class="absolute bottom-3 z-10 flex h-9 items-center rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute bottom-3 z-10 flex items-center rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
         <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
