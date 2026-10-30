@@ -26,6 +26,8 @@ export const urlTheme = () => pick(new URLSearchParams(location.search).get('the
 
 let signedIn = false
 let preference: Choice = 'system'
+// Saves go one after another, so quick switching cannot land an older choice after the newest.
+let saving: Promise<unknown> = Promise.resolve()
 export function initTheme(saved: string | null | undefined, reader: boolean) {
 	signedIn = reader
 	preference = (reader ? choice(saved) : visit()) ?? 'system'
@@ -61,5 +63,5 @@ export function chooseTheme(next: Choice) {
 		return
 	}
 	// Quiet: the page already shows the choice.
-	call('save_prototype_theme', { theme: next }).catch(() => {})
+	saving = saving.then(() => call('save_prototype_theme', { theme: next })).catch(() => {})
 }
