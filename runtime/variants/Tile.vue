@@ -49,8 +49,8 @@ const rect = computed(() => {
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
   return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
 })
-// Make default: the owner's page only, on the live tile, on an option that is not first. The page reloads once it is
-// saved, so the Default badge is on the new first tile when it comes back.
+// Make default: the owner's page only, on the live tile, on an option that is not the default. The page reloads once it
+// is saved, and the Default badge is on this same tile when it comes back: no option moves.
 const defaultable = computed(() => {
   const t = props.tile
   return t.kind === 'set' && !t.isDefault && t.setFile && t.setName && t.setOptions

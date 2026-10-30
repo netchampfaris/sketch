@@ -10,7 +10,7 @@ export { Variants }
 export { default as Chrome } from './Chrome.vue'
 export { enableMakeDefault, makeDefault } from './default'
 export { enableVariantEdit } from './edit'
-export { registerExtras } from './extras'
+export { registerExtras, registerSeen } from './extras'
 export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'

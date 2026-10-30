@@ -789,7 +789,8 @@ class TestDeleteAndDefault(ShareCase):
 
 		registry = json.loads(self.tree()["src/variants/adopted.json"])
 		self.assertFalse(registry["src/variants/adopted/compact.vue"]["default"])
-		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME, "wide was already first in the source")
+		# The owner's pick is recorded on the tag, even for the first slot: no slot moves.
+		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME.replace('name="KPI strip"', 'name="KPI strip" default="wide"'))
 
 	def test_make_default_on_a_component_variant_and_back_to_the_original(self):
 		self.add_variant(WRAP, "dense.vue")

@@ -34,6 +34,7 @@ from sketch import (
 	signature,
 	thumbnail,
 	thumbnails,
+	variant_order,
 )
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
@@ -441,6 +442,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"files": tree,
 			"role": role,
 			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
+			# When each variant option first appeared, so a set shows them oldest first (sketch/variant_order.py).
+			"variant_seen": variant_order.first_seen(self.doc.name),
 			"editor": editing,
 			"edit_exp": delete.get("exp", ""),
 			"edit_sig": delete.get("sig", ""),

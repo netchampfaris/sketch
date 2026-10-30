@@ -264,6 +264,35 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	}
 
 
+def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
+	"""Make a variant the owner adopted earlier the default of its set again. Only the registry changes."""
+	path = path_of(option)
+	versions.lock(doc.name)
+	registry = read_registry(doc.name)
+	try:
+		meta = sharing.variant_meta(prototype_files.read_files(doc.name, [path])[0]["content"])
+	except frappe.ValidationError:
+		meta = None
+
+	if path not in registry or not meta:
+		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
+
+	_check_target(doc.name, meta, host_file, set_name)
+	if registry[path].get("default"):
+		frappe.throw(frappe._('"{0}" is already the default for {1}.').format(meta["name"], set_name), frappe.ValidationError)
+
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the default was changed", source="App")
+
+	clear_defaults(doc.name, host_file, set_name)
+	registry = read_registry(doc.name)
+	registry[path]["default"] = True
+	write_registry(doc.name, registry)
+	versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+	version = versions.commit(doc, f"Made \u201c{meta['name']}\u201d the default for {set_name}", source="App")
+	return {"file": host_file, "name": set_name, "option": option, "sequence": version.sequence if version else None}
+
+
 def _check_target(name: str, meta: dict, host_file: str, set_name: str) -> None:
 	"""The variant must belong to the set it is being made the default of."""
 	if meta["component"]:

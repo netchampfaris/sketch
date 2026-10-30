@@ -658,6 +658,8 @@ async function run() {
     return wrapped.get(path)
   }
   const load = makeRegistry(view, factories, bare, wrap)
+  // When each option first appeared, so every set shows its options oldest first (sketch/variant_order.py).
+  bare.get('sketch:variants')?.registerSeen?.(data.variant_seen)
   if (extras.length)
     bare.get('sketch:variants').registerExtras(extras, data.authors || {}, (extra, err) =>
       warnings.push({

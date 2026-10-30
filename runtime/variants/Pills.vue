@@ -12,7 +12,7 @@ import { canKeepOnly, canMakeDefault, credential, keepFailure, keepOnly, makeDef
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
-import { choices, currentOf, idOf, isChoice, nav, onPage, openCanvas, setId, sets, slugOfRoute, states } from './state'
+import { choices, currentOf, defaultOf, idOf, isChoice, nav, onPage, openCanvas, setId, sets, slugOfRoute, states } from './state'
 import type { DState, VSet } from './state'
 
 const [DefineRow, Row] = createReusableTemplate<{ s: VSet | DState; role?: boolean }>({
@@ -143,12 +143,12 @@ function openHere() {
   const first = setRows.value.find((s) => s.path !== '')
   go(first ? `set:${pageSlug(first.path)}/${first.key}` : hereStates.value ? `page:${pageStateRows.value[0].path}` : 'auto')
 }
-const off = (s: VSet) => currentOf(s) !== s.options()[0]?.value
+const off = (s: VSet) => currentOf(s) !== defaultOf(s.options())
 // The owner's rows carry two more actions (only the owner's page has the credential).
 const actions = computed(() => Boolean(credential.value))
 // The column is only there while a row is off its default; otherwise the card is as narrow as a commenter's.
 const actionsShown = computed(() => actions.value && setRows.value.some(off))
-// Make default: the pick becomes the first slot in the source. The page reloads once it is saved.
+// Make default: the pick is recorded as the set's default, where it sits. The page reloads once it is saved.
 const saving = ref<string | null>(null)
 const held = ref(0)
 async function makeIt(s: VSet, e: MouseEvent) {
