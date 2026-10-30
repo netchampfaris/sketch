@@ -339,6 +339,22 @@ import { Variants } from 'sketch:variants'
 - Add a new option as a new slot anywhere in the set; it shows last because it
   is the newest. It never becomes the default unless the user asks.
 
+Making good options:
+
+- Asked for options with no direction, pick one thing to vary (layout, density,
+  emphasis, type or wording) and make each option a clearly different take on
+  it. Never vary only colour or copy. When the user says what to vary, vary
+  that. In a later round, refine the chosen direction; don't start a new one.
+- Use the page's real data, as many items as it really carries. No lorem
+  ipsum, no three-row lists.
+- Every option clears the same floor: reachable by keyboard with visible
+  focus, readable contrast, nothing clipped at phone width, truncated text
+  reachable in full.
+- Loading, empty, error and permission are component states (see States), not
+  options.
+- Don't name a favourite. Asked, say what each option is good for and what it
+  costs.
+
 #### Demo states
 
 Personas, roles, workflow phases and data states (empty, full, error) are not
