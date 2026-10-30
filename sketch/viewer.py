@@ -418,7 +418,7 @@ class SketchViewerRenderer(BaseRenderer):
 		if noting:
 			mark = signature.mint(comments.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
 		# Make default writes the source, so it has a scope of its own: neither
-		# the poll nor the toolbar signature can reorder a slot.
+		# the poll nor the toolbar signature can change a set.
 		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
 		# Deleting a variant is the owner's, for any, and an invited editor's, for
 		# their own. The credential names the person, so the server reads who is

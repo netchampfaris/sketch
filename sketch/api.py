@@ -612,7 +612,7 @@ def restore_version(slug: str, sequence: int, dry_run: int = 0) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
-	"""Make `option` the first slot of `<Variants name="{name}">` in `file`.
+	"""Record `option` as the default of `<Variants name="{name}">` in `file`. No option moves.
 
 	`resolve_owned` is the permission check, so only the owner may rewrite the
 	source. Saves a version, so the change can be undone. See
@@ -1264,7 +1264,7 @@ def shared_prototypes() -> list[dict]:
 def conversations() -> list[dict]:
 	"""Every Prototype this user commented on or was mentioned in and neither owns nor edits, newest talk first.
 
-	The same card as "Shared with me", with the same news line, so a reply to someone who is not an
+	The same card as "Shared with me", with the same marker, so a reply to someone who is not an
 	editor still reaches them (decision 43). A Prototype made private since is not listed: they can no longer open it.
 	"""
 	user = frappe.session.user
