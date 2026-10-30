@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * One gallery item: preview, then two rows, two controls (decision 60).
+ * One gallery item: preview, then two rows, two controls (decisions 60, 70).
  *
  * Row one is the name, a gray "Private" Badge only when it is private (public
  * is the default, so it goes unsaid), the editors' stack, then the overflow
- * menu. Row two is one line: what is new, or the meta when nothing is
- * (`NewLine.vue`). The preview and the name are the ways in, both real links,
- * so there is no Open button.
+ * menu. Row two is "Updated 2 hours ago" and nothing else. What is new is a
+ * pill on the preview's corner (`PrototypeMarker.vue`). The preview and the
+ * name are the ways in, both real links, so there is no Open button.
  *
  * Public/Private is set in the Share dialog, never on the card. Share has one
  * home, "Share…" in the menu, and "Copy link" sits right after it while there
@@ -24,9 +24,9 @@
 import { computed, ref } from 'vue'
 import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
 import { avatarTheme } from '../../../runtime/shared/avatarTheme'
-import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
+import PrototypeMarker from './PrototypeMarker.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import ShareDialog from './ShareDialog.vue'
 import { copyText, downloadPrototypeZip, method, errorText } from '../store'
@@ -108,18 +108,6 @@ const busy = computed(
     refresh.loading ||
     exporting.value,
 )
-
-/**
- * The line under the name. `description` is derived on the server and its
- * wording is the server's to change (`sketch/api.py` `_row`), so the card
- * never parses it. The count is the fallback for a reply that carries no
- * description at all, which keeps the row filled and its height honest.
- */
-const subtitle = computed(() => {
-  if (props.prototype.description) return props.prototype.description
-  const count = props.prototype.file_count
-  return `${count} ${count === 1 ? 'file' : 'files'}`
-})
 
 async function copyPublicUrl(): Promise<void> {
   try {
@@ -220,7 +208,10 @@ const menuOptions = computed(() => [
 
 <template>
   <article class="flex min-w-0 flex-col">
-    <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+    <div class="relative">
+      <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+      <PrototypeMarker :news="prototype.new" :href="prototype.viewer_path" />
+    </div>
 
     <!--
       Two rows under the preview. `h-7` on both is the height of a `sm` Button
@@ -274,10 +265,9 @@ const menuOptions = computed(() => [
       </Dropdown>
     </div>
 
-    <!-- One line: what is new, or how big it is and when the agent last touched it. -->
-    <NewLine :news="prototype.new" :href="prototype.viewer_path">
-      <span class="min-w-0 truncate">{{ subtitle }} &middot; Updated {{ prototype.updated }}</span>
-    </NewLine>
+    <div class="flex h-7 items-center text-xs text-ink-gray-5">
+      <span class="min-w-0 truncate">Updated {{ prototype.updated }}</span>
+    </div>
 
     <ShareDialog v-model:open="shareOpen" :prototype="prototype" @changed="emit('changed')" />
     <PrototypeFilesDialog

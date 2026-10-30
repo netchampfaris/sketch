@@ -294,6 +294,53 @@ def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 	}
 
 
+def _social_logins() -> list[str]:
+	"""The Social Login Keys a visitor can sign in with: enabled, with every credential set.
+
+	The same test core's login page applies before it draws a button
+	(`frappe/www/login.py`), so this never offers a provider that page would not.
+	"""
+	from frappe.utils.oauth import get_oauth_keys
+	from frappe.utils.password import get_decrypted_password
+
+	keys = frappe.get_all(
+		"Social Login Key",
+		filters={"enable_social_login": 1},
+		fields=["name", "client_id", "base_url"],
+		order_by="name",
+	)
+	return [
+		key.name
+		for key in keys
+		if key.client_id
+		and key.base_url
+		and get_decrypted_password("Social Login Key", key.name, "client_secret", raise_exception=False)
+		and get_oauth_keys(key.name)
+	]
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def sign_in_url() -> str | None:
+	"""Where "Continue with GitHub" goes, when the site has exactly one way in.
+
+	The provider's authorize URL, the one /login prints on its button. A visitor
+	on the feed skips the login page with it. None when the site has no provider
+	or several, and the caller falls back to /login, which lists them.
+
+	`allow_guest`, because the caller is signed out by definition. The URL holds a
+	single-use state token and no secret: it is the link the login page would
+	have handed the same visitor. It carries no `redirect-to`, as /login's own
+	button here does not: the path to come back to rides in a cookie
+	(`sketch/www/sketch.py`).
+	"""
+	from frappe.utils.oauth import get_oauth2_authorize_url
+
+	providers = _social_logins()
+	if len(providers) != 1:
+		return None
+	return get_oauth2_authorize_url(providers[0], "")
+
+
 @frappe.whitelist()
 def get_session() -> dict:
 	"""The signed-in user, plus what the Settings screen needs to render."""

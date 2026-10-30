@@ -138,6 +138,7 @@ const menu = computed<DropdownOptions>(() => [
           onClick: () => setColorScheme(scheme.value),
         })),
       },
+      { label: "What's new", icon: 'lucide-sparkles', route: '/whats-new' },
       { label: 'Log out', icon: 'lucide-log-out', onClick: logout },
     ],
   },
@@ -157,7 +158,7 @@ const menu = computed<DropdownOptions>(() => [
     <!-- Same centred column and same gutters as the router view below, so the
          mark lines up with the page title. -->
     <div
-      class="mx-auto flex w-full max-w-[940px] items-center gap-2 px-3 sm:px-5"
+      class="mx-auto flex w-full max-w-[1240px] items-center gap-2 px-3 sm:px-5"
     >
       <!--
         Three parts, and from 640px the outer two are `flex-1 basis-0`. They
