@@ -111,6 +111,8 @@ const dark = window.matchMedia?.('(prefers-color-scheme: dark)')
 
 let preference = 'system'
 let themeCred = null
+// Saves go one after another, so quick switching cannot land an older choice after the newest.
+let saving = Promise.resolve()
 
 const visitTheme = () => (window.name.startsWith(VISIT) ? choice(window.name.slice(VISIT.length)) : null)
 
@@ -144,7 +146,7 @@ function saveTheme(value) {
     return
   }
   const body = new URLSearchParams({ ...themeCred, theme: next })
-  fetch(SAVE, { method: 'POST', body, credentials: 'omit', cache: 'no-store' }).catch(() => {})
+  saving = saving.then(() => fetch(SAVE, { method: 'POST', body, credentials: 'omit', cache: 'no-store' })).catch(() => {})
 }
 
 // System follows the computer while the page is open.
