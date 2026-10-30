@@ -48,11 +48,16 @@ onErrorCaptured((err) => {
 const target = () => (props.targetSet ? props.sandbox.reg.sets.find((s) => s.key === props.targetSet) ?? null : null)
 
 let stop = () => {}
-onBeforeUnmount(() => stop())
+let gone = false
+onBeforeUnmount(() => {
+  gone = true
+  stop()
+})
 onMounted(async () => {
   await nextFrames(2)
   await nextTick()
-  if (!el.value || reported) return
+  // A live tile closed during those frames must not start following a page that is already gone.
+  if (gone || !el.value || reported) return
   if (props.mode === 'live') {
     // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
     // page shows the whole window.
