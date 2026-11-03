@@ -60,7 +60,7 @@ import { labels, onFrame, page, post, rects, resolveRect, resolveRects, track, t
 import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
-import { applyPicks, bridge, hasUnreadThreads, picksShown, pointOf, revealTile, tileExists } from './variants'
+import { applyPicks, bridge, hasUnreadThreads, picksShown, pointOf, revealTile, showView, tileExists } from './variants'
 
 const props = defineProps<{ noter: boolean }>()
 
@@ -432,7 +432,7 @@ async function leaveCanvas() {
 // the row instead, and the thread can still be read and resolved.
 async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
 	if (!canvasOpen.value) {
-		post('canvas:open', { view: spot.tile.view || `page:${spot.route}` })
+		showView(spot.tile.view || `page:${spot.route}`)
 		if (!(await until(() => bridge.open && !!bridge.model))) return
 	}
 	const point = tileExists(bridge.model, spot) === false ? null : await revealTile(spot, { fx: at.x, fy: at.y })

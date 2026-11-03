@@ -237,6 +237,11 @@ async function forge() {
 		await send('key', { key: 'Escape', mods: [], layer: '' })
 		await send('key', { key: 'Escape', mods: [], layer: '' })
 	}
+	// The canvas showing Calm's set, as if the owner had opened it: Calm is new to them.
+	const options = ['filled', '@__EDITOR__/calm', '@__EDITOR__/evil']
+	const item = { value: 'set:home/card', label: 'Card', sub: 'Home', short: '3', complete: true, group: 'sets', options }
+	for (const view of ['page:/', 'set:home/card'])
+		await send('canvas', { open: true, phone: false, view, zoom: 1, pan: { x: 0, y: 0 }, corner: 0, items: [item] }, 300)
 	for (const option of ['@__EDITOR__/calm', '@__EDITOR__/evil', 'filled'])
 		await send('tile:pick', { spot: { route: '/', tile: { kind: 'set', view: 'set:home/card', page: 'Home', group: 'Card', groupKey: 'card', option, optionLabel: option } }, fx: 0.5, fy: 0.5, x: 100, y: 100 })
 	await send('tweak:info', { req: '', sels: [{ ref: 'evil', label: 'Evil', classes: ['x'] }], total: 1, joinable: 1, say: 'evil', found: true, outside: false })
@@ -427,8 +432,9 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 				if reply["isError"]:
 					raise AssertionError(reply["content"][0]["text"])
 
-		# The owner has seen both options and the thread, so the shell has no badge of its own to clear.
-		badges.mark(cls.doc.name, cls.owner, [f"@{cls.editor_username}/evil", f"@{cls.editor_username}/calm"], [cls.thread])
+		# The owner has seen the hostile option and the thread, but not Calm: it stays new to them, so a forged canvas
+		# message naming its set is a chance to mark it seen, which the shell must not take.
+		badges.mark(cls.doc.name, cls.owner, [f"@{cls.editor_username}/evil"], [cls.thread])
 		frappe.db.commit()
 
 		sid, _ = open_session(cls.owner)
@@ -485,6 +491,7 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 			),
 			"prototype": frappe.db.get_value("Sketch Prototype", name, ["title", "is_public"], as_dict=True),
 			"editors": sorted(frappe.get_all("Sketch Prototype Editor", filters={"prototype": name}, pluck="user")),
+			"new_to_owner": (badges.page(name, cls.owner) or {}).get("variants", []),
 		}
 
 	def say(self, answer: dict | None = None) -> str:
@@ -527,6 +534,14 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 
 	def test_nothing_new_was_marked_seen(self):
 		self.assertEqual(self.after_attack["seen"], self.before["seen"])
+
+	def test_a_forged_canvas_view_marks_no_option_seen(self):
+		"""Calm is new to the owner, and the frame said it opened Calm's set: only a pick in the shell marks it seen."""
+		self.assertIn("canvas", self.attack["report"]["forged"], self.say())
+		calm = f"@{self.editor_username}/calm"
+		self.assertIn(calm, self.before["new_to_owner"])
+		self.assertIn(calm, self.after_attack["new_to_owner"], self.say())
+		self.assertEqual([r for r in self.after_attack["seen"] if r[2] == calm], [], self.say())
 
 	def test_the_prototype_and_its_editors_are_as_they_were(self):
 		self.assertEqual(self.after_attack["prototype"], self.before["prototype"])

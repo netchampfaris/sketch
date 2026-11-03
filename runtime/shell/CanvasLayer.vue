@@ -12,7 +12,7 @@ import CanvasPanel from './CanvasPanel.vue'
 import { placeToasts } from './actions'
 import { lookAt } from './badges'
 import { page, post } from './frame'
-import { PANEL_W, bridge } from './variants'
+import { PANEL_W, bridge, showView, takeChosen } from './variants'
 
 const panelShown = computed(() => !bridge.phone && bridge.panelOpen)
 // The canvas fits its tiles in the room the panel leaves. The frame hears it before the canvas opens too, so the first
@@ -33,15 +33,17 @@ watch(
 // A row picked in the panel shows that in the canvas, in place.
 function choose(v: string) {
 	if (!v || v === bridge.view) return
-	post('canvas:open', { view: v })
+	showView(v)
 }
-// Opening a set is looking at all of its options: the ones a teammate made stop being new (the rows lose their dot; the
-// tiles keep their "New" badge until the next visit, so nothing vanishes under the pointer).
+// Opening a set from the shell is looking at all of its options: the ones a teammate made stop being new (the rows lose
+// their dot; the tiles keep their "New" badge until the next visit, so nothing vanishes under the pointer). Only a view
+// the person picked here counts, once the canvas shows it, and only options the server named new (badges.ts lookAt).
 watch(
 	() => [bridge.view, bridge.items] as const,
 	([view, items]) => {
-		if (!view.startsWith('set:')) return
-		lookAt(items.find((i) => i.value === view)?.options ?? [])
+		const item = items.find((i) => i.value === view)
+		if (!item || !takeChosen(view)) return
+		if (view.startsWith('set:')) lookAt(item.options)
 	},
 	{ immediate: true },
 )

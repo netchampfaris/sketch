@@ -8,10 +8,10 @@ import { Button, Dropdown, toast } from 'frappe-ui'
 import type { ModelSet, ModelState } from '../shared/protocol'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { choose, demo, measure } from './demo'
-import { onFrame, page, post } from './frame'
+import { onFrame, page } from './frame'
 import { isOwner, keepFailure, keepOnly, makeDefault, makeFailure, saving } from './actions'
 import LensMenu from './LensMenu.vue'
-import { bridge, menuBind } from './variants'
+import { bridge, menuBind, showView } from './variants'
 
 type Row = ModelSet | ModelState
 
@@ -117,7 +117,7 @@ watch(
 function go(view: string) {
 	close()
 	opener = pill.value?.querySelector('button') ?? null
-	post('canvas:open', { view })
+	showView(view)
 }
 // The foot of the card: this page's first set, else its states, else the first thing the canvas has.
 function openHere() {

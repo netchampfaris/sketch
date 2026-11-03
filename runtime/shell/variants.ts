@@ -77,7 +77,26 @@ onFrame('canvas', (d) => {
 	if (was && !d.open) Object.assign(bridge, { tiles: [], model: null, items: [], view: '' })
 })
 // A reloaded frame says everything again.
-onGone(() => Object.assign(bridge, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0 }))
+onGone(() => {
+	Object.assign(bridge, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0 })
+	chosen = ''
+})
+
+// ---- Showing a view
+// The view the person picked in the shell (a row of the panel, the Demo pill, a list's thread or note), until the canvas
+// shows it. Opening a set this way is looking at its options (CanvasLayer.vue); the frame showing one on its own is not,
+// so no frame message marks anything seen. 'auto' is whatever the canvas picks first.
+let chosen = ''
+export function showView(view: string) {
+	chosen = view
+	post('canvas:open', { view })
+}
+// The view the canvas shows now, when it is the one the person picked: taken once.
+export function takeChosen(view: string): boolean {
+	if (!chosen || !view || (chosen !== view && chosen !== 'auto')) return false
+	chosen = ''
+	return true
+}
 
 // ---- Tiles as data
 export const spotOf = (t: ShellTile, _view?: string): TileSpot => t.spot
