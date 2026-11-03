@@ -26,7 +26,7 @@ import re
 
 import frappe
 
-from sketch import prototype_files, sharing, snapshots, versions
+from sketch import prototype_files, sharing, versions
 
 OPTION = re.compile(r"(?:@[a-z0-9-]+|adopted)/[A-Za-z0-9][A-Za-z0-9._/-]*")
 
@@ -343,48 +343,7 @@ def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> di
 
 	by = None if is_owner else username
 	label = re.sub(r"^Deleted the variant “(.*)”$", r"\1", row.prompt)
-	return restore_files(doc, sequence, f"Undid deleting the variant “{label}”", by)
-
-
-# ------------------------------------------------------------------ undo (any)
-
-
-def restore_files(doc, sequence: int, prompt: str, by: str | None = None) -> dict:
-	"""Put every file version `sequence` changed back as the version before left it.
-
-	Refused when any of them is not as that version left it, so a later write is
-	never clobbered. A file the version added is deleted; one it deleted comes back.
-	"""
-	changed_since = frappe._("the page changed since. Ask your agent instead.")
-	if sequence < 2:
-		frappe.throw(changed_since, frappe.ValidationError)
-
-	versions.lock(doc.name)
-	raw = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "changes")
-	paths = [row["path"] for row in versions._parse(raw) if row.get("path")]
-	after = versions._manifest_of(doc.name, sequence)
-	before = versions._manifest_of(doc.name, sequence - 1)
-	if not paths:
-		frappe.throw(changed_since, frappe.ValidationError)
-
-	current = snapshots.capture(doc.name)
-	for path in paths:
-		if current.get(path) != after.get(path):
-			frappe.throw(changed_since, frappe.ValidationError)
-
-	versions.commit_before(doc, "Changes before an undo", paths, by)
-
-	for path in paths:
-		if path in before:
-			content = snapshots.read_blob(doc.name, before[path]).decode("utf-8")
-			prototype_files.write_files(doc.name, [{"path": path, "content": content}])
-			versions.note(doc.name, path, versions.MODIFIED if path in current else versions.ADDED, by)
-		elif path in current:
-			prototype_files.delete_file(doc.name, path)
-			versions.note(doc.name, path, versions.DELETED, by)
-
-	version = versions.commit(doc, prompt, source="App", by=by)
-	return {"sequence": version.sequence if version else None}
+	return versions.undo(doc, sequence, f"Undid deleting the variant “{label}”", by)
 
 
 def _int(value) -> int:

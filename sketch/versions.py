@@ -277,6 +277,50 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 	}
 
 
+def changes_of(name: str, sequence: int) -> list[dict]:
+	"""The {"path", "action"} rows one version recorded, or [] when there is no such version."""
+	return _parse(frappe.db.get_value(VERSION, {"prototype": name, "sequence": sequence}, "changes"))
+
+
+def undo(doc, sequence: int, prompt: str, by: str | None = None, only: list[str] | None = None) -> dict:
+	"""Put every file version `sequence` changed back as the version before left it, as a new version.
+
+	`only` narrows it to those paths. Refused when any of them is not as that
+	version left it, so a later write is never clobbered. A file the version
+	added is deleted; one it deleted comes back.
+	"""
+	from sketch import prototype_files
+
+	changed_since = frappe._("the page changed since. Ask your agent instead.")
+	if sequence < 2:
+		frappe.throw(changed_since, frappe.ValidationError)
+
+	lock(doc.name)
+	paths = only or [row["path"] for row in changes_of(doc.name, sequence) if row.get("path")]
+	after = _manifest_of(doc.name, sequence)
+	before = _manifest_of(doc.name, sequence - 1)
+	if not paths:
+		frappe.throw(changed_since, frappe.ValidationError)
+
+	current = snapshots.capture(doc.name)
+	for path in paths:
+		if current.get(path) != after.get(path):
+			frappe.throw(changed_since, frappe.ValidationError)
+
+	commit_before(doc, "Changes before an undo", paths, by)
+	for path in paths:
+		if path in before:
+			content = snapshots.read_blob(doc.name, before[path]).decode("utf-8")
+			prototype_files.write_files(doc.name, [{"path": path, "content": content}])
+			note(doc.name, path, MODIFIED if path in current else ADDED, by)
+		elif path in current:
+			prototype_files.delete_file(doc.name, path)
+			note(doc.name, path, DELETED, by)
+
+	version = commit(doc, prompt, source="App", by=by)
+	return {"sequence": version.sequence if version else None}
+
+
 def prune(doc, sequence: int, dry_run: bool = False) -> dict:
 	"""Delete version `sequence` and every older one, then the blobs nobody needs.
 

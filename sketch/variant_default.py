@@ -20,7 +20,7 @@ import re
 
 import frappe
 
-from sketch import editor_variants, prototype_files, sharing, snapshots, versions
+from sketch import editor_variants, prototype_files, sharing, versions
 
 #: HTML elements with no closing tag, so they never open a depth.
 VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
@@ -281,7 +281,7 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 
 	A default that touched the variants folder (an editor's option made the
 	default, or the owner's option taking the lead back) restores every file it
-	changed, under the same refusal (`editor_variants.restore_files`).
+	changed, under the same refusal (`versions.undo`).
 	"""
 	if not isinstance(file, str) or not file.endswith(".vue"):
 		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
@@ -291,51 +291,22 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	except (TypeError, ValueError):
 		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
 
-	touched = versions._parse(
-		frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "changes")
-	)
-	if any(str(row.get("path", "")).startswith("src/variants/") for row in touched):
-		prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
-		if not (prompt or "").startswith("Made \u201c"):
-			frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
-
-		# The version's own words name the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
-		said = re.match(r"Made [\u201c\"](.*)[\u201d\"] the default for ", prompt)
-		result = editor_variants.restore_files(
-			doc, sequence, f"Undid making \u201c{said.group(1) if said else label_of(option)}\u201d the default for {name}"
-		)
-		return {"file": file, "name": name, "option": option, **result}
-
-	absolute = prototype_files.safe_join(doc.name, file)
-	versions.lock(doc.name)
-	changed_since = frappe._("the page changed since. Ask your agent instead.")
-	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
+	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt") or ""
 	# Straight quotes are what versions before the curly ones were saved with.
-	if sequence < 2 or not (prompt or "").startswith(("Made \u201c", 'Made "')):
+	if not prompt.startswith(("Made \u201c", 'Made "')):
 		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
 
-	after = versions._manifest_of(doc.name, sequence)
-	before = versions._manifest_of(doc.name, sequence - 1)
-	if file not in before or file not in after:
-		frappe.throw(changed_since, frappe.ValidationError)
+	if any(str(change.get("path", "")).startswith("src/variants/") for change in versions.changes_of(doc.name, sequence)):
+		# The version's own words name the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
+		said = re.match(r"Made [\u201c\"](.*)[\u201d\"] the default for ", prompt)
+		label = said.group(1) if said else label_of(option)
+		result = versions.undo(doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}")
+	else:
+		result = versions.undo(
+			doc, sequence, f"Undid making \u201c{label_of(option)}\u201d the default for {name}", only=[file]
+		)
 
-	try:
-		with open(absolute, "rb") as handle:
-			current = handle.read()
-	except FileNotFoundError:
-		frappe.throw(changed_since, frappe.ValidationError)
-
-	if snapshots._sha(current) != after[file]:
-		frappe.throw(changed_since, frappe.ValidationError)
-
-	original = snapshots.read_blob(doc.name, before[file]).decode("utf-8")
-	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the default was undone", source="App")
-
-	prototype_files.write_files(doc.name, [{"path": file, "content": original}])
-	versions.note(doc.name, file, versions.MODIFIED)
-	version = versions.commit(doc, f"Undid making \u201c{label_of(option)}\u201d the default for {name}", source="App")
-	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
+	return {"file": file, "name": name, "option": option, **result}
 
 
 # ---------------------------------------------------------------- keep only this
@@ -509,5 +480,5 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 		"file": file,
 		"name": name,
 		"option": option,
-		**editor_variants.restore_files(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
+		**versions.undo(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
 	}
