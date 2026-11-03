@@ -39,9 +39,10 @@ class Who:
 
 
 def _actor(name: str) -> Who:
-	"""The session's person on Prototype `name`. A Guest gets 403; someone who may not see it, 404."""
+	"""The session's person on Prototype `name`. A Guest or a disabled person gets 403; someone who may not see it, 404."""
 	user = frappe.session.user
-	if not user or user == "Guest":
+	# Frappe resumes a disabled person's open session, so the shell they left open must not write.
+	if not user or user == "Guest" or not frappe.db.get_value("User", user, "enabled"):
 		raise frappe.PermissionError
 
 	if not sharing.can_view(name, user):
