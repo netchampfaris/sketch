@@ -50,6 +50,7 @@ import {
 	mode,
 	noteNumber,
 	notes,
+	ownMenuOpen,
 	pageLayerOpen,
 	parentOf,
 	pinPoint,
@@ -848,9 +849,9 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 	if (e.key === 'Escape') {
 		// The tweak layer takes its own Escape first and says so.
 		if (!enabled.value || e.defaultPrevented) return
-		// Let an open frappe-ui dialog or menu take its own Escape: a menu closes first, then the box, then the tool.
-		// Commenting, an open page popover or list closes first too; the other tools step aside for dialogs and menus only.
-		if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]') || (mode.value === 'comment' && pageLayerOpen())) return
+		// Let an open frappe-ui dialog or one of our menus take its own Escape: our menu closes first, then the box, then
+		// the tool. Commenting, an open page menu, popover or list closes first too; the other tools step aside for dialogs only.
+		if (document.querySelector('[role="dialog"][data-state="open"]') || ownMenuOpen() || (mode.value === 'comment' && pageLayerOpen())) return
 		if (dragging) resetDrag()
 		else if (draft.value) close()
 		// The last Escape leaves the tool altogether: the tool goes off and its panel closes with it (on the canvas the
