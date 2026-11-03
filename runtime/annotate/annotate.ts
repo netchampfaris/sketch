@@ -160,6 +160,10 @@ export const isOurs = (el: Node | null | undefined) => {
   const e = el instanceof Element ? el : el?.parentElement
   return !!e?.closest(OURS)
 }
+// A page menu, popover, list or dialog is open (reka marks each with data-dismissable-layer): it takes
+// Escape first. Tooltips come and go with the pointer, so they never hold Escape back.
+export const pageLayerOpen = () =>
+  [...document.querySelectorAll('[data-dismissable-layer]')].some((l) => !isOurs(l) && !l.querySelector('[role="tooltip"]'))
 // The page element an event is aimed at; never one of ours.
 export const targetOf = (e: Event) => {
   const t = e.target
