@@ -8,6 +8,7 @@ import type { PickItem } from './picker'
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
 import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/tiles'
+import type { CanvasPage } from '../shared/protocol'
 
 export { sameTile, tileLabel, whereOf } from '../shared/tiles'
 export type { TileHit, TileRef, TileSpot }
@@ -74,16 +75,16 @@ export function findTile(tiles: TileBox[], spot: TileSpot, view: string): TileBo
   })
 }
 
-// Whether the canvas still has this tile: null until the pages are known.
-export function tileExists(model: PageModel[] | null, spot: TileSpot): boolean | null {
-  if (!model) return null
-  const page = model.find((p) => p.path === spot.route)
-  if (!page) return false
-  const { kind, groupKey, option } = spot.tile
-  if (kind === 'default') return true
-  if (kind === 'set') return !!page.sets.find((s) => s.key === groupKey)?.options.some((o) => o.value === option)
-  return !!page.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
-}
+// What the canvas found on its pages, in the protocol's words (sets by key with their option values, states by key with
+// their options): what the shell is told, and what runtime/shared/tiles.ts tileExists reads on both sides.
+export const pagesOf = (model: PageModel[] | null): CanvasPage[] | null =>
+  model &&
+  model.map((p) => ({
+    path: p.path,
+    title: p.title,
+    sets: p.sets.map((s) => ({ key: s.key, options: s.options.map((o) => o.value) })),
+    states: p.states.map((s) => ({ key: s.key, options: s.options })),
+  }))
 
 // The option a write has just put in place (Make default, Keep only this, or their Undo, saved by the shell): the canvas
 // rings its tile once it is drawn, so the option picked is still under the eye after the frame reloads. The shell

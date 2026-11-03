@@ -14,15 +14,15 @@ import ShowList from './ShowList.vue'
 import { placeToasts } from './actions'
 import { lookAt } from './badges'
 import { onFrame, onGone, page, post } from './frame'
-import { PANEL_W, bridge, showView, takeChosen } from './variants'
+import { PANEL_W, canvas, showView, takeChosen } from './canvas'
 
-const panelShown = computed(() => !bridge.phone && bridge.panelOpen)
+const panelShown = computed(() => !canvas.phone && canvas.panelOpen)
 // The canvas fits its tiles in the room the panel leaves. The frame hears it before the canvas opens too, so the first
 // fit is already right (and a fresh frame hears it again); the toolbar keeps out of that room while the canvas is open.
 watch(
-	[() => (panelShown.value ? PANEL_W : 0), () => bridge.open, () => page.ready],
+	[() => (panelShown.value ? PANEL_W : 0), () => canvas.open, () => page.ready],
 	([reserve, open]) => {
-		bridge.reserve = open ? reserve : 0
+		canvas.reserve = open ? reserve : 0
 		post('display', { reserve })
 		// Toasts stand left of the panel (actions.ts placeToasts): it is 12px off the right edge and PANEL_W - 24 wide.
 		if (open) placeToasts()
@@ -34,17 +34,17 @@ watch(
 
 // A row picked in the panel shows that in the canvas, in place.
 function choose(v: string) {
-	if (!v || v === bridge.view) return
+	if (!v || v === canvas.view) return
 	showView(v)
 }
 // The phone's Show list, under the title pill's name where the frame says it is. The frame's name asks to open it or
 // to close it; a press in the frame while it is open closes it too, as a press outside does.
 const showAt = ref<Rect | null>(null)
 const showOpen = computed({
-	get: () => !!showAt.value && bridge.open && bridge.phone,
+	get: () => !!showAt.value && canvas.open && canvas.phone,
 	set: (o: boolean) => !o && (showAt.value = null),
 })
-onBeforeUnmount(onFrame('canvas:show', (d) => (showAt.value = d.open && bridge.open && bridge.phone ? d.rect : null)))
+onBeforeUnmount(onFrame('canvas:show', (d) => (showAt.value = d.open && canvas.open && canvas.phone ? d.rect : null)))
 onBeforeUnmount(onGone(() => (showAt.value = null)))
 watch(showOpen, (o) => post('display', { showOpen: o }))
 useEventListener(window, 'blur', () => showOpen.value && document.activeElement?.tagName === 'IFRAME' && (showOpen.value = false))
@@ -57,7 +57,7 @@ function chooseOnPhone(v: string) {
 // their dot; the tiles keep their "New" badge until the next visit, so nothing vanishes under the pointer). Only a view
 // the person picked here counts, once the canvas shows it, and only options the server named new (badges.ts lookAt).
 watch(
-	() => [bridge.view, bridge.items] as const,
+	() => [canvas.view, canvas.items] as const,
 	([view, items]) => {
 		const item = items.find((i) => i.value === view)
 		if (!item || !takeChosen(view)) return
@@ -79,34 +79,34 @@ useEventListener(
 	{ capture: true },
 )
 useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-	if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || layered || !bridge.open) return
+	if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || layered || !canvas.open) return
 	post('escape', {})
 })
 
-const inv = computed(() => 1 / bridge.zoom)
+const inv = computed(() => 1 / canvas.zoom)
 </script>
 
 <template>
-	<template v-if="bridge.open">
+	<template v-if="canvas.open">
 		<!-- The pins on the tiles: one layer under the pan and zoom, below the panel and the toolbar. Only the pins take the pointer. -->
 		<div class="pointer-events-none absolute inset-0 overflow-hidden">
 			<div
 				class="absolute left-0 top-0 origin-top-left"
-				:style="{ transform: `translate(${bridge.pan.x}px, ${bridge.pan.y}px) scale(${bridge.zoom})`, '--inv': inv }"
+				:style="{ transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.zoom})`, '--inv': inv }"
 			>
-				<component :is="bridge.Pins" v-if="bridge.Pins" :tiles="bridge.tiles" :zoom="bridge.zoom" :view="bridge.view" />
+				<component :is="canvas.Pins" v-if="canvas.Pins" :tiles="canvas.tiles" :zoom="canvas.zoom" />
 			</div>
 		</div>
 
-		<CanvasPanel v-if="panelShown" :items="bridge.items" :selected="bridge.view" @choose="choose" @hide="bridge.panelOpen = false" />
+		<CanvasPanel v-if="panelShown" :items="canvas.items" :selected="canvas.view" @choose="choose" @hide="canvas.panelOpen = false" />
 		<!-- Where the hide button sits in the open panel, so the icon stays put when toggled. -->
 		<div
-			v-else-if="!bridge.phone"
+			v-else-if="!canvas.phone"
 			data-ui
 			class="pointer-events-auto absolute right-6 top-6 z-10 rounded-[8px] bg-surface-elevation-2 shadow-sm ring-1 ring-outline-gray-2"
 		>
 			<Tooltip text="Show panel">
-				<Button variant="ghost" icon="lucide-panel-right" aria-label="Show panel" @click="bridge.panelOpen = true" />
+				<Button variant="ghost" icon="lucide-panel-right" aria-label="Show panel" @click="canvas.panelOpen = true" />
 			</Tooltip>
 		</div>
 
@@ -121,8 +121,8 @@ const inv = computed(() => 1 / bridge.zoom)
 			</template>
 			<div class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui>
 				<ShowList
-					:items="bridge.items"
-					:selected="bridge.view"
+					:items="canvas.items"
+					:selected="canvas.view"
 					width="calc(var(--reka-popover-trigger-width) - 1rem)"
 					max-height="calc(100dvh - 7.5rem)"
 					@choose="chooseOnPhone"

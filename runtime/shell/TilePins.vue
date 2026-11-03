@@ -7,14 +7,15 @@
 // While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
 // typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
 import { computed } from 'vue'
-import { bridge, sameTile, spotOf, type TileSpot } from './variants'
+import { canvas, type ShellTile } from './canvas'
+import { sameTile, type TileSpot } from '../shared/tiles'
 import { noteNumber, notes, type Note } from './annotate'
 import { heldDrafts, matching, openThread, plain, spotOfThread, type Thread } from './comments'
 import { host } from './host'
 import { canvasUi, handlers } from './tiles'
 import PinShape from './PinShape.vue'
 
-const props = defineProps<{ tiles: any[]; zoom: number; view: string }>()
+const props = defineProps<{ tiles: ShellTile[]; zoom: number }>()
 
 // Within this many screen px two pins count as one pile; each further pin in a pile steps this far to the right.
 const PILE = 20
@@ -23,7 +24,7 @@ const STEP = 22
 type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean; held?: boolean }
 const items = computed<Item[]>(() => {
 	const d = canvasUi.draft
-	if (bridge.tool === 'comment') {
+	if (canvas.tool === 'comment') {
 		const list: Item[] = matching.value.flatMap((t) => {
 			const spot = spotOfThread(t)
 			return spot ? [{ id: t.id, kind: 'comment' as const, spot, fx: t.anchor.offset.x, fy: t.anchor.offset.y, thread: t }] : []
@@ -32,7 +33,7 @@ const items = computed<Item[]>(() => {
 			if (h.anchor.tile) list.push({ id: h.id, kind: 'comment', spot: { route: h.anchor.route, tile: h.anchor.tile }, fx: h.anchor.offset.x, fy: h.anchor.offset.y, held: true })
 		return d ? [...list, { id: 'draft', kind: 'comment', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
 	}
-	if (bridge.tool === 'note') {
+	if (canvas.tool === 'note') {
 		const list: Item[] = notes.value.flatMap((n) => (n.tile ? [{ id: n.id, kind: 'note' as const, spot: { route: n.route, tile: n.tile }, fx: n.offset.x, fy: n.offset.y, note: n }] : []))
 		return d ? [...list, { id: 'draft', kind: 'note', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
 	}
@@ -44,17 +45,11 @@ const draftNumber = computed(() => notes.value.filter((n) => n.tile).length + 1)
 const pins = computed(() => {
 	const placed: { x: number; y: number }[] = []
 	const out: (Item & { x: number; y: number; k: number })[] = []
-	const byTile = new Map<string, any>()
-	for (const t of props.tiles) {
-		const s = spotOf(t, props.view)
-		if (s) byTile.set(t.id, { t, s })
-	}
-	const tiles = [...byTile.values()]
 	for (const it of items.value) {
-		const hit = tiles.find((x) => sameTile(x.s, it.spot))
-		if (!hit) continue
-		const x = hit.t.x + it.fx * hit.t.w
-		const y = hit.t.y + it.fy * hit.t.h
+		const t = props.tiles.find((x) => sameTile(x.spot, it.spot))
+		if (!t) continue
+		const x = t.x + it.fx * t.w
+		const y = t.y + it.fy * t.h
 		const near = (p: { x: number; y: number }) => Math.abs(p.x - x) * props.zoom < PILE && Math.abs(p.y - y) * props.zoom < PILE
 		// The draft sits exactly where the click was, on top of whatever is there.
 		const k = it.draft ? 0 : placed.filter(near).length

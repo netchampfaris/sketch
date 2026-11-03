@@ -10,7 +10,7 @@ import { heldDrafts, matching, openThread, plain, type HeldDraft, type Thread } 
 import { host } from './host'
 import AuthorAvatar from './AuthorAvatar.vue'
 import PinShape from './PinShape.vue'
-import { picksShown } from './variants'
+import { picksShown } from './canvas'
 import { rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'
 

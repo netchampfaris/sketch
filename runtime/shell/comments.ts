@@ -6,8 +6,10 @@
 // Every call goes over the reader's session (api.ts, sketch.viewer_api): who is speaking is the server's to
 // know, never the page's. No word of a comment goes to the frame.
 import { computed, ref } from 'vue'
-import { bridge, readThread, setUnread, tileExists } from './variants'
-import type { DemoPick, TileSpot } from './variants'
+import { canvas } from './canvas'
+import { readThread, setUnread } from './badges'
+import { tileExists, type TileSpot } from '../shared/tiles'
+import type { DemoPick } from '../shared/picks'
 import { host } from './host'
 import { call } from './api'
 import type { Note } from './annotate'
@@ -45,7 +47,7 @@ export const openThread = ref<string | null>(null)
 // A thread on a canvas tile whose option or state has gone (Keep only this, a deleted variant) counts as resolved. It is
 // only how the screen shows it: nothing is written, so an Undo brings the tile back and the thread is open again.
 // Only the open canvas knows its tiles; elsewhere a thread is what the server says.
-export const isGone = (t: Thread) => !!t.anchor.tile && tileExists(bridge.model, { route: t.anchor.route, tile: t.anchor.tile }) === false
+export const isGone = (t: Thread) => !!t.anchor.tile && tileExists(canvas.model, { route: t.anchor.route, tile: t.anchor.tile }) === false
 export const isClosed = (t: Thread) => t.resolved || isGone(t)
 
 // How many threads still need an answer: the server's count until the first read, then ours.

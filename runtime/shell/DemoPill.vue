@@ -11,7 +11,8 @@ import { choose, demo, measure } from './demo'
 import { onFrame, page } from './frame'
 import { isOwner, keepFailure, keepOnly, makeDefault, makeFailure, saving } from './actions'
 import LensMenu from './LensMenu.vue'
-import { bridge, menuBind, showView } from './variants'
+import { canvas, showView } from './canvas'
+import { menuBind } from '../shared/menus'
 
 type Row = ModelSet | ModelState
 
@@ -73,12 +74,12 @@ const lift = computed(() => {
 	const inTheWay = demo.toolbarLift > 0 && demo.toolbarRight + 8 > page.vw - 12 - pillW.value
 	return Math.max(bar, inTheWay ? demo.toolbarLift - 12 : 0)
 })
-const shown = computed(() => count.value > 0 && !bridge.open)
+const shown = computed(() => count.value > 0 && !canvas.open)
 watch(
 	[height, shown, lift],
 	([h, on, bar]) => {
 		// Under the canvas the pill is hidden, as the frame's was covered: what floats keeps the room it had.
-		if (bridge.open) return
+		if (canvas.open) return
 		demo.stackH = on && h ? h + bar : 0
 		if (demo.stackH) document.documentElement.style.setProperty('--sketch-variants-h', `${demo.stackH}px`)
 		else document.documentElement.style.removeProperty('--sketch-variants-h')
@@ -106,7 +107,7 @@ const menuOf = (s: ModelSet) =>
 // Leaving for the canvas: Esc there, and Back, land on the Demo pill again.
 let opener: HTMLElement | null = null
 watch(
-	() => bridge.open,
+	() => canvas.open,
 	(on) => {
 		if (on || !opener) return
 		const el = opener

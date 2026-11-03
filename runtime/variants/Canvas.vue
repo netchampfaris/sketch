@@ -7,12 +7,14 @@ import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } fr
 import { Button, Dropdown, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Tile from './Tile.vue'
-import { bridge, findTile, landed, spotOf, tileExists } from './bridge'
+import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
+import { tileExists } from '../shared/tiles'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
-import { menuBind, menuHost } from './menus'
+import { menuHost } from './menus'
+import { menuBind } from '../shared/menus'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
@@ -455,7 +457,7 @@ function viewFor(spot: TileSpot): string {
 // Bring a tile into view and give the screen point of a spot on it. Null when the canvas no longer has the tile.
 async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
   if (!(await until(() => !!model.value))) return null
-  if (tileExists(model.value, spot) === false) return null
+  if (tileExists(pagesOf(model.value), spot) === false) return null
   if (!tileBox(spot)) {
     const v = viewFor(spot)
     if (v !== pickValue.value) router.replace({ query: { ...route.query, canvas: v } })

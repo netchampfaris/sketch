@@ -5,7 +5,7 @@ import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
 import type { ModelState } from '../shared/protocol'
 import { choose } from './demo'
-import { menuBind } from './variants'
+import { menuBind } from '../shared/menus'
 
 const props = withDefaults(defineProps<{ state: ModelState; showName?: boolean }>(), { showName: true })
 const options = computed(() =>

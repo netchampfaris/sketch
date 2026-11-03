@@ -4,7 +4,8 @@
 // agent still reads it, so it is never hidden. Nothing is written, so an Undo of Keep only this brings the tile back.
 import { computed, ref } from 'vue'
 import { Button, ScrollArea, TextInput, Tooltip } from 'frappe-ui'
-import { bridge, findTile, tileExists, tileLabel } from './variants'
+import { canvas, findTile } from './canvas'
+import { tileExists, tileLabel } from '../shared/tiles'
 import { pageNameOf } from './host'
 import { noteNumber, notes, type Note } from './annotate'
 
@@ -20,11 +21,11 @@ const matches = computed(() => {
 })
 const isHere = (n: Note) => {
 	const spot = spotOf(n)
-	return !!spot && !!findTile(bridge.tiles, spot, bridge.view)
+	return !!spot && !!findTile(canvas.tiles, spot)
 }
 const isGone = (n: Note) => {
 	const spot = spotOf(n)
-	return !!spot && tileExists(bridge.model, spot) === false
+	return !!spot && tileExists(canvas.model, spot) === false
 }
 const groups = computed(() => {
 	const list = matches.value

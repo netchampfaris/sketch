@@ -4,7 +4,7 @@
 // (comments.ts isGone). The live page's floating panel, the canvas panel's Comments tab and the phone sheet all draw this.
 import { computed } from 'vue'
 import { Button, ScrollArea, Skeleton } from 'frappe-ui'
-import { bridge, findTile } from './variants'
+import { canvas, findTile } from './canvas'
 import { load, matching, openThread, query, spotOfThread, status, threads, type Thread } from './comments'
 import CommentRow from './CommentRow.vue'
 import { pageNameOf } from './host'
@@ -21,15 +21,15 @@ const empty = computed(() => {
 })
 
 type Group = { key: string; name: string; threads: Thread[] }
-const onCanvas = computed(() => bridge.open)
+const onCanvas = computed(() => canvas.open)
 
 // On the canvas, whether a thread sits on a tile in view.
 function isHere(t: Thread) {
 	const spot = spotOfThread(t)
-	return !!spot && !!findTile(bridge.tiles, spot, bridge.view)
+	return !!spot && !!findTile(canvas.tiles, spot)
 }
 const pageOrder = (route: string) => {
-	const i = bridge.model?.findIndex((p) => p.path === route) ?? -1
+	const i = canvas.model?.findIndex((p) => p.path === route) ?? -1
 	return i < 0 ? 1e6 : i
 }
 const nameOfRoute = (t: Thread) => t.anchor.tile?.page || pageNameOf(t.anchor.route)

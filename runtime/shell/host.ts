@@ -2,7 +2,7 @@
 // JSON (sketch/viewer.py shell_payload) once, and the page names from what the frame reported: the shell never
 // holds the tree.
 import type { Router } from 'vue-router'
-import { titleOfRoute } from './variants'
+import { titleOfRoute } from './canvas'
 
 // The shape the server stores in `Sketch Prototype.annotations`. Lists are kept loose here:
 // annotate.ts and tweaks.ts validate each row they read back, so one bad row never costs the rest.

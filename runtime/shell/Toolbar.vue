@@ -49,7 +49,7 @@ import CommentsPanel from './CommentsPanel.vue'
 import NotePopover from './NotePopover.vue'
 import TilePins from './TilePins.vue'
 import { canvasUi, handlers, tileAnchor } from './tiles'
-import { tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
+import { tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
 import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../shared/protocol'
 import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
@@ -60,7 +60,8 @@ import { labels, onFrame, onRefsGone, page, post, rects, resolveRect, resolveRec
 import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
-import { applyPicks, bridge, hasUnreadThreads, picksShown, pointOf, revealTile, showView, tileExists } from './variants'
+import { applyPicks, canvas, picksShown, pointOf, revealTile, showView } from './canvas'
+import { hasUnreadThreads } from './badges'
 
 const props = defineProps<{ noter: boolean }>()
 
@@ -76,8 +77,8 @@ if (guest) setEnabled(true)
 // Phone only: the comments list as a bottom sheet.
 const sheetOpen = ref(false)
 // The canvas is open over the page: its tiles take the pins, and its panel (or on a phone the sheet) takes the list.
-const canvasOpen = computed(() => bridge.open)
-const sheetMode = computed(() => (canvasOpen.value ? bridge.phone : vw.value < 640))
+const canvasOpen = computed(() => canvas.open)
+const sheetMode = computed(() => (canvasOpen.value ? canvas.phone : vw.value < 640))
 // Our tooltips and sheet open in a plain host inside ours, so they keep their own z-index.
 const menuHost = ref<HTMLElement | null>(null)
 const portalHost = ref<HTMLElement | null>(null)
@@ -95,8 +96,8 @@ watch([picking, tweakLive, mode, () => page.ready], () => post('tool', { mode: m
 watch(
 	[tilePicking, mode, () => page.ready],
 	() => {
-		bridge.tool = tilePicking.value ? (mode.value === 'note' ? 'note' : 'comment') : ''
-		post('canvas:tool', { tool: bridge.tool })
+		canvas.tool = tilePicking.value ? (mode.value === 'note' ? 'note' : 'comment') : ''
+		post('canvas:tool', { tool: canvas.tool })
 	},
 	{ immediate: true },
 )
@@ -425,7 +426,7 @@ async function leaveCanvas() {
 	if (!canvasOpen.value) return
 	stayOpen = true
 	post('canvas:close', {})
-	await until(() => !bridge.open)
+	await until(() => !canvas.open)
 }
 // Show something pinned to a tile: open the canvas if it is not, bring the tile into view, then open the box at
 // its pin. A tile that has gone has no pin to open at (its row sits under "Removed from canvas"), so the box opens beside
@@ -433,9 +434,9 @@ async function leaveCanvas() {
 async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
 	if (!canvasOpen.value) {
 		showView(spot.tile.view || `page:${spot.route}`)
-		if (!(await until(() => bridge.open && !!bridge.model))) return
+		if (!(await until(() => canvas.open && !!canvas.model))) return
 	}
-	const point = tileExists(bridge.model, spot) === false ? null : await revealTile(spot, { fx: at.x, fy: at.y })
+	const point = tileExists(canvas.model, spot) === false ? null : await revealTile(spot, { fx: at.x, fy: at.y })
 	if (unmounted) return
 	if (point) return show(point.x, point.y)
 	const r = row?.getBoundingClientRect()
@@ -491,22 +492,22 @@ onMounted(openCommenting)
 // `handlers`; the tabs are the lists with this toolbar's actions wired in.
 const commentsTab = markRaw(defineComponent({ setup: () => () => h(CanvasComments, { route: key.value, onChoose: openFromList }) }))
 const notesTab = markRaw(defineComponent({ setup: () => () => h(CanvasNotes, { selected: canvasUi.noteId, onChoose: openNoteFromList }) }))
-bridge.canComment = !guest
-bridge.canNote = noter
-bridge.Pins = markRaw(TilePins)
-bridge.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
+canvas.canComment = !guest
+canvas.canNote = noter
+canvas.Pins = markRaw(TilePins)
+canvas.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
 handlers.thread = openThreadAt
 handlers.note = openEdit
 handlers.draft = reopenDraft
 onBeforeUnmount(() => {
-	Object.assign(bridge, { canComment: false, canNote: false, tool: '', Pins: null, tabs: {}, tab: 'browse' })
+	Object.assign(canvas, { canComment: false, canNote: false, tool: '', Pins: null, tabs: {}, tab: 'browse' })
 	handlers.thread = handlers.note = handlers.draft = null
 })
 // The canvas reads the threads as it opens, and its tab shows no count until it knows both the threads and the tiles:
 // the server's number cannot know which tiles have gone, and a count that changes when the tab opens is wrong at first.
 watch(canvasOpen, (open) => open && !guest && void load(true), { immediate: true })
-const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !bridge.model) ? 0 : openCount.value))
-watch([tabCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
+const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !canvas.model) ? 0 : openCount.value))
+watch([tabCount, () => notes.value.length], ([c, n]) => (canvas.counts = { comments: c, notes: n }), { immediate: true })
 
 // A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
 async function openNoteFromList(n: Note, row?: HTMLElement) {
@@ -646,12 +647,12 @@ watch(
 	() => {
 		if (!canvasOpen.value) return
 		const tab = enabled.value && active.value && !guest ? (mode.value === 'note' ? 'notes' : mode.value === 'comment' ? 'comments' : 'browse') : 'browse'
-		if (bridge.tab !== tab) bridge.tab = tab
+		if (canvas.tab !== tab) canvas.tab = tab
 	},
 	{ immediate: true },
 )
 watch(
-	() => bridge.tab,
+	() => canvas.tab,
 	(tab) => {
 		if (!canvasOpen.value || guest) return
 		if (tab === 'browse') {
@@ -851,7 +852,7 @@ const navH = computed(() => page.navBottom)
 // Above the Variants pill when there is one: the shell's pill publishes its height in --sketch-variants-h (DemoPill.vue).
 // The faint trigger sits where the toolbar last snapped: 12px in from a corner, centred on a centre anchor.
 // The canvas's panel covers the right edge: the toolbar and its trigger sit in the room left of it.
-const reserve = computed(() => (canvasOpen.value ? bridge.reserve : 0))
+const reserve = computed(() => (canvasOpen.value ? canvas.reserve : 0))
 const triggerStyle = computed(() => {
 	const [v, h] = (moved.value ? anchor.value : 'bottom-right').split('-')
 	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: `${12 + navH.value}px` }
@@ -884,7 +885,7 @@ function place(a: Anchor) {
 	const [v, h] = a.split('-')
 	const room = vw.value - reserve.value
 	// On the canvas the zoom pill holds the bottom-right corner; parked there, the toolbar stands left of it.
-	const corner = canvasOpen.value && v === 'bottom' && h === 'right' ? bridge.corner : 0
+	const corner = canvasOpen.value && v === 'bottom' && h === 'right' ? canvas.corner : 0
 	const left = h === 'left' ? INSET : h === 'right' ? room - slotW.value - INSET - corner : (room - slotW.value) / 2
 	const top = v === 'top' ? INSET : vh.value - bh.value - INSET - navH.value
 	return { left: clamp(left, 0, Math.max(0, vw.value - bw.value)), top: clamp(top, 0, Math.max(0, vh.value - bh.value)) }
@@ -1524,7 +1525,7 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 					</div>
 				</Tooltip>
 
-				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || bridge.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600" :disabled="phone">
+				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || canvas.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600" :disabled="phone">
 					<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
 				</Tooltip>
 

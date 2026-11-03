@@ -5,7 +5,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget, toast } from 'frappe-ui'
-import { applyPicks, menuBind, picksShown, picksWords } from './variants'
+import { applyPicks, picksShown } from './canvas'
+import { menuBind } from '../shared/menus'
+import { picksWords } from '../shared/picks'
 import { host } from './host'
 import {
 	MAX_BYTES,
@@ -277,7 +279,7 @@ function onKey(e: KeyboardEvent) {
 				<p class="shrink-0 text-p-sm font-normal text-ink-gray-6">{{ thread.resolved ? 'Comment · Resolved' : 'Comment' }}</p>
 				<!-- Made on other options than the defaults: the words, and when the page is not showing them, the way back to them. -->
 				<Tooltip v-if="picksWhere && !picksNow" text="Show the page this was made on" :hover-delay="600">
-					<button type="button" class="min-w-0 rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3" @click="applyPicks(picks, host.router)">
+					<button type="button" class="min-w-0 rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3" @click="applyPicks(picks)">
 						<Badge theme="gray" size="sm" class="max-w-full cursor-pointer hover:bg-surface-gray-3"><span class="truncate">On {{ picksWhere }}</span></Badge>
 					</button>
 				</Tooltip>

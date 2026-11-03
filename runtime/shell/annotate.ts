@@ -3,7 +3,7 @@
 // frame, which picks them (runtime/agent/pick.ts); a note holds what the frame reported about them.
 // Saved state is restored by notes.ts from the shell's boot JSON.
 import { ref } from 'vue'
-import { whereOf, type TileRef } from './variants'
+import { whereOf, type TileRef } from '../shared/tiles'
 import { subject } from './host'
 import { elementLine } from '../shared/tweak'
 import { UI_ATTR, type BoxInfo, type ElInfo } from '../agent/dom'

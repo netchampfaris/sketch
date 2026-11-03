@@ -1,20 +1,14 @@
-// The shell's side of the Demo and the canvas, for the toolbar, the comment and note components and the canvas
-// layer. The Demo and the canvas are in the frame (runtime/variants), so the answers here come from what the frame
-// reported (frame.ts `page`, and the `canvas` message here), and a change goes to the frame as a message.
+// The shell's side of the frame's canvas (and of its Demo picks), for the toolbar, the comment and note components and
+// the canvas layer. The Demo and the canvas are in the frame (runtime/variants), so the answers here come from what the
+// frame reported (frame.ts `page`, and the `canvas` message here), and a change goes to the frame as a message.
 //
 // The canvas's tiles, pan and zoom are the frame's; the shell draws the panel, the toolbar and the pins on the
 // tiles over it (CanvasLayer.vue), from the tiles' boxes in the canvas's own coordinates and the pan and zoom.
-import { ref, shallowReactive, type Component } from 'vue'
+import { shallowReactive, type Component } from 'vue'
 import { onFrame, onGone, page, post } from './frame'
 import { picksShownIn, reachableIn, type DemoPick } from '../shared/picks'
 import { sameTile, type TileSpot } from '../shared/tiles'
 import type { CanvasPage, PickItem } from '../shared/protocol'
-
-export { sameTile, tileLabel, whereOf } from '../shared/tiles'
-export type { TileHit, TileRef, TileSpot } from '../shared/tiles'
-export { picksWords } from '../shared/picks'
-export type { DemoPick }
-export { hasUnreadThreads, readThread, setUnread } from './badges'
 
 export type Tab = 'browse' | 'comments' | 'notes'
 // A tile as the shell holds it: its box before pan and zoom, and the spot it is.
@@ -37,7 +31,7 @@ export type ShellTile = {
 // The panel on the right of the canvas (runtime/variants/Canvas.vue PANEL_W): 12px off the edge, 300px wide.
 export const PANEL_W = 312
 
-export const bridge = shallowReactive({
+export const canvas = shallowReactive({
 	// ---- What the frame says of the canvas
 	open: false,
 	phone: false,
@@ -67,18 +61,18 @@ export const bridge = shallowReactive({
 })
 
 onFrame('canvas', (d) => {
-	const was = bridge.open
-	Object.assign(bridge, { open: d.open, phone: d.phone, view: d.view, zoom: d.zoom, pan: d.pan, corner: d.corner })
+	const was = canvas.open
+	Object.assign(canvas, { open: d.open, phone: d.phone, view: d.view, zoom: d.zoom, pan: d.pan, corner: d.corner })
 	if (d.tiles)
-		bridge.tiles = d.tiles.map(({ rect, route, tile, ...t }) => ({ ...t, ...rect, spot: { route, tile } }))
-	if (d.pages) bridge.model = d.pages
-	if (d.items) bridge.items = d.items
+		canvas.tiles = d.tiles.map(({ rect, route, tile, ...t }) => ({ ...t, ...rect, spot: { route, tile } }))
+	if (d.pages) canvas.model = d.pages
+	if (d.items) canvas.items = d.items
 	// Closed, the canvas has no tiles: a pin list or a count must not read the last ones.
-	if (was && !d.open) Object.assign(bridge, { tiles: [], model: null, items: [], view: '' })
+	if (was && !d.open) Object.assign(canvas, { tiles: [], model: null, items: [], view: '' })
 })
 // A reloaded frame says everything again.
 onGone(() => {
-	Object.assign(bridge, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0 })
+	Object.assign(canvas, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0 })
 	chosen = ''
 })
 
@@ -99,25 +93,13 @@ export function takeChosen(view: string): boolean {
 }
 
 // ---- Tiles as data
-export const spotOf = (t: ShellTile, _view?: string): TileSpot => t.spot
-export const findTile = (tiles: ShellTile[], spot: TileSpot, _view?: string) => tiles.find((t) => sameTile(t.spot, spot))
-
-// Whether the canvas still has this tile: null until the pages are known.
-export function tileExists(model: CanvasPage[] | null, spot: TileSpot): boolean | null {
-	if (!model) return null
-	const p = model.find((x) => x.path === spot.route)
-	if (!p) return false
-	const { kind, groupKey, option } = spot.tile
-	if (kind === 'default') return true
-	if (kind === 'set') return !!p.sets.find((s) => s.key === groupKey)?.options.includes(option)
-	return !!p.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
-}
+export const findTile = (tiles: ShellTile[], spot: TileSpot) => tiles.find((t) => sameTile(t.spot, spot))
 
 // A spot on a tile on the screen now: pan + its place on the tile * zoom. Null when the canvas does not show the tile.
 export function pointOf(spot: TileSpot, at: { fx: number; fy: number }) {
-	const t = findTile(bridge.tiles, spot)
+	const t = findTile(canvas.tiles, spot)
 	if (!t) return null
-	return { x: bridge.pan.x + (t.x + at.fx * t.w) * bridge.zoom, y: bridge.pan.y + (t.y + at.fy * t.h) * bridge.zoom }
+	return { x: canvas.pan.x + (t.x + at.fx * t.w) * canvas.zoom, y: canvas.pan.y + (t.y + at.fy * t.h) * canvas.zoom }
 }
 
 // Bring a tile into view (the frame pans to it) and give the spot's point on the screen. Null when the canvas no longer
@@ -149,20 +131,6 @@ export const titleOfRoute = (r: { meta?: { title?: string }; path: string }) => 
 // The Demo picks: on show when the frame's Demo shows them; putting them back is the frame's to do.
 export const picksShown = (picks: DemoPick[] | undefined) => picksShownIn(page.demo, picks)
 export const picksAvailable = (picks: DemoPick[] | undefined) => (picks ?? []).every((p) => reachableIn(page.demo, p))
-export function applyPicks(picks: DemoPick[] | undefined, _router?: unknown) {
+export function applyPicks(picks: DemoPick[] | undefined) {
 	post('picks:apply', { picks: (picks ?? []).map(({ kind, path, key, option }) => ({ kind, path, key, option })) })
-}
-
-// One dropdown open at a time across the shell's toolbar, comment box and panel (runtime/variants/menus.ts).
-const current = ref<string | null>(null)
-export function menuBind(key: string, onOpen?: () => void) {
-	return {
-		open: current.value === key,
-		'onUpdate:open': (o: boolean) => {
-			if (o) {
-				current.value = key
-				onOpen?.()
-			} else if (current.value === key) current.value = null
-		},
-	}
 }
