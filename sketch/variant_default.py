@@ -276,7 +276,14 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 		action=versions.MADE_DEFAULT,
 		label=label,
 	)
-	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
+	return {
+		"file": file,
+		"name": name,
+		"set": name,
+		"option": option,
+		"label": label,
+		"sequence": version.sequence if version else None,
+	}
 
 
 def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
@@ -307,11 +314,12 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 		label = done.label or label_of(option)
 		result = versions.undo(doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}")
 	else:
+		label = label_of(option)
 		result = versions.undo(
-			doc, sequence, f"Undid making \u201c{label_of(option)}\u201d the default for {name}", only=[file]
+			doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}", only=[file]
 		)
 
-	return {"file": file, "name": name, "option": option, **result}
+	return {"file": file, "name": name, "set": name, "option": option, "label": label, **result}
 
 
 # ---------------------------------------------------------------- keep only this
@@ -454,6 +462,7 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	return {
 		"file": file,
 		"name": name,
+		"set": name,
 		"option": "original" if replaced else editor_variants.option_of(kept_path) if kept_path else option,
 		"label": label,
 		# The component's own version goes too, when a person's replaced it.
@@ -479,6 +488,8 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 	return {
 		"file": file,
 		"name": name,
+		"set": name,
 		"option": option,
+		"label": label,
 		**versions.undo(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
 	}

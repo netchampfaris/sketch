@@ -264,7 +264,9 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	return {
 		"file": host_file,
 		"name": set_name,
+		"set": set_name,
 		"option": option_of(destination),
+		"label": label,
 		"sequence": version.sequence if version else None,
 	}
 
@@ -312,6 +314,7 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 		frappe.throw(frappe._("That variant is already gone."), frappe.ValidationError)
 
 	# A broken tag still deletes; it just has no label.
+	meta = meta_at(doc.name, path) or {}
 	label = label_at(doc.name, path)
 	versions.commit_before(doc, "Changes before a variant was deleted", [path], by)
 
@@ -326,7 +329,13 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	version = versions.commit(
 		doc, f"Deleted the variant “{label}”", source="App", by=by, action=versions.DELETED_VARIANT, label=label
 	)
-	return {"option": option, "label": label, "sequence": version.sequence if version else None}
+	return {
+		"file": path,
+		"set": _set_of(meta),
+		"option": option,
+		"label": label,
+		"sequence": version.sequence if version else None,
+	}
 
 
 def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
@@ -340,7 +349,20 @@ def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> di
 		frappe.throw(frappe._("You can undo your own deletions only."), frappe.PermissionError)
 
 	by = None if is_owner else username
-	return versions.undo(doc, sequence, f"Undid deleting the variant “{done.label}”", by)
+	path = path_of(option)
+	result = versions.undo(doc, sequence, f"Undid deleting the variant “{done.label}”", by)
+	return {
+		"file": path,
+		"set": _set_of(meta_at(doc.name, path) or {}),
+		"option": option,
+		"label": done.label,
+		**result,
+	}
+
+
+def _set_of(meta: dict) -> str:
+	"""The set a variant joins: its `set`, or the component it wraps."""
+	return meta.get("set") or meta.get("component") or ""
 
 
 def _int(value) -> int:
