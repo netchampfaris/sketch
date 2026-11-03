@@ -35,9 +35,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // The comment and note components the shell shares with the in-frame toolbar (runtime/annotate) ask
+      // `sketch:variants` for the Demo and the canvas; in the shell those answers come from the frame.
+      'sketch:variants': path.resolve(__dirname, '../runtime/shell/variants.ts'),
     },
-    // runtime/shell sits outside this folder, so its imports resolve from here: one Vue, one frappe-ui.
-    dedupe: ['vue', 'frappe-ui'],
+    // runtime/shell and runtime/annotate sit outside this folder, so their imports resolve from here: one of each.
+    dedupe: ['vue', 'frappe-ui', 'vue-router', '@vueuse/core'],
   },
   build: {
     rollupOptions: {

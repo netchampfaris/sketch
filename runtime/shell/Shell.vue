@@ -4,12 +4,20 @@
 // credential. Everything that acts as the reader, or shows a person's data, is drawn here, on Sketch's
 // origin, over the frame (plan steps 3 to 6 move it in). The shell never scrolls; the frame's rects are
 // the shell's coordinates.
-import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
-import { envelope, fromFrame, read, type FromFrame, type Theme, type ToFrame } from '../shared/protocol'
+import { fromFrame, read, type FromFrame, type Theme } from '../shared/protocol'
+import { host, type Role } from '../annotate/host'
+import { transport } from '../annotate/comments'
 import type { ShellBoot } from './boot'
 import { applyTheme, resolveTheme, watchTheme } from './theme'
 import { startLiveReload } from './liveReload'
+import { call, initApi } from './api'
+import { initBadges } from './badges'
+import { frameGone, page, post, receive, setFrameWindow } from './frame'
+import { restoreNotes, startSaving } from './notes'
+import Toolbar from './Toolbar.vue'
 
 const props = defineProps<{ boot: ShellBoot }>()
 
@@ -20,8 +28,41 @@ const frame = shallowRef<HTMLIFrameElement | null>(null)
 const theme = ref<Theme>(resolveTheme(props.boot.theme))
 applyTheme(theme.value)
 
-// What the frame last said about itself. Later steps lay the chrome out from it.
-const page = reactive({ ready: false, status: '', routes: [] as string[], vw: 0, vh: 0, navBottom: 0, pageLayerOpen: false })
+// What the frame last said about itself lives in frame.ts `page`: the chrome lays itself out from it.
+watch(frame, (el) => setFrameWindow(el?.contentWindow ?? null), { flush: 'sync' })
+
+// ---- Who is reading, for the toolbar -------------------------------------------------------
+// Note is the owner's, and an invited editor's own; Comment is anyone signed in who can open the page
+// (`me`); a signed-out visitor to a public Prototype gets "Sign in to comment". Nobody else gets a toolbar.
+const boot = props.boot
+const noter = boot.role === 'owner' || (boot.role === 'editor' && !!boot.me)
+const role: Role = noter ? (boot.role as Role) : boot.me ? 'reader' : 'guest'
+const toolbar = noter || !!boot.me || boot.sign_in
+if (toolbar) {
+	initApi(boot.name, boot.csrf_token)
+	Object.assign(host, { name: boot.name, title: (boot.title ?? '').trim(), role, me: boot.me?.username ?? '', openCount: Number(boot.comments_open) || 0 })
+	// Every comment call goes over the session (sketch.viewer_api), never with anything the frame holds.
+	transport.call = (method, fields) => call(method, fields)
+	initBadges(boot.badges, !!boot.me)
+	if (noter) {
+		restoreNotes(boot.annotations, boot.annotations_epoch)
+		startSaving()
+	}
+}
+// The toolbar comes once the Prototype has drawn, as it did in the frame, and stays through a live reload.
+const shown = ref(false)
+watch(
+	() => page.ready && !STATUS_SCREENS.includes(page.status),
+	(ok) => {
+		if (!ok) return
+		shown.value = toolbar
+		// The page names, for the comments list's groups (annotate/host.ts pageNameOf). Nothing renders from it.
+		host.router = createRouter({
+			history: createMemoryHistory(),
+			routes: page.pages.map((p) => ({ path: p.path, component: { render: () => null }, meta: { title: p.title } })),
+		})
+	},
+)
 
 // The iframe is recreated (a new key) to reload it, so a reload is a fresh load even when the URL is the same.
 const generation = ref(0)
@@ -35,20 +76,14 @@ function frameUrl() {
 }
 
 function reloadFrame() {
-	page.ready = false
+	frameGone()
 	src.value = frameUrl()
 	generation.value++
 }
 
-function post<K extends keyof ToFrame>(type: K, data: ToFrame[K]) {
-	// An opaque origin has no name to target. Nothing the shell sends the frame is secret.
-	frame.value?.contentWindow?.postMessage(envelope(type, data), '*')
-}
-
 // ---- Frame -> shell -------------------------------------------------------------------------
 const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
-	ready: ({ status, routes }) => {
-		Object.assign(page, { ready: true, status, routes })
+	ready: ({ status }) => {
 		if (STATUS_SCREENS.includes(status)) {
 			const owner = props.boot.role === 'owner'
 			post('copy', { owner, reloads: owner && !!props.boot.rev })
@@ -64,9 +99,8 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 		theme.value = next
 		applyTheme(next)
 	},
-	layout: (d) => Object.assign(page, d),
-	// model, hover, pick, rects, track, canvas, tile:menu, tile:pick, key and tweak:info are read by the
-	// validators already and handled from plan steps 3 to 6.
+	// layout, demo, canvas, hover, pick, drag, rects, track and key go to frame.ts (`receive`), for the toolbar.
+	// model, tile:menu, tile:pick and tweak:info are read by the validators already and handled from plan steps 4 to 6.
 }
 
 function onMessage(e: MessageEvent) {
@@ -74,6 +108,7 @@ function onMessage(e: MessageEvent) {
 	if (!frame.value || e.source !== frame.value.contentWindow || e.origin !== 'null') return
 	const msg = read<FromFrame>(e.data, fromFrame)
 	if (!msg) return
+	receive(msg.type, msg.data as never)
 	;(handlers[msg.type] as ((d: unknown) => void) | undefined)?.(msg.data)
 }
 
@@ -125,6 +160,8 @@ onBeforeUnmount(() => {
 			style="height: 100dvh"
 		/>
 		<!-- Sketch's chrome over the frame. It takes no pointer events itself; each widget opts back in. -->
-		<div data-sketch-ui="shell" class="pointer-events-none fixed inset-0" />
+		<div data-sketch-ui="shell" class="pointer-events-none fixed inset-0">
+			<Toolbar v-if="shown" :noter="noter" />
+		</div>
 	</FrappeUIProvider>
 </template>

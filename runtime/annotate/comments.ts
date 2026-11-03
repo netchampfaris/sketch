@@ -95,9 +95,14 @@ export class HttpError extends Error {
   }
 }
 
+// How a call reaches the server. Here in the frame, signed with the pass; the Viewer shell swaps in its
+// session calls (runtime/shell/api.ts), and the rest of this file is the same for both.
+export const transport = { call: passCall as <T = any>(method: string, fields: Record<string, string>) => Promise<T> }
+const call = <T = any>(method: string, fields: Record<string, string> = {}) => transport.call<T>(method, fields)
+
 // One call as the signed-in person. A 404 may only mean the pass went stale, so it is asked for
 // again once before it counts.
-async function call<T = any>(method: string, fields: Record<string, string> = {}): Promise<T> {
+async function passCall<T = any>(method: string, fields: Record<string, string> = {}): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const p = await ensurePass(attempt > 0)
     const form = new URLSearchParams({ name: host.name, username: host.me, exp: String(p.exp), sig: p.sig, ...fields })
