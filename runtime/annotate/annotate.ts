@@ -5,12 +5,14 @@
 import { ref, shallowRef, type Ref } from 'vue'
 import { whereOf, type TileRef } from 'sketch:variants'
 import { subject } from './host'
-import type { TweakItem } from './tweak'
+import type { TweakItem } from '../shared/tweak'
+import { elementLine } from '../shared/tweak'
 import { resolve, UI_ATTR, type BoxInfo, type ElInfo } from '../agent/dom'
 
 // The DOM helpers moved to runtime/agent/dom.ts, where the shell's frame agent uses them too. They are
 // re-exported here so the in-frame toolbar and tweak tool read them as before.
 export * from '../agent/dom'
+export { elementLine }
 
 export type Note = {
   id: string
@@ -144,10 +146,6 @@ export function pinPoint(n: Note): { x: number; y: number } {
 
 // ---- Prompt ----------------------------------------------------------------------------
 // Text beats classes: `h2 "Hand over work"` finds the element faster than `h2.text-lg`.
-export function elementLine(element: string, text: string): string {
-  const tag = element.split(/[.\s]/)[0]
-  return text ? `${tag} "${text}"` : element
-}
 
 export function buildPrompt(list: Note[]): string {
   const out = [`Feedback on ${subject()} (${list.length} ${list.length === 1 ? 'note' : 'notes'})`]

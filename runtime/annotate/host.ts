@@ -81,13 +81,8 @@ export const isGuest = () => host.role === 'guest'
 // How the prompts name the Prototype.
 export const subject = () => (host.title ? `the ${host.title} prototype` : 'the prototype')
 
-// A file is data (not copy) when any folder is data, fixtures or mocks, or its name says so.
-// Hard-coded text found only in these files is a value the page shows, not wording to edit.
-export function isDataFile(path: string): boolean {
-  const parts = path.split('/')
-  const base = parts[parts.length - 1]
-  return parts.slice(0, -1).some((p) => /^(data|fixtures|mocks)$/i.test(p)) || /^(data|fixtures|mock[^.]*)\./i.test(base)
-}
+// A file is data (not copy) when a folder or its name says so: runtime/shared/tweak.ts, shared with the frame agent.
+export { isDataFile } from '../shared/tweak'
 
 // The page a route belongs to, named the way the canvas names it (titleOfRoute: meta.title, else the humanised
 // component name). A route that matches nothing falls back to its first path segment, and the root to "Home".

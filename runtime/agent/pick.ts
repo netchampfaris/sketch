@@ -24,6 +24,7 @@ import {
 	type Redline,
 } from './dom'
 import type { BoxInfo, FromFrame, Pick, Rect, ToFrame } from '../shared/protocol'
+import { elOf, refOf } from './refs'
 import type { DemoPick } from '../shared/picks'
 
 type Post = <K extends keyof FromFrame>(type: K, data: FromFrame[K]) => void
@@ -36,24 +37,6 @@ const centreOf = (el: Element) => {
 
 // `picksNow` is what the Demo shows on this page now (sketch:variants currentPicks), or nothing without a Demo.
 export function startPicking(post: Post, picksNow: () => DemoPick[]) {
-	// ---- Refs: elements picked this visit, by a name the shell can hand back -----------------------
-	const byRef = new Map<string, WeakRef<Element>>()
-	const refs = new WeakMap<Element, string>()
-	let next = 0
-	function refOf(el: Element): string {
-		let r = refs.get(el)
-		if (!r) {
-			r = `e${++next}`
-			refs.set(el, r)
-			byRef.set(r, new WeakRef(el))
-		}
-		return r
-	}
-	const elOf = (ref: string | undefined) => {
-		const el = ref ? byRef.get(ref)?.deref() : undefined
-		return el?.isConnected ? el : null
-	}
-
 	function pickOf(el: Element, kind: Pick['kind'], x: number, y: number, more: { shift?: boolean; keyboard?: boolean; box?: BoxInfo } = {}): Pick {
 		const c = componentOf(el)
 		return {
