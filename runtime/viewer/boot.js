@@ -150,9 +150,22 @@ function setTitle(data) {
 // of the Prototype: no poller.
 const framed = window.top !== window.self
 
+// The Viewer shell's frame (sketch/viewer.py SHELL_FLAG): the renderer marks its payload `chrome: 'shell'`.
+// It is framed, by Sketch's own page, and it keeps the page's chrome.
+const inShell = (data) => data.chrome === 'shell'
+
 // A framed Viewer and a `check` run (the Guest request that carries `sig` in its URL) show the design
 // alone: Variants reads this and leaves its pill out.
-if (framed || new URLSearchParams(location.search).has('sig')) document.documentElement.dataset.sketchChrome = 'off'
+function chromeOff(data) {
+  if (data.chrome === 'off' || new URLSearchParams(location.search).has('sig')) return true
+  return framed && !inShell(data)
+}
+
+// In the shell's frame the payload says nothing about who is reading, so the status copy takes its two
+// facts from the shell (the agent's `copy` message). Elsewhere they come from the payload, as before.
+let copyHints = null
+const ownerCopy = (data) => (copyHints ? copyHints.owner : Boolean(data.is_owner))
+const reloadCopy = (data) => (copyHints ? copyHints.reloads : reloadsItself(data))
 
 // The one answer to "does this tab reload itself". startLiveReload and the
 // status copy both read it, so the promise can never outlive the poller. The
@@ -200,21 +213,21 @@ function errorWhere(error) {
 }
 
 function emptyScreen(box, data, name) {
-  const owner = Boolean(data.is_owner)
+  const owner = ownerCopy(data)
   box.append(el('p', 'text-base-medium text-ink-gray-8', owner ? 'Waiting for your agent' : 'Nothing to show yet'))
 
   const lines = [`${name} has no files yet.`]
   lines.push(owner ? 'Ask your agent to build a page.' : 'The owner has not built a page yet.')
   // Only a page with a poller behind it may promise a reload.
-  if (reloadsItself(data)) lines.push('This tab reloads itself when the files arrive.')
+  if (reloadCopy(data)) lines.push('This tab reloads itself when the files arrive.')
   box.append(el('p', 'sk-status-body text-p-sm text-ink-gray-5', lines.join(' ')))
 }
 
 function failedScreen(box, data, status) {
   box.append(el('p', 'text-base-medium text-ink-gray-8', FAILED_HEADING[status]))
 
-  const lead = data.is_owner
-    ? reloadsItself(data)
+  const lead = ownerCopy(data)
+    ? reloadCopy(data)
       ? 'Send these errors to your agent. This tab reloads itself after the fix.'
       : 'Send these errors to your agent.'
     : 'The owner has to fix these errors.'
@@ -489,6 +502,7 @@ function variantsOf(data, compiled, blocks, skip, loader) {
 async function run() {
   const data = readData()
   payload = data
+  if (chromeOff(data)) document.documentElement.dataset.sketchChrome = 'off'
   applyTheme(data.theme)
   setTitle(data)
   // Before the early returns below: an empty or broken tree must reload too.
@@ -724,10 +738,33 @@ async function run() {
   t.twDone = performance.now()
 
   report('ok')
+  // In the shell's frame the chrome that acts is the shell's, and the agent started from report().
+  if (inShell(data)) return
   startAnnotate(data)
   startMakeDefault(data)
   startVariantEdit(data)
   startBadges(data)
+}
+
+// The shell's frame talks to the shell through the agent, whatever the status: an empty or broken tree
+// still needs its route, theme and status copy. It is a separate module like the toolbar, loaded after
+// the first paint, and a failure to load it is a warning and nothing more.
+async function startShellAgent(status) {
+  try {
+    const { startAgent } = await import('sketch:agent')
+    startAgent({
+      status,
+      routes: router ? [...new Set(router.getRoutes().map((r) => r.path))] : [],
+      router,
+      repaint: (hints) => {
+        copyHints = hints
+        document.querySelector('.sk-status')?.remove()
+        paintStatus(status, payload || {})
+      },
+    })
+  } catch (e) {
+    console.warn('[sketch] the shell agent did not load:', e)
+  }
 }
 
 // The annotate toolbar: Note, Tweak and Comment for the owner's own live tab, Comment alone for a
@@ -816,6 +853,7 @@ function report(status) {
     // into it above. A DOM failure must take down neither.
   }
   parent.postMessage({ type: 'sketch:check', result }, '*')
+  if (payload && inShell(payload)) startShellAgent(status)
   return result
 }
 

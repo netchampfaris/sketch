@@ -22,7 +22,7 @@ BASE=/assets/sketch/runtimes/$VERSION
 
 # The shared source that goes into every Runtime. A change to any of it, or
 # to this version's lockfile, changes the stamp.
-SOURCES="runtime-entry tailwind viewer fonts annotate variants shared internals.css
+SOURCES="runtime-entry tailwind viewer fonts annotate agent variants shared internals.css
   internals.tailwind.config.js vite.runtime.config.js vite.annotate.config.js
   make-lucide-map.mjs make-manifest.mjs build.sh package.json"
 STAMP=$(cd "$HERE" && find $SOURCES "versions/$VERSION/package.json" "versions/$VERSION/yarn.lock" \
@@ -89,7 +89,7 @@ NM="$NM" ESBUILD="$ESBUILD" sh "$WORK/tailwind/build.sh" "$STAGE"
 # almost no Prototype sets in italic.
 cp "$NM/frappe-ui/src/fonts/Inter/Inter.var.woff2" "$STAGE/Inter.var.woff2"
 
-echo "[5/6] annotate toolbar"
+echo "[5/6] annotate toolbar and shell agent"
 # Owner-only: boot.js imports it for the owner's live tab, nobody else downloads it. It builds after
 # the frappe-ui step because it shares that step's output folder (emptyOutDir is off in both).
 RUNTIME_OUT="$STAGE" "$NM/.bin/vite" build -c "$WORK/vite.annotate.config.js" >/dev/null

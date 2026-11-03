@@ -8,8 +8,8 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const outDir = process.env.RUNTIME_OUT
 if (!outDir) throw new Error('RUNTIME_OUT is not set. Run runtime/build.sh <version>.')
 
-// The annotate toolbar (imported by boot.js for the owner's live tab) and `sketch:variants` (imported
-// by Prototypes): one ES module each. Everything the Prototype already loads stays external, so both
+// The annotate toolbar (imported by boot.js for the owner's live tab), the shell agent (the shell's
+// frame) and `sketch:variants` (imported by Prototypes): one ES module each. Everything the Prototype already loads stays external, so both
 // share its Vue, router, frappe-ui and vueuse through the import map and add none of them to the download. `frappe-ui/list` is
 // matched by the pattern with the main entry.
 export default defineConfig({
@@ -26,6 +26,8 @@ export default defineConfig({
     lib: {
       entry: {
         annotate: path.resolve(here, 'annotate/index.ts'),
+        // The Viewer shell's frame side (runtime/agent): boot.js imports it when the payload says chrome 'shell'.
+        agent: path.resolve(here, 'agent/index.ts'),
         variants: path.resolve(here, 'variants/index.ts'),
       },
       formats: ['es'],
