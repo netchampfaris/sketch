@@ -4,9 +4,9 @@
 // owner and on an editor's own.
 //
 // The frame may post `tile:menu` whenever it likes, so the menu could open under a pointer that was aiming at the page.
-// An item acts only on a press that began on it, at least 300 ms after the menu opened, so a press already on its way
-// (or one dragged in from the page) does nothing. The menu takes the focus as it opens, so keys meant for the page
-// (an arrow, a letter, Enter) would land in it: Enter or Space acts only when the focus was already in the shell.
+// An item acts only on a press that began on it, at least 300 ms after the menu opened (FrameAnchor.vue), so a press
+// already on its way (or one dragged in from the page) does nothing. The menu takes the focus as it opens (frappe-ui's
+// Dropdown has no way to stop it), so keys meant for a field (a letter, Enter) would land in it: no key acts on an item.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Dropdown, toast } from 'frappe-ui'
@@ -15,8 +15,7 @@ import { canDelete, deleteFailure, deleteVariant, isOwner, keepFailure, keepOnly
 import { onFrame, onGone, post } from './frame'
 import { canvas, type ShellTile } from './canvas'
 import { menuBind } from '../shared/menus'
-
-const GUARD_MS = 300
+import FrameAnchor from './FrameAnchor.vue'
 
 const at = ref<{ tileId: string; rect: Rect } | null>(null)
 const tile = computed<ShellTile | null>(() => (at.value ? (canvas.tiles.find((t) => t.id === at.value!.tileId) ?? null) : null))
@@ -29,18 +28,12 @@ const open = computed({
 	},
 })
 
-let openedAt = 0
-let keysOk = false
-let armed: { label: string; t: number } | null = null
+const anchor = ref<InstanceType<typeof FrameAnchor> | null>(null)
 onBeforeUnmount(
 	onFrame('tile:menu', (d) => {
 		// Only a tile the canvas shows now, and only while it is open.
 		if (!canvas.open || !canvas.tiles.some((t) => t.id === d.tileId)) return
 		at.value = d
-		openedAt = performance.now()
-		// With the focus in the frame the shell's document reports focus too, and the frame as its active element.
-		keysOk = document.hasFocus() && !(document.activeElement instanceof HTMLIFrameElement)
-		armed = null
 		bind.value['onUpdate:open'](true)
 	}),
 )
@@ -49,17 +42,17 @@ onBeforeUnmount(onGone(() => (open.value = false)))
 watch(open, (o) => post('display', { menuTile: o && at.value ? at.value.tileId : '' }))
 watch(() => canvas.open, (o) => !o && (open.value = false))
 
-// Which item a press or a key began on, and when.
-const itemOf = (t: EventTarget | null) => (t instanceof Element ? t.closest('[role="menuitem"]')?.textContent?.trim() ?? '' : '')
-useEventListener(document, 'pointerdown', (e: PointerEvent) => (armed = open.value ? { label: itemOf(e.target), t: performance.now() } : null), { capture: true })
-useEventListener(document, 'keydown', (e: KeyboardEvent) => {
-	if (open.value && (e.key === 'Enter' || e.key === ' ')) armed = keysOk ? { label: itemOf(e.target), t: performance.now() } : null
-}, { capture: true })
+// Which item a press began on. A key that activates an item (Enter, Space) drops the press.
+const itemOf = (el: Element | null) => el?.closest('[role="menuitem"]')?.textContent?.trim() ?? ''
+let keyed = false
+useEventListener(document, 'pointerdown', () => (keyed = false), { capture: true })
+useEventListener(document, 'keydown', (e: KeyboardEvent) => open.value && (e.key === 'Enter' || e.key === ' ') && (keyed = true), { capture: true })
 // A refused activation keeps the menu open (reka closes it unless the select is prevented).
 function guarded(label: string, run: () => void) {
 	return (e: Event) => {
-		const ok = !!armed && armed.label === label && armed.t - openedAt >= GUARD_MS
-		armed = null
+		const el = anchor.value?.take() ?? null
+		const ok = !keyed && !!el && itemOf(el) === label
+		keyed = false
 		if (!ok) return e.preventDefault()
 		run()
 	}
@@ -103,12 +96,8 @@ const items = computed(() => {
 <template>
 	<Dropdown v-model:open="open" :options="items">
 		<template #trigger>
-			<!-- Where the frame's ⋯ is: the menu hangs from it. It takes no pointer, the frame's button under it does. -->
-			<div
-				aria-hidden="true"
-				class="pointer-events-none fixed"
-				:style="at ? { left: `${at.rect.x}px`, top: `${at.rect.y}px`, width: `${at.rect.w}px`, height: `${at.rect.h}px` } : { left: '-9999px', top: '0', width: '1px', height: '1px' }"
-			/>
+			<!-- Where the frame's ⋯ is: the menu hangs from it. -->
+			<FrameAnchor ref="anchor" :rect="at?.rect ?? null" />
 		</template>
 	</Dropdown>
 </template>

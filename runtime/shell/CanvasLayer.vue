@@ -11,6 +11,7 @@ import { Button, Popover, Tooltip } from 'frappe-ui'
 import type { Rect } from '../shared/protocol'
 import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
+import FrameAnchor from './FrameAnchor.vue'
 import { placeToasts } from './actions'
 import { onFrame, onGone, page, post } from './frame'
 import { PANEL_W, canvas, showView } from './canvas'
@@ -37,7 +38,9 @@ function choose(v: string) {
 	showView(v)
 }
 // The phone's Show list, under the title pill's name where the frame says it is. The frame's name asks to open it or
-// to close it; a press in the frame while it is open closes it too, as a press outside does.
+// to close it; a press in the frame while it is open closes it too, as a press outside does. The frame may open it
+// whenever it likes, so a row shows only on a press that began on it at least 300 ms after the list opened, and the
+// search's Enter only after such a press in the list (FrameAnchor.vue): keys typed into a field as it opens pick nothing.
 const showAt = ref<Rect | null>(null)
 const showOpen = computed({
 	get: () => !!showAt.value && canvas.open && canvas.phone,
@@ -47,7 +50,15 @@ onBeforeUnmount(onFrame('canvas:show', (d) => (showAt.value = d.open && canvas.o
 onBeforeUnmount(onGone(() => (showAt.value = null)))
 watch(showOpen, (o) => post('display', { showOpen: o }))
 useEventListener(window, 'blur', () => showOpen.value && document.activeElement?.tagName === 'IFRAME' && (showOpen.value = false))
+const anchor = ref<InstanceType<typeof FrameAnchor> | null>(null)
+const list = ref<HTMLElement | null>(null)
+let clicked: Element | null = null
 function chooseOnPhone(v: string) {
+	const el = anchor.value?.take() ?? null
+	// A click names its row; the search's Enter names none, so the press must have been in the list.
+	const on = clicked ? clicked.closest('button') : list.value
+	clicked = null
+	if (!el || !on?.contains(el)) return
 	showOpen.value = false
 	choose(v)
 }
@@ -98,14 +109,10 @@ const inv = computed(() => 1 / canvas.zoom)
 
 		<Popover v-model:open="showOpen" trigger="manual" side="bottom" align="start" :offset="8" :collision-padding="12">
 			<template #trigger>
-				<!-- Where the frame's name is: the list hangs from it. It takes no pointer, the frame's button under it does. -->
-				<div
-					aria-hidden="true"
-					class="pointer-events-none fixed"
-					:style="showAt ? { left: `${showAt.x}px`, top: `${showAt.y}px`, width: `${showAt.w}px`, height: `${showAt.h}px` } : { left: '-9999px', top: '0', width: '1px', height: '1px' }"
-				/>
+				<!-- Where the frame's name is: the list hangs from it. -->
+				<FrameAnchor ref="anchor" :rect="showAt" />
 			</template>
-			<div class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui>
+			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="clicked = $event.target as Element" @keydown.capture="clicked = null">
 				<ShowList
 					:items="canvas.items"
 					:selected="canvas.view"
