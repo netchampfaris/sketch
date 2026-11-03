@@ -11,7 +11,6 @@ Every method carries type annotations, because `require_type_annotated_api_metho
 is set in hooks.py.
 """
 
-import json
 import os
 from datetime import UTC, datetime
 
@@ -19,7 +18,6 @@ import frappe
 from frappe.utils import cint, convert_utc_to_system_timezone, pretty_date
 
 from sketch import (
-	annotations,
 	badges,
 	checkd,
 	comments,
@@ -33,6 +31,7 @@ from sketch import (
 	thumbnails,
 	variant_default,
 	versions,
+	viewer_api,
 )
 from sketch.sketch.doctype.sketch_token import sketch_token
 
@@ -748,14 +747,12 @@ def save_annotations(
 		if not sharing.is_editor(name, user):
 			raise frappe.DoesNotExistError
 
-		saved = annotations.save(name, data, frappe.utils.cint(epoch), editor=user)
-		return {"updated": saved["updated"]}
+		return viewer_api.save_notes_as(name, data, epoch, editor=user)
 
 	if not signature.verify(name, exp, sig, signature.ANNOTATE):
 		raise frappe.DoesNotExistError
 
-	saved = annotations.save(name, data, frappe.utils.cint(epoch))
-	return {"updated": saved["updated"]}
+	return viewer_api.save_notes_as(name, data, epoch)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -802,64 +799,44 @@ def _commenter(name: str, username: str, exp: str, sig: str) -> comments.Actor:
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comments_list(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
 	"""Every thread on a Prototype, for someone who may comment on it."""
-	actor = _commenter(name, username, exp, sig)
-	threads = badges.decorate(name, actor.user, comments.list_threads(name))
-	return {
-		"threads": threads,
-		"people": comments.people_in(threads),
-		"mentionable": [p for p in comments.mentionable(name) if p["username"] != actor.username],
-		"me": actor.username,
-		"is_owner": actor.is_owner,
-	}
+	return viewer_api.comments_list_as(name, _commenter(name, username, exp, sig))
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_add(name: str, username: str = "", exp: str = "", sig: str = "", anchor: str = "", text: str = ""):
 	"""Start a thread on an element. Returns the thread."""
-	actor = _commenter(name, username, exp, sig)
-	thread = comments.add_thread(name, actor, anchor, text)
-	return comments.one_thread(name, thread, actor.user)
+	return viewer_api.comment_add_as(name, _commenter(name, username, exp, sig), anchor, text)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_reply(name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", text: str = ""):
 	"""Reply in a thread. Returns the thread."""
-	actor = _commenter(name, username, exp, sig)
-	comments.add_reply(name, actor, thread, text)
-	return comments.one_thread(name, thread, actor.user)
+	return viewer_api.comment_reply_as(name, _commenter(name, username, exp, sig), thread, text)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_edit(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "", text: str = ""):
 	"""Edit your own comment. Returns its thread."""
-	actor = _commenter(name, username, exp, sig)
-	return comments.one_thread(name, comments.edit(name, actor, comment, text), actor.user)
+	return viewer_api.comment_edit_as(name, _commenter(name, username, exp, sig), comment, text)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_delete(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
 	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
-	actor = _commenter(name, username, exp, sig)
-	return comments.one_thread(name, comments.delete(name, actor, comment), actor.user)
+	return viewer_api.comment_delete_as(name, _commenter(name, username, exp, sig), comment)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comment_restore(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
 	"""Undo a delete, for the person who made it, within minutes. Returns the thread."""
-	actor = _commenter(name, username, exp, sig)
-	return comments.one_thread(name, comments.restore(name, actor, comment), actor.user)
+	return viewer_api.comment_restore_as(name, _commenter(name, username, exp, sig), comment)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 def comments_delete_resolved(name: str, username: str = "", exp: str = "", sig: str = "", also: str = "") -> dict:
 	"""The owner deletes every resolved thread with its replies, and the threads named in `also` (a JSON list of ids:
 	the ones on canvas tiles that have gone, which the page counts as resolved). Anyone else gets 403."""
-	actor = _commenter(name, username, exp, sig)
-	try:
-		extra = json.loads(also or "[]")
-	except ValueError:
-		extra = []
-	return {"deleted": comments.delete_resolved(name, actor, extra)}
+	return viewer_api.comments_delete_resolved_as(name, _commenter(name, username, exp, sig), also)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -867,9 +844,7 @@ def comment_resolve(
 	name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", resolved: str = "1"
 ):
 	"""Resolve (or reopen, with resolved=0) a thread. Returns the thread."""
-	actor = _commenter(name, username, exp, sig)
-	comments.set_resolved(name, actor, thread, bool(frappe.utils.cint(resolved)))
-	return comments.one_thread(name, thread, actor.user)
+	return viewer_api.comment_resolve_as(name, _commenter(name, username, exp, sig), thread, resolved)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -882,16 +857,7 @@ def seen_mark(name: str, username: str = "", exp: str = "", sig: str = "", varia
 	"""
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
 	user = signature.signed_user(name, username, exp, sig, signature.SEEN)
-	return {"marked": badges.mark(name, user, _json_list(variants), _json_list(threads))}
-
-
-def _json_list(raw) -> list:
-	try:
-		data = json.loads(raw) if isinstance(raw, str) else raw
-	except ValueError:
-		return []
-
-	return data if isinstance(data, list) else []
+	return viewer_api.seen_mark_as(name, user, variants, threads)
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
