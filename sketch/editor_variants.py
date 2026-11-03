@@ -51,6 +51,11 @@ def option_of(path: str) -> str:
 	return path[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]
 
 
+def is_variant_path(path: str) -> bool:
+	"""True for a variant file's path: an editor's, or one the owner adopted."""
+	return sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)
+
+
 def meta_at(name: str, path: str) -> dict | None:
 	"""The `<variant>` tag of one file, or None when the file is gone, has none, or has one that cannot work."""
 	try:
@@ -115,8 +120,7 @@ def targeting(name: str, host_file: str, set_name: str) -> list[str]:
 	paths = [
 		row["path"]
 		for row in prototype_files.list_files(name)
-		if row["path"].endswith(".vue")
-		and (sharing.is_editor_path(row["path"]) or row["path"].startswith(sharing.ADOPTED_DIR))
+		if row["path"].endswith(".vue") and is_variant_path(row["path"])
 	]
 	return _of_set(name, host_file, set_name, paths)
 

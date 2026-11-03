@@ -26,7 +26,7 @@ import os
 
 import frappe
 
-from sketch import sharing, snapshots, versions, variant_default
+from sketch import editor_variants, snapshots, variant_default, versions
 
 FILE = "first-seen.json"
 SHAPE = 1
@@ -62,17 +62,18 @@ def _read_version(name: str, state: dict, sequence: int, manifest: dict, filed: 
 
 	now = {path: sha for path, sha in manifest.items() if path.endswith(".vue")}
 	was = state["manifest"]
-	gone = {sha: path for path, sha in was.items() if path not in now and _is_variant(path)}
+	gone = {
+		sha: path for path, sha in was.items() if path not in now and editor_variants.is_variant_path(path)
+	}
 	for path, sha in now.items():
 		if path not in filed:
 			continue
 
 		state["files"].setdefault(path, sequence)
-		if _is_variant(path):
-			option = path[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]
+		if editor_variants.is_variant_path(path):
 			moved = gone.get(sha)
-			origin = state["extras"].get(moved[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]) if moved else None
-			state["extras"].setdefault(option, origin or sequence)
+			origin = state["extras"].get(editor_variants.option_of(moved)) if moved else None
+			state["extras"].setdefault(editor_variants.option_of(path), origin or sequence)
 			continue
 
 		try:
@@ -90,10 +91,6 @@ def _read_version(name: str, state: dict, sequence: int, manifest: dict, filed: 
 					known.setdefault(slot["key"], sequence)
 
 	state["manifest"] = {**{p: sha for p, sha in was.items() if p in now}, **{p: now[p] for p in filed if p in now}}
-
-
-def _is_variant(path: str) -> bool:
-	return sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)
 
 
 def _path(name: str) -> str:
