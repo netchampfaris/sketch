@@ -5,16 +5,9 @@
 // gets one, so a Guest, a `check` and a framed card never see the button.
 import { shallowRef } from 'vue'
 import { toast } from 'frappe-ui'
+import { UNDO_MS, carrier } from './carry'
 import { humanise, type Opt } from './state'
 
-// The page reloads after a write, and a sandboxed page has no storage, so what the next page shows
-// rides in `window.name`, which survives a reload. MARK is a result to announce. PENDING is an Undo
-// toast that is on screen: a live reload (the agent wrote) must not drop it silently.
-const MARK = 'sketch:variant-default:'
-const PENDING = 'sketch:variant-undo:'
-// How long the Undo toast stays. The page takes a moment to reload, and the owner then looks for
-// the change before reaching for Undo.
-const UNDO_MS = 10000
 const GONE = "Can't undo anymore: the page changed since. Ask your agent instead."
 
 // The option a write has just put in place (Make default, Keep only this, or their Undo): the canvas rings its tile once it
@@ -48,6 +41,7 @@ type Note = {
   until?: number
 }
 type Flash = { error: string }
+const carry = carrier<Note | Flash>('sketch:variant-default:', 'sketch:variant-undo:')
 
 // Toasts sit above the pill stack and the annotate launcher in the corner, not over them. The
 // stack publishes its height in --sketch-variants-h. While the canvas's side panel is open it
@@ -73,22 +67,15 @@ export function enableMakeDefault(data: { name?: string; variant_exp?: string; v
   if (!data.name || !data.variant_exp || !data.variant_sig) return
   credential.value = { name: data.name, exp: data.variant_exp, sig: data.variant_sig }
   placeToasts()
-  const raw = window.name
-  const pending = raw.startsWith(PENDING)
-  if (!pending && !raw.startsWith(MARK)) return
-  try {
-    const note = JSON.parse(raw.slice((pending ? PENDING : MARK).length)) as Note | Flash
-    window.name = ''
-    if ('error' in note) return void toast.error(`Couldn't make it the default. ${note.error}`)
-    if (!pending) return announce(note, data.files)
-    if (!note.until || note.until <= Date.now()) return
-    // The reload came from a write while the toast was up. Undo is only safe if that write left the file alone.
-    if (hashOf(data.files?.[note.file]) === note.hash) announce(note, data.files)
-    else toast.error(GONE)
-  } catch {
-    // A page that set its own window.name never gets a toast.
-    window.name = ''
-  }
+  const left = carry.take()
+  if (!left) return
+  const { note, pending } = left
+  if ('error' in note) return void toast.error(`Couldn't make it the default. ${note.error}`)
+  if (!pending) return announce(note, data.files)
+  if (!note.until || note.until <= Date.now()) return
+  // The reload came from a write while the toast was up. Undo is only safe if that write left the file alone.
+  if (hashOf(data.files?.[note.file]) === note.hash) announce(note, data.files)
+  else toast.error(GONE)
 }
 
 const others = (n = 0) => (n ? `, removed ${n} other${n === 1 ? '' : 's'}` : '')
@@ -101,10 +88,8 @@ function announce(note: Note, files?: Record<string, string>) {
   const back = note.undo
   if (!back) return void toast.success(message)
   const until = note.until ?? Date.now() + UNDO_MS
-  const done = () => {
-    if (window.name.startsWith(PENDING)) window.name = ''
-  }
-  window.name = PENDING + JSON.stringify({ ...note, hash: hashOf(files?.[note.file]), until })
+  const done = () => carry.release()
+  carry.hold({ ...note, hash: hashOf(files?.[note.file]), until })
   toast.success(message, {
     duration: Math.max(until - Date.now(), 1000),
     onDismiss: done,
@@ -126,10 +111,7 @@ function announce(note: Note, files?: Record<string, string>) {
   })
 }
 
-function reload(note: Note | Flash) {
-  window.name = MARK + JSON.stringify(note)
-  location.reload()
-}
+const reload = (note: Note | Flash) => carry.reload(note)
 
 // Frappe answers a refusal with `_server_messages`: a JSON list of JSON strings, each with a `message`.
 function readError(body: any): string {

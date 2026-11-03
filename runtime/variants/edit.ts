@@ -3,13 +3,12 @@
 // (sketch.api.delete_variant_signed). The page reloads after the write and the Undo toast comes back with it, the way
 // Make default does (default.ts).
 import { toast } from 'frappe-ui'
+import { UNDO_MS, carrier } from './carry'
 import { editing } from './extras'
 import { placeToasts } from './default'
 
-const MARK = 'sketch:variant-deleted:'
-const UNDO_MS = 10000
-
 type Note = { option: string; label: string; sequence?: number; restored?: boolean; until?: number }
+const carry = carrier<Note>('sketch:variant-deleted:', 'sketch:variant-deleted-undo:')
 
 // True when the person looking can delete this option: every one for the owner, their own for an editor.
 // Adopted variants are the owner's files now, so an editor never gets the menu on one.
@@ -21,26 +20,30 @@ export const canDelete = (option: string) => {
 export function enableVariantEdit(data: { name?: string; editor?: string; is_owner?: boolean; edit_exp?: string; edit_sig?: string }) {
   if (!data.name || !data.editor || !data.edit_exp || !data.edit_sig) return
   editing.value = { name: data.name, user: data.editor, owner: Boolean(data.is_owner), exp: data.edit_exp, sig: data.edit_sig }
-  if (!window.name.startsWith(MARK)) return
+  const left = carry.take()
+  if (!left) return
   placeToasts()
-  try {
-    const note = JSON.parse(window.name.slice(MARK.length)) as Note
-    window.name = ''
-    announce(note)
-  } catch {
-    window.name = ''
-  }
+  // A reload while the Undo toast was up brings it back for the time it had left. The server refuses the Undo if a
+  // later write touched the file.
+  if (left.pending && !(left.note.until && left.note.until > Date.now())) return
+  announce(left.note)
 }
 
 function announce(note: Note) {
   if (note.restored) return void toast.success(`Restored ${note.label}`)
   if (!note.sequence) return void toast.success(`Deleted ${note.label}`)
   const sequence = note.sequence
+  const until = note.until ?? Date.now() + UNDO_MS
+  const done = () => carry.release()
+  carry.hold({ ...note, until })
   toast.success(`Deleted ${note.label}`, {
-    duration: UNDO_MS,
+    duration: Math.max(until - Date.now(), 1000),
+    onDismiss: done,
+    onAutoClose: done,
     action: {
       label: 'Undo',
       onClick: () => {
+        done()
         post('undo_delete_variant_signed', { option: note.option, sequence: String(sequence) })
           .then(() => reload({ option: note.option, label: note.label, restored: true }))
           .catch((e: Error) => toast.error(`Couldn't undo. ${e.message}`))
@@ -49,10 +52,7 @@ function announce(note: Note) {
   })
 }
 
-function reload(note: Note) {
-  window.name = MARK + JSON.stringify(note)
-  location.reload()
-}
+const reload = (note: Note) => carry.reload(note)
 
 function readError(body: any): string {
   try {
