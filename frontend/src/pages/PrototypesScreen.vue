@@ -81,7 +81,7 @@ const emptyBody = computed(() =>
 // `list_prototypes` loads every Prototype the user owns and counts the files
 // in each (`sketch/api.py`, `_row`).
 //
-// One request a tick, plus one more only when the list actually moved. The
+// One request per list each tick, plus one more only when that list moved. The
 // loop used to reload `session` on every tick too, so an unconnected user, who
 // is exactly the user that leaves this screen open, paid two requests every
 // four seconds. `connected` is read once at boot instead (`App.vue`,
@@ -93,26 +93,21 @@ const emptyBody = computed(() =>
 const POLL_MS = 4000
 
 /**
- * The poll's own reader. It hits the same endpoint as `prototypes` and writes
- * a separate copy of the answer, which the poll then compares.
+ * A list's poll: its own reader, and the list it last committed.
  *
- * It cannot be `prototypes.reload()`: that commits the answer before anyone
- * can look at it, and `reload()` is `useFetch.execute`, so every poll would
- * also flip `isFetching` and `isFinished` under the whole screen.
+ * The reader hits the same endpoint as the store's list and writes a separate
+ * copy of the answer, which the poll then compares. It cannot be the store's
+ * `reload()`: that commits the answer before anyone can look at it, and
+ * `reload()` is `useFetch.execute`, so every poll would also flip `isFetching`
+ * and `isFinished` under the whole screen.
  *
  * It cannot be `call()` either. `call` is POST-only and unwraps
  * `response.message`, while `/api/v2/method/...` answers `{"data": ...}`
  * (frappe-ui utils/frappeRequest.ts, `transformResponse`), so it would read
  * `undefined` on every poll.
- */
-const probe = useCall<Prototype[]>({
-  url: method('list_prototypes'),
-  immediate: false,
-})
-
-/**
- * The list the store currently holds, serialised. The poll compares against
- * this and writes nothing when it matches.
+ *
+ * `signature` is the list the store currently holds, serialised. The poll
+ * compares against it and writes nothing when it matches.
  *
  * The Viewer compares one revision string (`sketch.api.prototype_revision`).
  * There is no list-wide equivalent, so the payload is the revision: it
@@ -128,45 +123,41 @@ const probe = useCall<Prototype[]>({
  * the user has seen. Seeding it from the first poll instead would swallow any
  * write made between mount and that poll: the new row would arrive, become
  * the baseline, and never be committed.
+ *
+ * The check answers `false` when the read failed and `null` when the screen
+ * went while it was out. `reload()` resolves rather than rejects on a failed
+ * request (@vueuse/core `useFetch.execute`, called with `throwOnFailed`
+ * unset), so the error ref is the only signal that the answer is not real.
  */
-let signature = ''
-let sharedSignature = ''
-let conversationSignature = ''
+function useChangeProbe<T>(list: { data: T[] | undefined | null; reload: () => Promise<unknown> }, name: string) {
+  const probe = useCall<T[]>({ url: method(name), immediate: false })
+  let signature = ''
+  watch(
+    () => list.data,
+    (rows) => {
+      signature = JSON.stringify(rows ?? [])
+    },
+    { immediate: true },
+  )
+  return async (alive: () => boolean): Promise<boolean | null> => {
+    const rows = await probe.reload()
+    // The screen may have gone while the request was out. Commit nothing to a
+    // store the next screen also reads.
+    if (!alive()) return null
+    if (probe.error || !rows) return false
+    // The second request costs one extra list only when something actually
+    // moved, and it keeps the store the single writer of the list.
+    if (JSON.stringify(rows) !== signature) await list.reload()
+    return true
+  }
+}
 
-/** The poll's reader for the shared list, the same way `probe` reads the owned one. */
-const probeShared = useCall<SharedPrototype[]>({
-  url: method('shared_prototypes'),
-  immediate: false,
-})
-
-watch(
-  () => prototypes.data,
-  (rows) => {
-    signature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
-
-watch(
-  () => sharedPrototypes.data,
-  (rows) => {
-    sharedSignature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
-
-const probeConversations = useCall<SharedPrototype[]>({
-  url: method('conversations'),
-  immediate: false,
-})
-
-watch(
-  () => conversationPrototypes.data,
-  (rows) => {
-    conversationSignature = JSON.stringify(rows ?? [])
-  },
-  { immediate: true },
-)
+// Owned prototypes; an invitation arrives the same way, and so does a reply or a mention.
+const checks = [
+  useChangeProbe<Prototype>(prototypes, 'list_prototypes'),
+  useChangeProbe<SharedPrototype>(sharedPrototypes, 'shared_prototypes'),
+  useChangeProbe<SharedPrototype>(conversationPrototypes, 'conversations'),
+]
 
 watch(
   () => prototypes.isFinished,
@@ -181,30 +172,16 @@ watch(
 // and the visibility rule.
 usePoll(
   async (alive) => {
-    // `reload()` resolves rather than rejects on a failed request
-    // (@vueuse/core `useFetch.execute`, called with `throwOnFailed` unset), so
-    // the error ref is the only signal that the answer is not real. Returning
-    // false is silent, like the Viewer's poller: a failed poll leaves the
-    // gallery as it is, because the rows on screen are the last good answer.
-    const rows = await probe.reload()
-    // The screen may have gone while the request was out. Commit nothing to a
-    // store the next screen also reads.
-    if (!alive()) return
-    if (probe.error || !rows) return false
-    // The second request costs one extra list only when something actually
-    // moved, and it keeps the store the single writer of `prototypes.data`.
-    if (JSON.stringify(rows) !== signature) await prototypes.reload()
-    // An invitation arrives while this screen is open, the same way a prototype does.
-    const invited = await probeShared.reload()
-    if (!alive()) return
-    if (!probeShared.error && invited && JSON.stringify(invited) !== sharedSignature)
-      await sharedPrototypes.reload()
-    // A reply or a mention arrives the same way.
-    const talked = await probeConversations.reload()
-    if (!alive()) return
-    if (!probeConversations.error && talked && JSON.stringify(talked) !== conversationSignature)
-      await conversationPrototypes.reload()
-    return true
+    // Every list is read on every tick. A failed read leaves that list as it
+    // is, because the rows on screen are the last good answer, and reports
+    // false (silent, like the Viewer's poller) so the poll backs off.
+    let ok = true
+    for (const check of checks) {
+      const read = await check(alive)
+      if (read === null) return
+      ok &&= read
+    }
+    return ok
   },
   { interval: POLL_MS },
 )
