@@ -41,16 +41,33 @@ function promptOf(): string {
 }
 
 let timer = 0
-async function flush(keepalive = false) {
+const post = (keepalive = false) =>
+	call('save_annotations', { data: JSON.stringify({ ...snapshot(), prompt: promptOf() }), epoch: String(epoch) }, keepalive)
+
+// Saves go one at a time, in order. Each posts the whole snapshot, so an older one landing after a newer one would
+// drop what the newer one added.
+let saving: Promise<unknown> = Promise.resolve()
+function inTurn<T>(job: () => Promise<T>): Promise<T> {
+	const done = saving.then(job)
+	saving = done.catch(() => {})
+	return done
+}
+
+function flush(keepalive = false) {
 	clearTimeout(timer)
 	timer = 0
+	// The tab is going away: what waits its turn would never be sent.
+	return keepalive ? send(true) : inTurn(() => send(false))
+}
+
+async function send(keepalive: boolean) {
 	const key = JSON.stringify(snapshot())
 	if (key === last) {
 		saveState.value = 'saved'
 		return
 	}
 	try {
-		await call('save_annotations', { data: JSON.stringify({ ...snapshot(), prompt: promptOf() }), epoch: String(epoch) }, keepalive)
+		await post(keepalive)
 		last = key
 		// A change made while this was in flight has its own save scheduled.
 		if (!timer) saveState.value = 'saved'
@@ -60,6 +77,29 @@ async function flush(keepalive = false) {
 		if (saveState.value !== 'error') toast.error('Could not save your notes. They are kept on this page until you reload.')
 		saveState.value = 'error'
 	}
+}
+
+// Save now and say why not: null once the server has it. For a note that must be on the server before the shell tells
+// the person it is (the canvas's Ask agent), so a failure leaves nothing half done.
+export function saveNow(): Promise<string | null> {
+	clearTimeout(timer)
+	timer = 0
+	return inTurn(async () => {
+		const key = JSON.stringify(snapshot())
+		try {
+			await post()
+			last = key
+			saveState.value = 'saved'
+			return null
+		} catch (e) {
+			// The agent cleared since this page loaded: start again from what the server holds.
+			if (e instanceof HttpError && e.status === 409) {
+				location.reload()
+				return null
+			}
+			return e instanceof HttpError ? `the server answered ${e.status}` : 'there is no connection'
+		}
+	})
 }
 
 // Debounced after every change. A failed save is retried by the next change.
