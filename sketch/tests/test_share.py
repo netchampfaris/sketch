@@ -334,6 +334,15 @@ class TestWritePaths(ShareCase):
 		big = [{"path": self.folder + "big.vue", "content": "<template>" + "x" * 500_000 + "</template>"}]
 		self.refused(self.agent(self.ed, "write_files", files=big))
 
+	def test_an_edit_cannot_grow_an_editors_folder_past_its_size_or_break_its_tag(self):
+		self.add_variant()
+		path = self.folder + "compact.vue"
+		grow = {"path": path, "old_string": "Compact</p>", "new_string": "x" * 500_000 + "</p>"}
+		self.assertIn("400 KB", self.refused(self.agent(self.ed, "edit_file", **grow)))
+		self.assertIn("400 KB", self.refused(self.agent(self.ed, "edit_files", edits=[grow])))
+		self.refused(self.agent(self.ed, "edit_file", path=path, old_string='name="Compact"', new_string='name=""'))
+		self.assertEqual(self.tree()[path], COMPACT)
+
 	def test_an_editors_picture_goes_in_their_folder(self):
 		self.invite()
 		self.ok(

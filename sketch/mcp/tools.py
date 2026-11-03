@@ -211,6 +211,16 @@ def guard_editor_write(doc, role: str, entries: list[dict]) -> str | None:
 	return by
 
 
+def guard_editor_edit(doc, role: str, edits: list[dict]) -> str | None:
+	"""`guard_editor_write` for edits: an editor's quota and `<variant>` tag are checked on what the files would hold after them."""
+	by = editor_of(role)
+	if by:
+		sharing.check_paths(doc.name, by, [e.get("path") for e in edits])
+		guard_editor_write(doc, role, prototype_files.edited(doc.name, edits))
+
+	return by
+
+
 def user_prompt(args: dict) -> str:
 	"""The `prompt` argument, word for word. Nothing here reshapes it."""
 	prompt = args.get("prompt")
@@ -423,7 +433,7 @@ def do_edit_file(args: dict) -> ToolResult:
 	if not path or old_string is None or new_string is None:
 		frappe.throw(frappe._("path, old_string and new_string are all required"))
 
-	by = guard_editor_write(doc, role, [{"path": path}])
+	by = guard_editor_edit(doc, role, [{"path": path, "old_string": old_string, "new_string": new_string}])
 	prototype_files.edit_file(doc.name, path, old_string, new_string)
 	versions.note(doc.name, path, versions.MODIFIED, by)
 	return ToolResult(text=f"Edited {path}.")
@@ -456,7 +466,7 @@ def do_upload_asset(args: dict) -> ToolResult:
 def do_edit_files(args: dict) -> ToolResult:
 	doc, role = reachable(args)
 	versions.lock(doc.name)
-	by = guard_editor_write(doc, role, [{"path": e.get("path")} for e in args["edits"] if isinstance(e, dict)])
+	by = guard_editor_edit(doc, role, [e for e in args["edits"] if isinstance(e, dict)])
 	paths = prototype_files.edit_files(doc.name, args["edits"])
 	versions.note_write(doc.name, paths, set(paths), by)
 	return ToolResult(text=f"Edited {len(paths)} file(s): {', '.join(paths)}")
