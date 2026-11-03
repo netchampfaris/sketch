@@ -31,7 +31,7 @@ NAME_ATTR = re.compile(r"""(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 
 
 class Tag:
-	__slots__ = ("start", "end", "name", "closing", "self_closing", "attrs")
+	__slots__ = ("attrs", "closing", "end", "name", "self_closing", "start")
 
 	def __init__(self, start, end, name, closing, self_closing, attrs):
 		self.start = start

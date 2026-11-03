@@ -19,7 +19,17 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import annotations, api, editor_variants, prototype, prototype_files, sharing, variant_default, versions, viewer_api
+from sketch import (
+	annotations,
+	api,
+	editor_variants,
+	prototype,
+	prototype_files,
+	sharing,
+	variant_default,
+	versions,
+	viewer_api,
+)
 from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.tests.test_viewer_api import delete_session, open_session, post

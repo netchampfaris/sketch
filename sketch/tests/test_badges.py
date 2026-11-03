@@ -158,7 +158,7 @@ class TestVariantsAreNew(BadgeCase):
 		self.invite(self.ed)
 		option = self.add_variant(self.ed)
 		self.seen_by(self.owner, variants=[option])
-		path = f"src/variants/@d2tbged/compact.vue"
+		path = "src/variants/@d2tbged/compact.vue"
 		self.agent(self.ed, "delete_file", path=path)
 		self.add_variant(self.ed)
 		self.assertEqual(self.page(self.owner)["variants"], [option])
@@ -490,7 +490,7 @@ class TestMentions(BadgeCase):
 	def test_a_reply_can_mention_too(self):
 		thread = self.say(self.reader)
 		self.say(self.ed, f"{self.token(self.owner)} and {self.token(self.reader)}", thread=thread)
-		replies = [v for k, v in self.mentions_of(thread).items() if k != thread][0]
+		replies = next(v for k, v in self.mentions_of(thread).items() if k != thread)
 		self.assertEqual(sorted(replies), ["d2tbgown", "d2tbgrd"])
 
 	def test_only_people_on_the_list_can_be_mentioned(self):
