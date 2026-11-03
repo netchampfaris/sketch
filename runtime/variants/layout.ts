@@ -79,6 +79,9 @@ export type LayoutCtx = {
   statesOf: (cacheId: string) => StateInfo[] | 'error' | null
 }
 
+// The drawing an option's own view reads its states from: the set at its full height.
+export const fullOptionId = (path: string, setKey: string, value: string) => `${path}|v|${setKey}|${value}|full`
+
 type Desc = Omit<TileBox, 'x' | 'y' | 'w' | 'h'>
 
 const empty: Layout = { tiles: [], heads: [], bounds: { w: 0, h: 0 }, fit: { x: 0, y: 0, z: 1 }, invFit: 1, sig: '' }
@@ -131,7 +134,7 @@ function descsOf(pick: Pick, ctx: LayoutCtx): Desc[] {
     const opt = set?.options.find((o) => o.value === pick.value)
     if (!set || !opt) return []
     // Its own drawings: a state tile shows the set at its full height, the set view's tile as the page shows it.
-    const cacheId = `${p.path}|v|${set.key}|${opt.value}|full`
+    const cacheId = fullOptionId(p.path, set.key, opt.value)
     const pin = { setKey: set.key, setLabel: set.label, setOption: opt.value, setOptionLabel: opt.label, meta: set.meta ?? undefined }
     const found = ctx.statesOf(cacheId)
     // Declared nothing: no tiles, and the canvas says so. Until the option has been drawn once (or if it cannot be), there

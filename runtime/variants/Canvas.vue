@@ -11,7 +11,7 @@ import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
 import { tileExists } from '../shared/tiles'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
-import { layoutPick } from './layout'
+import { fullOptionId, layoutPick } from './layout'
 import type { PageModel, StateInfo, TileBox } from './layout'
 import { menuHost } from './menus'
 import { menuBind } from '../shared/menus'
@@ -89,7 +89,7 @@ const optView = computed(() => {
   if (p?.kind !== 'opt') return null
   const set = p.page.sets.find((s) => s.key === p.key)
   const opt = set?.options.find((o) => o.value === p.value)
-  return set && opt ? { page: p.page, set, opt, cacheId: `${p.page.path}|v|${set.key}|${opt.value}|full` } : null
+  return set && opt ? { page: p.page, set, opt, cacheId: fullOptionId(p.page.path, set.key, opt.value) } : null
 })
 const setViewValue = computed(() => (optView.value ? `set:${optView.value.page.slug}/${optView.value.set.key}` : ''))
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
