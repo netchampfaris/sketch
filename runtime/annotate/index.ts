@@ -23,8 +23,8 @@ export function mountAnnotate(data: Payload) {
   // press on the toolbar or focus in the comment box is not the page's: keep it from reaching there.
   el.addEventListener('pointerdown', (e) => e.stopPropagation())
   el.addEventListener('focusin', (e) => e.stopPropagation())
-  // A trapped menu pulls focus back when it leaves for elsewhere; leaving for our UI is not elsewhere.
-  window.addEventListener('focusout', (e) => isOurs(e.relatedTarget as Node | null) && e.stopImmediatePropagation(), true)
+  // A trapped menu pulls focus back when focus leaves it. Focus moving into our UI does not count as leaving.
+  window.addEventListener('focusout', (e) => { if (isOurs(e.relatedTarget as Node | null)) e.stopImmediatePropagation() }, true)
 
   const app = createApp(Annotate)
   app.use(router)
