@@ -494,8 +494,8 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 	if (e.key === 'Escape') {
 		// The tweak layer takes its own Escape first and says so.
 		if (!enabled.value || e.defaultPrevented) return
-		// Let an open page menu, popover or dialog close first.
-		if (pageLayerOpen()) return
+		// Commenting: let an open page menu, popover or dialog close first. Tweak steps aside for dialogs only.
+		if (mode.value === 'comment' ? pageLayerOpen() : document.querySelector('[role="dialog"][data-state="open"]')) return
 		if (dragging) resetDrag()
 		else if (draft.value) close()
 		else if (listOpen.value) listOpen.value = false
