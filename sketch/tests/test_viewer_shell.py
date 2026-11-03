@@ -16,6 +16,7 @@ import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
 from sketch import api, comments, signature
+from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.tests.utils import credential_keys, shell_slot
 from sketch.viewer import SHELL_HTML, SketchViewerRenderer
@@ -145,6 +146,25 @@ class TestShell(ShellCase):
 		data = shell_slot(self.render("Guest", self.public).get_data(as_text=True))
 		self.assertEqual((data["role"], data["me"], data["csrf_token"]), ("guest", None, ""))
 		self.assertTrue(data["sign_in"])
+
+
+	def test_the_shells_badges_name_the_set_of_each_new_option(self):
+		"""The shell marks an option seen only when the person opens the set the server says it joins."""
+		doc = utils.make_prototype(self.owner, "d2t-shell-badges", files=FILES)
+		self.addCleanup(utils.drop_prototype, doc.name)
+		with set_user(self.owner):
+			api.invite_editor(doc.slug, utils.username_of(self.editor))
+		editor = utils.username_of(self.editor)
+		path = f"src/variants/@{editor}/compact.vue"
+		with set_user(self.editor):
+			reply = tools.call_tool("write_files", {
+				"prototype": f"{self.username}/{doc.slug}",
+				"files": [{"path": path, "content": '<variant set="KPI strip" name="Compact" />\n<template><p>C</p></template>\n'}],
+			})
+		self.assertFalse(reply["isError"], reply["content"][0]["text"])
+		badges = shell_slot(self.render(self.owner, doc).get_data(as_text=True))["badges"]
+		self.assertEqual(badges["variants"], [f"@{editor}/compact"])
+		self.assertEqual(badges["sets"], {f"@{editor}/compact": "kpi-strip"})
 
 
 class TestFrame(ShellCase):

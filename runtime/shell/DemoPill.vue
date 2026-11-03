@@ -176,7 +176,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			</span>
 			<div v-if="isState(s)" class="justify-self-start"><LensMenu :state="s" :show-name="false" /></div>
 			<div v-else class="min-w-0 justify-self-start">
-				<Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt(optionsOf(s as ModelSet)))" :options="menuOf(s as ModelSet)">
+				<Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt((s as ModelSet).key))" :options="menuOf(s as ModelSet)">
 					<Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as ModelSet)}`">
 						<span class="flex items-center gap-1.5">
 							<span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as ModelSet)">{{ labelOf(s as ModelSet) }}</span>

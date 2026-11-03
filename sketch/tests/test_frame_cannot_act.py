@@ -61,6 +61,10 @@ TREE = {
 		"    <Variants name='Card'>\n"
 		"      <template #plain><div class='rounded-lg border p-4'><p class='text-base'>Plain card</p></div></template>\n"
 		"      <template #filled><div class='rounded-lg bg-surface-gray-2 p-4'><p class='text-base'>Filled card</p></div></template>\n"
+		"    </Variants>\n"
+		"    <Variants name='Hero'>\n"
+		"      <template #quiet><p class='text-base'>Quiet hero</p></template>\n"
+		"      <template #loud><p class='text-xl'>Loud hero</p></template>\n"
 		"    </Variants>\n  </div>\n</template>\n"
 	),
 	"src/router.ts": (
@@ -75,6 +79,12 @@ TREE = {
 CALM = (
 	'<variant set="Card" name="Calm" />\n\n'
 	"<template>\n  <div class='rounded-lg border-2 border-outline-gray-3 p-4'><p class='text-base'>Calm card</p></div>\n</template>\n"
+)
+
+#: The editor's option for the other set, Hero: new to the owner until they open Hero from the shell.
+BOLD = (
+	'<variant set="Hero" name="Bold" />\n\n'
+	"<template>\n  <p class='text-xl font-bold'>Bold hero</p>\n</template>\n"
 )
 
 #: The attack. `__CALLS__` and `__SHELL__` are filled in per run. The calls go in as base64, and the words the scan
@@ -289,9 +299,31 @@ async function attack() {
 	draw()
 }
 
+// The pick run: the owner opens Hero from the shell's panel, and the moment the shell asks the frame for it, the option
+// reports the canvas showing it with Card's options listed as Hero's, ahead of the canvas's own report.
+function lieAboutTheSet() {
+	addEventListener('message', (e) => {
+		const m = e.data
+		if (!m || m.channel !== 'sketch-shell' || m.type !== 'canvas:open') return
+		const view = String(m.data && m.data.view)
+		const options = ['filled', '@__EDITOR__/calm', '@__EDITOR__/evil', '@__EDITOR__/bold']
+		const item = { value: view, label: 'Hero', sub: 'Home', short: '4', complete: true, group: 'sets', options }
+		post('canvas', { open: true, phone: false, view, zoom: 1, pan: { x: 0, y: 0 }, corner: 0, items: [item] })
+		state.report.lied = (state.report.lied || 0) + 1
+	})
+}
+
 onMounted(() => {
 	if (state.started) return draw()
 	state.started = true
+	if (w.__evilPick) {
+		row('Pick run', 'lying about the set')
+		state.report = { pick: true }
+		lieAboutTheSet()
+		state.done = true
+		draw()
+		return
+	}
 	if (w.__evilDisarmed) {
 		row('Control run', 'disarmed')
 		state.report = { disarmed: true }
@@ -425,8 +457,9 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 				("write_files", {"files": [
 					{"path": f"src/variants/@{cls.editor_username}/evil.vue", "content": evil},
 					{"path": f"src/variants/@{cls.editor_username}/calm.vue", "content": CALM},
+					{"path": f"src/variants/@{cls.editor_username}/bold.vue", "content": BOLD},
 				]}),
-				("commit", {"prompt": "Add two Card options"}),
+				("commit", {"prompt": "Add two Card options and a Hero option"}),
 			):
 				reply = tools.call_tool(tool, {"prototype": ref, **args})
 				if reply["isError"]:
@@ -442,6 +475,8 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 		cls.before = cls.snapshot()
 		cls.attack = cls.drive(viewer, sid, "attack")
 		cls.after_attack = cls.snapshot()
+		cls.pick = cls.drive(viewer, sid, "pick")
+		cls.after_pick = cls.snapshot()
 		cls.control = cls.drive(viewer, sid, "control")
 		cls.after_control = cls.snapshot()
 
@@ -542,6 +577,16 @@ class TestAnOptionInTheFrameCannotActAsAnyone(IntegrationTestCase):
 		self.assertIn(calm, self.before["new_to_owner"])
 		self.assertIn(calm, self.after_attack["new_to_owner"], self.say())
 		self.assertEqual([r for r in self.after_attack["seen"] if r[2] == calm], [], self.say())
+
+	def test_a_real_pick_of_one_set_marks_only_that_sets_options_whatever_the_frame_lists(self):
+		"""The owner opens Hero from the shell's panel; the frame reports Hero holding Card's options. Only Bold is seen."""
+		pick = self.pick
+		self.assertGreaterEqual(pick["lied"], 1, self.say(pick))
+		calm, bold = f"@{self.editor_username}/calm", f"@{self.editor_username}/bold"
+		self.assertIn(bold, self.after_attack["new_to_owner"], self.say(pick))
+		marked = sorted(r[2] for r in set(self.after_pick["seen"]) - set(self.after_attack["seen"]))
+		self.assertEqual(marked, [bold], self.say(pick))
+		self.assertEqual(self.after_pick["new_to_owner"], [calm], self.say(pick))
 
 	def test_the_prototype_and_its_editors_are_as_they_were(self):
 		self.assertEqual(self.after_attack["prototype"], self.before["prototype"])

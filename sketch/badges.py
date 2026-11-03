@@ -35,6 +35,7 @@ zone, so a comparison here never mixes clocks.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -185,7 +186,7 @@ def _mentions(row) -> list[str]:
 
 
 def new_variants(name: str, who: Standing, seen: dict, files: list | None = None) -> list[dict]:
-	"""The variants somebody else added since this person last looked: [{option, author, at}]."""
+	"""The variants somebody else added since this person last looked: [{option, author, at, set}]."""
 	from sketch import editor_variants, prototype_files
 
 	if not who.sees_variants:
@@ -212,12 +213,25 @@ def new_variants(name: str, who: Standing, seen: dict, files: list | None = None
 	made_by = sharing.people({author for _row, author, _option in fresh})
 	found = []
 	for row, author, option in fresh:
-		if row.path not in on_disk or author not in made_by or not editor_variants.meta_at(name, row.path):
+		meta = editor_variants.meta_at(name, row.path) if row.path in on_disk and author in made_by else None
+		if not meta:
 			continue
 
-		found.append({"option": option, "author": author, "at": row.creation})
+		found.append({"option": option, "author": author, "at": row.creation, "set": set_key(meta)})
 
 	return found
+
+
+def set_key(meta: dict) -> str:
+	"""The key of the set a variant joins, as the page writes it in a canvas view (`set:<page>/<key>`): the slug of
+	its set's name, or of the name a wrapped component's set takes (runtime/variants/index.ts wrapComponent)."""
+	from sketch import editor_variants
+
+	if meta.get("component"):
+		base = meta["component"].rsplit("/", 1)[-1].removesuffix(".vue")
+		return editor_variants.slug_of(re.sub(r"([a-z])([A-Z])", r"\1 \2", base))
+
+	return editor_variants.slug_of(meta.get("set") or "")
 
 
 def threads_state(rows: list, who: Standing, seen: dict) -> dict:
@@ -325,8 +339,9 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 def page(name: str, user: str) -> dict | None:
 	"""What the Viewer needs to draw its dots and badges: the new options, and the unread threads.
 
-	{"variants": [option, ...], "threads": [{"id", "route", "unread", "mention"}]}. None for
-	a person who gets no badges.
+	{"variants": [option, ...], "sets": {option: set key}, "threads": [{"id", "route", "unread", "mention"}]}.
+	`sets` says which set each new option joins, so opening a set marks only the options the server
+	put in it, whatever the page reports the set holds. None for a person who gets no badges.
 	"""
 	rows = _rows(name)
 	who = standing(name, user, rows)
@@ -346,8 +361,10 @@ def page(name: str, user: str) -> dict | None:
 			except (ValueError, AttributeError):
 				routes[r.name] = ""
 
+	variants = new_variants(name, who, seen)
 	return {
-		"variants": [v["option"] for v in new_variants(name, who, seen)],
+		"variants": [v["option"] for v in variants],
+		"sets": {v["option"]: v["set"] for v in variants},
 		"threads": [
 			{"id": t, "route": routes.get(t, ""), "unread": s["unread"], "mention": bool(s["mention"])}
 			for t, s in unread.items()

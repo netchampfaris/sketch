@@ -5,11 +5,17 @@
 import { reactive } from 'vue'
 import { call } from './api'
 
-type Snapshot = { variants?: string[]; threads?: { id: string; route: string; unread: number; mention: boolean }[] } | null
+type Snapshot = {
+	variants?: string[]
+	sets?: Record<string, string>
+	threads?: { id: string; route: string; unread: number; mention: boolean }[]
+} | null
 
 export const badges = reactive({
 	// Options new to this person when the page loaded. Nothing removes one before the next visit.
 	fresh: {} as Record<string, true>,
+	// The key of the set each of them joins, as the server read it from the option's file.
+	setOf: {} as Record<string, string>,
 	// The ones whose set the person has opened since.
 	looked: {} as Record<string, true>,
 	threads: {} as Record<string, { route: string; mention: boolean }>,
@@ -25,7 +31,12 @@ let again = false
 
 export function initBadges(snapshot: unknown, signedIn: boolean) {
 	on = signedIn
-	for (const o of (snapshot as Snapshot)?.variants ?? []) if (typeof o === 'string') badges.fresh[o] = true
+	const sets = (snapshot as Snapshot)?.sets ?? {}
+	for (const o of (snapshot as Snapshot)?.variants ?? []) {
+		if (typeof o !== 'string') continue
+		badges.fresh[o] = true
+		if (typeof sets[o] === 'string') badges.setOf[o] = sets[o]
+	}
 	for (const t of (snapshot as Snapshot)?.threads ?? []) badges.threads[t.id] = { route: t.route, mention: t.mention }
 }
 
@@ -34,10 +45,10 @@ const isFresh = (option: string) => !!badges.fresh[option] && !badges.looked[opt
 export const freshIn = (options: readonly string[]) => options.filter(isFresh).length
 export const freshOptions = () => Object.keys(badges.fresh)
 
-// The person has opened a set (or its row in the Demo card): every option of it counts as seen. Only options the server
-// named new to this person are marked, whatever the frame reported the set holds.
-export function lookAt(options: readonly string[]) {
-	const fresh = options.filter(isFresh)
+// The person has opened a set (or its row in the Demo card), by its key: every option of it counts as seen. Only options
+// the server named new to this person and put in that set are marked, whatever the frame reported the set holds.
+export function lookAt(setKey: string) {
+	const fresh = setKey ? Object.keys(badges.fresh).filter((o) => badges.setOf[o] === setKey && isFresh(o)) : []
 	if (!fresh.length) return
 	for (const o of fresh) {
 		badges.looked[o] = true

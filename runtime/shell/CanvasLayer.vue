@@ -12,9 +12,8 @@ import type { Rect } from '../shared/protocol'
 import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
 import { placeToasts } from './actions'
-import { lookAt } from './badges'
 import { onFrame, onGone, page, post } from './frame'
-import { PANEL_W, canvas, showView, takeChosen } from './canvas'
+import { PANEL_W, canvas, showView } from './canvas'
 
 const panelShown = computed(() => !canvas.phone && canvas.panelOpen)
 // The canvas fits its tiles in the room the panel leaves. The frame hears it before the canvas opens too, so the first
@@ -52,19 +51,6 @@ function chooseOnPhone(v: string) {
 	showOpen.value = false
 	choose(v)
 }
-
-// Opening a set from the shell is looking at all of its options: the ones a teammate made stop being new (the rows lose
-// their dot; the tiles keep their "New" badge until the next visit, so nothing vanishes under the pointer). Only a view
-// the person picked here counts, once the canvas shows it, and only options the server named new (badges.ts lookAt).
-watch(
-	() => [canvas.view, canvas.items] as const,
-	([view, items]) => {
-		const item = items.find((i) => i.value === view)
-		if (!item || !takeChosen(view)) return
-		if (view.startsWith('set:')) lookAt(item.options)
-	},
-	{ immediate: true },
-)
 
 // Escape with the focus here (in the panel, say) leaves the canvas as it does in the frame, once nothing of ours took it:
 // the toolbar's box or tool, one of our menus or dialogs. It goes to the frame, whose canvas closes on it.

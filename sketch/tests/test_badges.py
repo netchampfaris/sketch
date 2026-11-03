@@ -188,6 +188,19 @@ class TestVariantsAreNew(BadgeCase):
 		self.assertEqual(self.page(self.ed2)["variants"], [])
 		self.assertEqual(self.page(self.owner)["variants"], [option])
 
+	def test_the_page_names_the_set_each_new_option_joins(self):
+		"""By the key the page writes in a canvas view, so opening a set marks only what the server put in it."""
+		self.invite(self.ed)
+		option = self.add_variant(self.ed)
+		self.agent(self.owner, "write_files", files=[{"path": "src/components/KpiStrip.vue", "content": "<template><p>KPI</p></template>\n"}])
+		path = "src/variants/@d2tbged/boxed.vue"
+		wrapped = '<variant component="src/components/KpiStrip.vue" name="Boxed" />\n<template><p>Boxed</p></template>\n'
+		self.agent(self.ed, "write_files", files=[{"path": path, "content": wrapped}])
+		page = self.page(self.owner)
+		self.assertEqual(sorted(page["variants"]), sorted([option, "@d2tbged/boxed"]))
+		self.assertEqual(page["sets"], {option: "kpi-strip", "@d2tbged/boxed": "kpi-strip"})
+		self.assertEqual(self.page(self.ed)["sets"], {})
+
 	def test_marking_what_is_not_a_variant_records_nothing(self):
 		self.assertEqual(self.seen_by(self.owner, variants=["../../etc/passwd", "wide", 3, ""]), 0)
 		self.assertEqual(frappe.db.count("Sketch Seen", {"prototype": self.name}), 0)
@@ -645,4 +658,4 @@ class TestThePage(BadgeCase):
 
 	def test_first_use_carries_empty_lists(self):
 		data = self.payload_for(self.owner)
-		self.assertEqual(data["badges"], {"variants": [], "threads": []})
+		self.assertEqual(data["badges"], {"variants": [], "sets": {}, "threads": []})

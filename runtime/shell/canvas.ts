@@ -4,7 +4,8 @@
 //
 // The canvas's tiles, pan and zoom are the frame's; the shell draws the panel, the toolbar and the pins on the
 // tiles over it (CanvasLayer.vue), from the tiles' boxes in the canvas's own coordinates and the pan and zoom.
-import { shallowReactive, type Component } from 'vue'
+import { shallowReactive, watch, type Component } from 'vue'
+import { lookAt } from './badges'
 import { onFrame, onGone, page, post } from './frame'
 import { picksShownIn, reachableIn, type DemoPick } from '../shared/picks'
 import { sameTile, type TileSpot } from '../shared/tiles'
@@ -68,7 +69,10 @@ onFrame('canvas', (d) => {
 	if (d.pages) canvas.model = d.pages
 	if (d.items) canvas.items = d.items
 	// Closed, the canvas has no tiles: a pin list or a count must not read the last ones.
-	if (was && !d.open) Object.assign(canvas, { tiles: [], model: null, items: [], view: '' })
+	if (was && !d.open) {
+		Object.assign(canvas, { tiles: [], model: null, items: [], view: '' })
+		chosen = ''
+	}
 })
 // A reloaded frame says everything again.
 onGone(() => {
@@ -78,19 +82,23 @@ onGone(() => {
 
 // ---- Showing a view
 // The view the person picked in the shell (a row of the panel, the Demo pill, a list's thread or note), until the canvas
-// shows it. Opening a set this way is looking at its options (CanvasLayer.vue); the frame showing one on its own is not,
-// so no frame message marks anything seen. 'auto' is whatever the canvas picks first.
+// shows it or closes. Opening a set this way is looking at its options: the ones a teammate made stop being new (the
+// rows lose their dot; the tiles keep their "New" badge until the next visit, so nothing vanishes under the pointer).
+// The frame showing a view on its own is not, nor is 'auto' (whatever the canvas picks first); and the set is the key
+// in the view the person picked, its options the ones the server put in it (badges.ts lookAt), not what the frame lists.
 let chosen = ''
 export function showView(view: string) {
 	chosen = view
 	post('canvas:open', { view })
 }
-// The view the canvas shows now, when it is the one the person picked: taken once.
-export function takeChosen(view: string): boolean {
-	if (!chosen || !view || (chosen !== view && chosen !== 'auto')) return false
-	chosen = ''
-	return true
-}
+watch(
+	() => canvas.view,
+	(view) => {
+		if (!canvas.open || !view || view !== chosen || view === 'auto') return
+		chosen = ''
+		if (view.startsWith('set:')) lookAt(view.slice(view.lastIndexOf('/') + 1))
+	},
+)
 
 // ---- Tiles as data
 export const findTile = (tiles: ShellTile[], spot: TileSpot) => tiles.find((t) => sameTile(t.spot, spot))

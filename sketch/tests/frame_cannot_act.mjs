@@ -5,6 +5,7 @@
 //
 // attack:  open the canvas, so every option renders and the hostile one runs; wait for its report and a while
 //          longer for any effect of its forged messages; record every /api/method/ request by who sent it.
+// pick:    the option only lies about the set the canvas shows; the owner opens Hero from the shell's panel.
 // control: the same page with the attack disarmed; the owner's own tile menu, Make default on the editor's calm
 //          option, then Undo. The shell path must work while the frame path does not.
 import { writeFileSync } from 'node:fs'
@@ -28,6 +29,7 @@ const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${host
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: evidence ? 2 : 1 })
 await context.addCookies([{ name: 'sid', value: sid, url: ORIGIN }])
 if (mode === 'control') await context.addInitScript(() => (window.__evilDisarmed = true))
+if (mode === 'pick') await context.addInitScript(() => (window.__evilPick = true))
 
 try {
 	const page = await context.newPage()
@@ -90,6 +92,13 @@ try {
 			await page.screenshot({ path: `${evidence}/evidence-frame-cannot-act-after.png` })
 			await frame.locator('[data-evil]').first().screenshot({ path: `${evidence}/evidence-frame-cannot-act-after-tile.png` })
 		}
+	} else if (mode === 'pick') {
+		await sleep(3000)
+		await page.locator('[data-panel-row]', { hasText: 'Hero' }).first().click()
+		// The canvas shows Hero, and the seen mark goes out.
+		await sleep(SETTLE_MS)
+		answer.view = await frame.evaluate(() => location.hash).catch(() => '')
+		answer.lied = (await frame.evaluate(() => window.__evil?.report?.lied ?? 0).catch(() => 0))
 	} else {
 		// The tile under the "Calm" caption, made live, then its ⋯: the menu the shell draws.
 		await sleep(3000)
