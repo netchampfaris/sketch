@@ -85,6 +85,26 @@ LIVE_TTL_SECONDS = 12 * 60 * 60
 
 THEMES = ("light", "dark")
 
+#: The site config key that turns the shell on (`bench set-config sketch_viewer_shell 1`). Off, every
+#: request gets today's one sandboxed document. On, /u/<username>/<slug> is a page of Sketch's own
+#: that holds the Prototype in a sandboxed iframe, and the iframe loads the same URL with ?frame=1.
+SHELL_FLAG = "sketch_viewer_shell"
+
+#: The shell runs Sketch's own code on Sketch's origin with the reader's session, so it is never
+#: sandboxed and never framed. It may frame one thing: the Prototype, from this origin.
+SHELL_HEADERS = {
+	"Cache-Control": "no-store",
+	"Content-Security-Policy": "frame-ancestors 'none'; frame-src 'self'; object-src 'none'; base-uri 'self'",
+	"Content-Type": "text/html; charset=utf-8",
+}
+
+#: The shell's page, as the frontend build writes it (frontend/viewer.html). It sits beside the SPA's
+#: bundle in public/frontend, because that folder ships in prebuilt assets and a templates path does not.
+SHELL_HTML = ("public", "frontend", "viewer.html")
+
+#: The literal frontend/viewer.html carries once, for the shell's boot JSON.
+SHELL_SLOT = "SKETCH_SHELL"
+
 
 def to_json(payload) -> str:
 	"""JSON for an inline <script> block.
@@ -107,6 +127,11 @@ def runtime_html_path(pin: str) -> str | None:
 		return None
 
 	return frappe.get_app_path("sketch", "public", "runtimes", pin, "viewer.html")
+
+
+def shell_on() -> bool:
+	"""True when the site serves the shell (SHELL_FLAG)."""
+	return bool(frappe.conf.get(SHELL_FLAG))
 
 
 def url_theme() -> str | None:
@@ -146,6 +171,23 @@ class SketchViewerRenderer(BaseRenderer):
 		self.username = ""
 		self.is_owner = False
 		self.former_commenter = False
+		self.mode = "page"
+
+	def request_mode(self) -> str:
+		"""Which response this request gets.
+
+		check  the Guest `check` request (?exp&sig): today's document, unchanged
+		page   the flag is off: today's document
+		frame  ?frame=1, the shell's iframe: the Prototype and nothing that can act as anyone
+		shell  everything else: Sketch's page around the iframe
+		"""
+		if frappe.form_dict.get("sig"):
+			return "check"
+
+		if not shell_on():
+			return "page"
+
+		return "frame" if frappe.form_dict.get("frame") == "1" else "shell"
 
 	def can_render(self) -> bool:
 		"""True only when this path is a Prototype the caller may see."""
@@ -163,13 +205,15 @@ class SketchViewerRenderer(BaseRenderer):
 
 		self.username = parts[1]
 		self.is_owner = frappe.session.user == self.doc.owner
+		self.mode = self.request_mode()
 		if sharing.can_view(self.doc.name, frappe.session.user):
 			return True
 
 		if signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig")):
 			return True
 
-		self.former_commenter = self.is_former_commenter()
+		# The frame is never a person's page: the shell around it has already said "made private".
+		self.former_commenter = self.mode != "frame" and self.is_former_commenter()
 		return self.former_commenter
 
 	def is_former_commenter(self) -> bool:
@@ -230,6 +274,9 @@ class SketchViewerRenderer(BaseRenderer):
 			# No Prototype source here, so no sandbox: the page loads core's own styles and font.
 			return self.build_response(private_html(self.doc.owner), 403, dict(HEADERS))
 
+		if self.mode == "shell":
+			return self.render_shell()
+
 		path = runtime_html_path(self.doc.pin)
 		if not path or not os.path.isfile(path):
 			# Trap 11. Never a blank iframe.
@@ -245,7 +292,12 @@ class SketchViewerRenderer(BaseRenderer):
 			return self.build_response(bad_slot_html(self.doc.pin, count), 500, self.response_headers())
 
 		document = document.replace(TITLE, self.head_html(), 1)
-		body = self.sandboxed_document(document.replace(SLOT, to_json(self.payload()), 1))
+		data = self.frame_payload() if self.mode == "frame" else self.payload()
+		body = self.sandboxed_document(document.replace(SLOT, to_json(data), 1))
+		if self.mode == "frame":
+			# The shell counted this open. The frame is the same reader, a second request later.
+			return self.build_response(body, 200, self.response_headers())
+
 		# Only the served document counts as an open. The two branches above
 		# are a broken install, not a reader.
 		#
@@ -253,6 +305,11 @@ class SketchViewerRenderer(BaseRenderer):
 		# carrying the signature, so `is_owner` is false for it, and without
 		# this test every check would be counted as a stranger reading a public
 		# link. Sketch drives that browser itself.
+		self.count_open()
+		return self.build_response(body, 200, self.response_headers())
+
+	def count_open(self) -> None:
+		"""Record one open of this Prototype: the reader's badges and the Viewer event."""
 		from sketch import events
 
 		if not frappe.form_dict.get("sig"):
@@ -264,7 +321,28 @@ class SketchViewerRenderer(BaseRenderer):
 
 		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
 		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
-		return self.build_response(body, 200, self.response_headers())
+
+	def render_shell(self):
+		"""Sketch's own page around the Prototype's iframe (SHELL_FLAG).
+
+		It carries no Prototype source, so it needs no Runtime and no sandbox: everything in it is
+		Sketch's code. The iframe loads this URL with ?frame=1, which `can_render` checks again.
+		"""
+		path = frappe.get_app_path("sketch", *SHELL_HTML)
+		if not os.path.isfile(path):
+			return self.build_response(missing_shell_html(), 500, dict(SHELL_HEADERS))
+
+		with open(path, encoding="utf-8") as handle:
+			document = handle.read()
+
+		count = document.count(SHELL_SLOT)
+		if count != 1:
+			return self.build_response(bad_shell_html(count), 500, dict(SHELL_HEADERS))
+
+		document = document.replace(TITLE, self.head_html(), 1)
+		body = document.replace(SHELL_SLOT, to_json(self.shell_payload()), 1)
+		self.count_open()
+		return self.build_response(body, 200, dict(SHELL_HEADERS))
 
 	def head_html(self) -> str:
 		"""The <title> and the Open Graph tags a link preview reads.
@@ -480,6 +558,72 @@ class SketchViewerRenderer(BaseRenderer):
 		}
 
 
+	def frame_payload(self) -> dict:
+		"""The data slot of the shell's iframe: the Prototype and nothing else.
+
+		The frame runs the Prototype's code, which may be a stranger's (a fork), so it holds nothing
+		that can act as anyone or say who is reading: no signature of any scope, no notes, no
+		badges, no role and no revision. Everything that acts or shows a person's data lives in the
+		shell (`shell_payload`), on Sketch's origin, behind the session.
+		"""
+		tree = prototype_files.read_tree(self.doc.name)
+		adopted = sharing.read_adopted(tree)
+		return {
+			"files": tree,
+			"name": self.doc.name,
+			"title": self.doc.title,
+			"slug": self.doc.slug,
+			"pin": self.doc.pin,
+			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
+			"theme": url_theme(),
+			"chrome": "shell",
+		}
+
+	def shell_payload(self) -> dict:
+		"""The shell's boot JSON: who is reading and what their chrome needs. Never the tree.
+
+		The shell is Sketch's page on Sketch's origin, so it holds the reader's session and the
+		CSRF token its writes send. The owner's poller reads `rev` as its baseline (see `payload`)
+		and asks `sketch.api.prototype_revision` with the session from then on.
+		"""
+		role = self.role()
+		signed_in = frappe.session.user != "Guest"
+		commenter = self.commenter()
+		noting = bool(commenter) and role == "editor"
+		live = self.is_live()
+		csrf_token = frappe.sessions.get_csrf_token() if signed_in else ""
+		if signed_in:
+			# A GET is never committed, and a token that is not saved fails the first write.
+			frappe.db.commit()
+
+		return {
+			"name": self.doc.name,
+			"title": self.doc.title,
+			"slug": self.doc.slug,
+			"owner_username": self.username,
+			"role": role,
+			"me": sharing.person(frappe.session.user) if signed_in else None,
+			"is_public": bool(self.doc.is_public),
+			"sign_in": self.offers_sign_in(),
+			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
+			"badges": badges.page(self.doc.name, frappe.session.user) if commenter else None,
+			"annotations": annotations.read(self.doc.name, editor=frappe.session.user)
+			if noting
+			else annotations.read(self.doc.name)
+			if live
+			else None,
+			"annotations_epoch": annotations.epoch(self.doc.name, frappe.session.user)
+			if noting
+			else annotations.epoch(self.doc.name)
+			if live
+			else 0,
+			"rev": prototype_files.revision(self.doc.name) if live else "",
+			"csrf_token": csrf_token,
+			"theme": url_theme(),
+			"frame_src": f"/u/{self.username}/{self.doc.slug}?frame=1",
+		}
+
+
 def meta_tag(attribute: str, key: str, content: str) -> str:
 	"""One <meta> tag, with the content escaped for an attribute value."""
 	return f'<meta {attribute}="{key}" content="{escape_html(content)}" />'
@@ -502,6 +646,24 @@ def bad_slot_html(pin: str, count: int) -> str:
 		f"viewer.html for Runtime {escape_html(pin or '(empty)')} holds the "
 		f"data slot {count} times. It must hold it once.",
 		"Rebuild the Runtime.",
+	)
+
+
+def missing_shell_html() -> str:
+	"""The readable 500 body when the frontend build has not written the shell's page."""
+	return _error_html(
+		"Viewer shell not built",
+		"The page that holds a prototype is not built on this server.",
+		"Build the frontend.",
+	)
+
+
+def bad_shell_html(count: int) -> str:
+	"""The readable 500 body for a shell page with a broken boot slot."""
+	return _error_html(
+		"Viewer shell slot is broken",
+		f"viewer.html holds the shell slot {count} times. It must hold it once.",
+		"Rebuild the frontend.",
 	)
 
 
