@@ -108,6 +108,11 @@ const menu = computed(() => [
   ...(deletable.value ? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }] : []),
 ])
 
+function askMenu(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  bridge.tileMenu?.(props.tile.id, { x: r.left, y: r.top, w: r.width, h: r.height })
+}
+
 const margin = computed(() => (isSet.value ? MARGIN : 0))
 const clip = computed(() => ({ left: margin.value + 'px', top: margin.value + 'px', width: rect.value.w + 'px', height: rect.value.h + 'px' }))
 const shift = computed(() => ({ transform: `translate(${-rect.value.x}px, ${-rect.value.y}px)` }))
@@ -134,7 +139,22 @@ watch(
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :portal-to="menuHost()" :options="menu" placement="bottom-end">
+        <!-- In the Viewer shell's frame the menu is the shell's (runtime/shell/TileMenu.vue): the ⋯ only says where it is.
+             It sits where the Dropdown's trigger does (the Dropdown takes no class, so the trigger follows the badges). -->
+        <Button
+          v-if="live && bridge.shell"
+          class="-mr-1.5"
+          variant="ghost"
+          size="xs"
+          icon="lucide-ellipsis"
+          :loading="bridge.busyTile === tile.id"
+          :data-state="bridge.menuTile === tile.id ? 'open' : 'closed'"
+          :aria-expanded="bridge.menuTile === tile.id"
+          aria-label="Actions for this variant"
+          aria-haspopup="menu"
+          @click.stop="askMenu"
+        />
+        <Dropdown v-else-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :portal-to="menuHost()" :options="menu" placement="bottom-end">
           <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
         </Dropdown>
       </div>

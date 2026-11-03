@@ -56,6 +56,13 @@ export const bridge = shallowReactive({
   shell: false,
   shellReserve: 312,
   onEmptyClick: null as (() => void) | null,
+  // The live tile's ⋯ asks the shell for its menu, at the button's box; the shell draws it and does what is picked.
+  // `busyTile` is the tile whose action the shell is saving (its ⋯ spins), `menuTile` the one whose menu is open (its ⋯
+  // looks pressed); `openTile` is the menu's Open page.
+  tileMenu: null as ((tileId: string, rect: { x: number; y: number; w: number; h: number }) => void) | null,
+  busyTile: '',
+  menuTile: '',
+  openTile: null as ((tileId: string) => void) | null,
 })
 
 // ---- Tiles as data

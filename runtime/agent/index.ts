@@ -44,9 +44,7 @@ const dialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-sta
 
 function layout(): FromFrame['layout'] {
 	const nav = window.matchMedia(PHONE).matches ? document.querySelector<HTMLElement>(NAV) : null
-	// The Demo pill publishes its height, with its bar's, for whatever floats at the bottom edge (Pills.vue).
-	const variantsH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sketch-variants-h')) || 0
-	return { vw: window.innerWidth, vh: window.innerHeight, navBottom: nav?.offsetHeight ?? 0, pageLayerOpen: pageLayerOpen(), dialogOpen: dialogOpen(), variantsH }
+	return { vw: window.innerWidth, vh: window.innerHeight, navBottom: nav?.offsetHeight ?? 0, pageLayerOpen: pageLayerOpen(), dialogOpen: dialogOpen() }
 }
 
 const modsOf = (e: KeyboardEvent) =>
@@ -102,12 +100,15 @@ function startCanvas(variants: any) {
 	bridge.shell = true
 	bridge.pick = (hit: any) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
 	bridge.onEmptyClick = () => post('canvas:click', {})
+	// The live tile's ⋯: the shell opens its menu at the button (runtime/shell/TileMenu.vue).
+	bridge.tileMenu = (tileId: string, rect: FromFrame['tile:menu']['rect']) => post('tile:menu', { tileId, rect })
 
 	const tilesOf = (): FromFrame['canvas']['tiles'] =>
 		(bridge.tiles as any[]).flatMap((t) => {
 			const spot = spotOf(t, bridge.view)
 			if (!spot) return []
-			return [{ id: t.id, route: spot.route, rect: { x: t.x, y: t.y, w: t.w, h: t.h }, tile: spot.tile, label: t.opt ?? t.caption ?? '', isDefault: !!t.isDefault, author: t.author ?? '' }]
+			const set = t.kind === 'set' ? { setName: t.setName ?? '', setFile: t.setFile ?? '', setCount: t.setOptions?.length ?? 0 } : {}
+			return [{ id: t.id, route: spot.route, rect: { x: t.x, y: t.y, w: t.w, h: t.h }, tile: spot.tile, label: t.opt ?? t.caption ?? '', isDefault: !!t.isDefault, author: t.author ?? '', ...set }]
 		})
 	const pagesOf = (): FromFrame['canvas']['pages'] =>
 		((bridge.model ?? []) as any[]).map((p) => ({
@@ -170,14 +171,20 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		scrollTo: picker.scrollTo,
 		escape: escapeInPage,
 		'picks:apply': ({ picks }) => router && variants?.applyPicks(picks as any, router),
-		// The Demo pill rides above the shell's toolbar on a phone when the two would meet (Pills.vue). The canvas fits
-		// its tiles in the room the shell's panel leaves. The options new to this reader get their "New" badge.
+		// The shell's Demo pill: an option or a state picked in it, and a fresh look at where the rows sit.
+		'state:set': ({ id, value }) => router && variants?.setDemo(id, value, router),
+		'model:measure': () => router && variants?.measureDemo(router.currentRoute.value),
+		'tile:open': ({ tileId }) => variants?.bridge.openTile?.(tileId),
+		// The canvas fits its tiles in the room the shell's panel leaves. The options new to this reader get their "New"
+		// badge. The tile whose action the shell saves spins, the one whose menu is open looks pressed, and the option a
+		// write landed on is ringed once drawn.
 		display: (d) => {
 			if (!variants) return
-			if (d.toolbarLift !== undefined) variants.bridge.toolbarLift = d.toolbarLift
-			if (d.toolbarRight !== undefined) variants.bridge.toolbarRight = d.toolbarRight
 			if (d.reserve !== undefined) variants.bridge.shellReserve = Math.max(0, d.reserve)
 			for (const o of d.newOptions ?? []) variants.badges.fresh[o] = true
+			if (d.busyTile !== undefined) variants.bridge.busyTile = d.busyTile
+			if (d.menuTile !== undefined) variants.bridge.menuTile = d.menuTile
+			if (d.landed && variants.landed) variants.landed.value = d.landed
 		},
 		'canvas:open': ({ view }) => {
 			if (!router || !variants) return
@@ -231,18 +238,18 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	if (variants) {
 		const { demoEntries } = variants
 		watch(() => JSON.stringify(demoEntries()), () => post('demo', { entries: demoEntries() }), { immediate: true })
+		// The Demo pill's rows, which the shell draws.
+		if (router) watch(() => JSON.stringify(variants.demoModel(router)), (json) => post('model', JSON.parse(json)), { immediate: true })
 		startCanvas(variants)
 	}
 
-	// The Prototype may switch its own theme (a toggle in the page writes data-theme); the shell follows it. The
-	// Demo pill's height arrives as a style on the same element.
+	// The Prototype may switch its own theme (a toggle in the page writes data-theme); the shell follows it.
 	new MutationObserver(() => {
-		postLayout()
 		const next = themeNow()
 		if (next === theme) return
 		theme = next
 		post('theme', { theme })
-	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] })
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
 	window.addEventListener('resize', postLayout)
 	// A page layer opening or closing, or the bottom bar arriving, is a change in the DOM, not in the viewport.

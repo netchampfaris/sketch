@@ -381,6 +381,11 @@ onMounted(() => {
   bridge.open = true
   bridge.reveal = reveal
   bridge.pointOf = pointOf
+  // The shell's tile menu (Viewer shell): Open page on the tile it was opened for.
+  bridge.openTile = (id) => {
+    const t = layout.value.tiles.find((x) => x.id === id)
+    if (t) openPage(t)
+  }
   document.body.style.overflow = 'hidden'
   if (vp.value) detach = pz.attach(vp.value)
   root.value?.focus()
@@ -394,6 +399,7 @@ onBeforeUnmount(() => {
   bridge.open = false
   bridge.reveal = null
   bridge.pointOf = null
+  bridge.openTile = null
   bridge.model = null
   bridge.tiles = []
   bridge.reserve = 0

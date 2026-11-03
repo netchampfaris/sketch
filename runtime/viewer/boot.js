@@ -503,6 +503,8 @@ async function run() {
   const data = readData()
   payload = data
   if (chromeOff(data)) document.documentElement.dataset.sketchChrome = 'off'
+  // In the shell's frame the Demo pill is the shell's to draw (runtime/shell/DemoPill.vue); Chrome.vue reads this.
+  else if (inShell(data)) document.documentElement.dataset.sketchChrome = 'shell'
   applyTheme(data.theme)
   setTitle(data)
   // Before the early returns below: an empty or broken tree must reload too.

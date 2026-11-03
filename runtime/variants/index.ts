@@ -8,7 +8,7 @@ import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sa
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { enableMakeDefault, makeDefault } from './default'
+export { enableMakeDefault, landed, makeDefault } from './default'
 export { enableVariantEdit } from './edit'
 export { registerExtras } from './extras'
 export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
@@ -18,6 +18,7 @@ export { menuBind } from './menus'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'
 export { applyPicks, currentPicks, demoEntries, picksAvailable, picksShown, picksWords } from './picks'
 export type { DemoPick } from './picks'
+export { demoModel, measureDemo, setDemo } from './model'
 
 // A demo value (a persona, a workflow phase). The first option is the default.
 export function useDemoState<T extends string>(name: string, options: readonly T[]) {

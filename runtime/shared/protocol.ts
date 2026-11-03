@@ -191,9 +191,9 @@ export type FromFrame = {
 	// `key` is the route a note belongs to (runtime/agent/dom.ts routeKey); `path` the route's path alone.
 	route: { fullPath: string; path: string; key: string }
 	theme: { theme: Theme }
-	// `variantsH` is the Demo pill's height and its bar's (--sketch-variants-h), 0 with no pill.
-	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean; variantsH: number }
-	model: { sets: ModelSet[]; states: ModelState[]; pages: string[] }
+	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean }
+	// The Demo pill's rows on this page, in page order, and whether the card's foot offers "Open canvas".
+	model: { sets: ModelSet[]; states: ModelState[]; canOpen: boolean }
 	// The element under the pointer while a tool picks, its label, and with Alt held the distances to the selection.
 	hover: { rect: Rect | null; label: string; lines: Redline[]; alt: boolean; shift: boolean }
 	pick: Pick
@@ -230,10 +230,36 @@ export type FromFrame = {
 }
 export type Page = { path: string; title: string }
 export type ModelOption = { value: string; label: string; author: string }
-export type ModelSet = { id: string; key: string; name: string; label: string; file: string; path: string; options: ModelOption[] }
-export type ModelState = { id: string; label: string; value: string; options: string[] }
+// `id` is `set:<path>::<key>` (or `state:…`), what `state:set` names. `value` is the option on show, `view` the canvas view
+// that shows the set, `rect` its box on the page when last measured (null when it draws nothing). `path` '' is app-wide.
+export type ModelSet = {
+	id: string
+	key: string
+	name: string
+	label: string
+	file: string
+	path: string
+	value: string
+	view: string
+	rect: Rect | null
+	options: ModelOption[]
+}
+export type ModelState = { id: string; label: string; path: string; value: string; options: string[] }
 // `rect` is in the canvas's own coordinates: the screen point is pan + rect * zoom.
-export type CanvasTile = { id: string; route: string; rect: Rect; tile: TileRef; label: string; isDefault: boolean; author: string }
+// A set's tile also says which `<Variants>` it is (its name and file) and how many options the set has: what Make default
+// and Keep only this ask the server for. A lying frame can only name another option for the owner's real click.
+export type CanvasTile = {
+	id: string
+	route: string
+	rect: Rect
+	tile: TileRef
+	label: string
+	isDefault: boolean
+	author: string
+	setName: string
+	setFile: string
+	setCount: number
+}
 // What the canvas found on a page, enough to tell whether a pinned tile still exists (sets by key with their option
 // values, states by key with their options).
 export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[] }
@@ -270,20 +296,26 @@ const rectMap = (v: unknown) => {
 }
 const modelOption = (v: unknown): ModelOption | null =>
 	isObj(v) ? all<ModelOption>({ value: str(v.value), label: str(v.label), author: str(v.author ?? '') }) : null
-const modelSet = (v: unknown): ModelSet | null =>
-	isObj(v)
-		? all<ModelSet>({
-				id: str(v.id),
-				key: str(v.key),
-				name: str(v.name),
-				label: str(v.label),
-				file: str(v.file, CAPS.route),
-				path: str(v.path, CAPS.route),
-				options: list(v.options, CAPS.options, modelOption),
-			})
-		: null
+// `rect` may be null (a set that draws nothing), which `all` would read as unreadable: it is read on its own.
+const modelSet = (v: unknown): ModelSet | null => {
+	if (!isObj(v)) return null
+	const base = all<Omit<ModelSet, 'rect'>>({
+		id: str(v.id),
+		key: str(v.key),
+		name: str(v.name),
+		label: str(v.label),
+		file: str(v.file, CAPS.route),
+		path: str(v.path, CAPS.route),
+		value: str(v.value),
+		view: str(v.view, CAPS.route),
+		options: list(v.options, CAPS.options, modelOption),
+	})
+	return base && { ...base, rect: v.rect == null ? null : rect(v.rect) }
+}
 const modelState = (v: unknown): ModelState | null =>
-	isObj(v) ? all<ModelState>({ id: str(v.id), label: str(v.label), value: str(v.value), options: strings(v.options, CAPS.options) }) : null
+	isObj(v)
+		? all<ModelState>({ id: str(v.id), label: str(v.label), path: str(v.path, CAPS.route), value: str(v.value), options: strings(v.options, CAPS.options) })
+		: null
 const canvasTile = (v: unknown): CanvasTile | null =>
 	isObj(v)
 		? all<CanvasTile>({
@@ -294,6 +326,9 @@ const canvasTile = (v: unknown): CanvasTile | null =>
 				label: str(v.label),
 				isDefault: bool(v.isDefault ?? false),
 				author: str(v.author ?? ''),
+				setName: str(v.setName ?? ''),
+				setFile: str(v.setFile ?? '', CAPS.route),
+				setCount: num(v.setCount ?? 0),
 			})
 		: null
 const keyed = (v: unknown) => (isObj(v) ? all<{ key: string; options: string[] }>({ key: str(v.key), options: strings(v.options, CAPS.options) }) : null)
@@ -335,10 +370,8 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			navBottom: num(d.navBottom),
 			pageLayerOpen: bool(d.pageLayerOpen),
 			dialogOpen: bool(d.dialogOpen ?? false),
-			variantsH: num(d.variantsH ?? 0),
 		}),
-	model: (d) =>
-		all({ sets: list(d.sets, CAPS.sets, modelSet), states: list(d.states, CAPS.sets, modelState), pages: strings(d.pages, CAPS.list, CAPS.route) }),
+	model: (d) => all({ sets: list(d.sets, CAPS.sets, modelSet), states: list(d.states, CAPS.sets, modelState), canOpen: bool(d.canOpen ?? false) }),
 	hover: (d) => {
 		const keys = all({ alt: bool(d.alt ?? false), shift: bool(d.shift ?? false) })
 		if (!keys) return null
@@ -434,7 +467,20 @@ export type ToFrame = {
 	// The tool picking tiles, '' while browsing: a click on a tile is then a `tile:pick`, not opening it live.
 	'canvas:tool': { tool: '' | 'comment' | 'note' }
 	// Where the shell's chrome sits, for the page's own chrome to keep clear of it. Any field may be left out.
-	display: { newOptions?: string[]; reserve?: number; corner?: string; toolbarLift?: number; toolbarRight?: number }
+	// `busyTile` is the tile whose action the shell is saving and `menuTile` the one whose menu is open ('' for none);
+	// `landed` the option a write has just put in place, which the canvas rings once it is drawn.
+	display: {
+		newOptions?: string[]
+		reserve?: number
+		corner?: string
+		busyTile?: string
+		menuTile?: string
+		landed?: { set: string; option: string }
+	}
+	// Sort and measure the Demo's rows again (the card opened, a row is hovered): the frame answers with `model`.
+	'model:measure': Obj
+	// The tile menu's Open page.
+	'tile:open': { tileId: string }
 	theme: { theme: Theme }
 	// The two facts the frame's status screen (empty, did not build) words itself by. Sent only with that screen up.
 	copy: { owner: boolean; reloads: boolean }
@@ -476,9 +522,12 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 			newOptions: strings(d.newOptions, CAPS.options),
 			reserve: num(d.reserve),
 			corner: str(d.corner, 40),
-			toolbarLift: num(d.toolbarLift),
-			toolbarRight: num(d.toolbarRight),
+			busyTile: str(d.busyTile),
+			menuTile: str(d.menuTile),
+			landed: isObj(d.landed) ? all({ set: str(d.landed.set), option: str(d.landed.option) }) : null,
 		}),
+	'model:measure': () => ({}),
+	'tile:open': (d) => all({ tileId: str(d.tileId) }),
 	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
 	copy: (d) => all({ owner: bool(d.owner), reloads: bool(d.reloads) }),
 	scrollTo: (d) => all({ selector: str(d.selector, CAPS.selector), smooth: bool(d.smooth ?? false) }),
