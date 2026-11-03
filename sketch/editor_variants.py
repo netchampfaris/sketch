@@ -250,14 +250,7 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	found = adoptable(doc, host_file, set_name, option)
 	versions.commit_before(doc, "Changes before the default was changed", [found["path"]])
 	destination = move_in(doc, host_file, set_name, found)
-	label = found["meta"]["name"]
-	version = versions.commit(
-		doc,
-		f"Made “{label}” the default for {set_name}",
-		source="App",
-		action=versions.MADE_DEFAULT,
-		label=label,
-	)
+	version = commit_default(doc, found["meta"]["name"], set_name)
 	return {
 		"file": host_file,
 		"name": set_name,
@@ -289,8 +282,26 @@ def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
 	registry[path]["default"] = True
 	write_registry(doc.name, registry)
 	versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
-	version = versions.commit(doc, f"Made \u201c{meta['name']}\u201d the default for {set_name}", source="App")
-	return {"file": host_file, "name": set_name, "option": option, "sequence": version.sequence if version else None}
+	version = commit_default(doc, meta["name"], set_name)
+	return {
+		"file": host_file,
+		"name": set_name,
+		"set": set_name,
+		"option": option,
+		"label": meta["name"],
+		"sequence": version.sequence if version else None,
+	}
+
+
+def commit_default(doc, label: str, set_name: str):
+	"""The version a Make default ends with, marked so `variant_default.undo_default` takes it."""
+	return versions.commit(
+		doc,
+		f"Made \u201c{label}\u201d the default for {set_name}",
+		source="App",
+		action=versions.MADE_DEFAULT,
+		label=label,
+	)
 
 
 def _check_target(name: str, meta: dict, host_file: str, set_name: str) -> None:

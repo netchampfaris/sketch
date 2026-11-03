@@ -287,13 +287,7 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 
 	label = label_of(option)
-	version = versions.commit(
-		doc,
-		f"Made \u201c{label}\u201d the default for {name}",
-		source="App",
-		action=versions.MADE_DEFAULT,
-		label=label,
-	)
+	version = editor_variants.commit_default(doc, label, name)
 	return {
 		"file": file,
 		"name": name,

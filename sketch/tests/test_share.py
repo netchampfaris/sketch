@@ -824,6 +824,40 @@ class TestDeleteAndDefault(ShareCase):
 		# The owner's pick is recorded on the tag, even for the first slot: no slot moves.
 		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME.replace('name="KPI strip"', 'name="KPI strip" default="wide"'))
 
+	def test_an_adopted_option_leads_again_and_that_undoes(self):
+		self.add_variant()
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "wide")
+
+		page = self.page_data_for(self.owner)
+		signed = {
+			"exp": str(page["variant_exp"]),
+			"sig": page["variant_sig"],
+			"file": "src/pages/Home.vue",
+			"set_name": "KPI strip",
+		}
+		with set_user("Guest"):
+			done = api.set_variant_default_signed(self.doc.name, option="adopted/compact", **signed)
+
+		registry = json.loads(self.tree()["src/variants/adopted.json"])
+		self.assertTrue(registry["src/variants/adopted/compact.vue"]["default"])
+		# Stored on the version, not read back from the prompt's wording.
+		row = {"prototype": self.doc.name, "sequence": done["sequence"]}
+		stored = frappe.db.get_value(versions.VERSION, row, ["action", "action_label"])
+		self.assertEqual(tuple(stored), (versions.MADE_DEFAULT, "Compact"))
+
+		with set_user("Guest"):
+			api.undo_variant_default_signed(
+				self.doc.name, sequence=str(done["sequence"]), option="adopted/compact", **signed
+			)
+
+		registry = json.loads(self.tree()["src/variants/adopted.json"])
+		self.assertFalse(registry["src/variants/adopted/compact.vue"]["default"])
+		self.assertEqual(
+			versions.history(self.doc.name)[0]["prompt"], "Undid making “Compact” the default for KPI strip"
+		)
+
 	def test_make_default_on_a_component_variant_and_back_to_the_original(self):
 		self.add_variant(WRAP, "dense.vue")
 		with set_user(self.owner):
