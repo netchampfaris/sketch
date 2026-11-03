@@ -17,12 +17,13 @@ back with. The one way back is Undo (`restore`): for a few minutes after a
 delete the server holds the deleted rows, for the person who deleted them only,
 and puts them back once.
 
-The writer is the Viewer page, which runs the Prototype's own JavaScript, and
-a fork means that code is a stranger's. So who is speaking is never taken from
-the page: the page holds a short-lived pass (`mint_pass`) signed over this
-Prototype and this one username, and the server checks it, the user it names,
-and the Prototype's visibility again on every call. The text is stored as sent
-and shown only as escaped text.
+The writer is the Viewer's shell, Sketch's own page around the Prototype's
+frame (sketch/viewer.py), calling `sketch.viewer_api` with the reader's
+session. The frame runs the Prototype's own JavaScript, and a fork means that
+code is a stranger's, so it holds no credential and can call none of these.
+Who is speaking comes from the session, and the server checks that person and
+the Prototype's visibility again on every call (`actor`). The text is stored as
+sent and shown only as escaped text.
 
 `name` is always the Prototype's hash primary key, never its slug.
 """
@@ -35,7 +36,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 
-from sketch import badges, sharing, signature
+from sketch import badges, sharing
 
 PROTOTYPE = "Sketch Prototype"
 COMMENT = "Sketch Comment"
@@ -56,10 +57,6 @@ MAX_ANCHOR_BYTES = 8 * 1024
 UNDO_TTL_SECONDS = 10 * 60
 #: How many threads one "Delete resolved" may name besides the resolved ones (threads on tiles that have gone).
 MAX_DELETE_ALSO = 200
-#: How long a pass lasts. The toolbar renews it while the person is active.
-PASS_TTL_SECONDS = 15 * 60
-#: How long a page's right to ask for a pass lasts: as long as the owner's live tab.
-TICKET_TTL_SECONDS = 12 * 60 * 60
 
 #: Strings in an anchor, and how long each may be.
 ANCHOR_TEXT = {
@@ -107,7 +104,7 @@ class TooManyThreads(frappe.ValidationError):
 
 @dataclass(frozen=True)
 class Actor:
-	"""Who a pass speaks for, and whether they own the Prototype it is on."""
+	"""Who is commenting, and whether they own the Prototype."""
 
 	username: str
 	user: str
@@ -117,36 +114,11 @@ class Actor:
 # --------------------------------------------------------------------- access
 
 
-def mint_ticket(name: str, username: str) -> dict:
-	"""What the page payload carries for a commenter: the right to ask for a pass.
+def commenter(name: str, username: str, user: str) -> Actor:
+	"""The signed-in `user` (`username`) as a commenter on Prototype `name`. Anyone who may not see it is a 404.
 
-	It opens `mint_pass` and nothing else, so it cannot read or write a comment.
+	The Prototype is read again on every call: an owner who makes it private closes the door at once.
 	"""
-	return signature.mint(signature.subject(name, username), TICKET_TTL_SECONDS, signature.COMMENT_MINT)
-
-
-def mint_pass(name: str, username: str, exp, sig) -> dict:
-	"""A short-lived pass for a person with a valid ticket, if they may still comment.
-
-	Called by the toolbar when the person enters Comment mode and again before
-	the pass runs out. The Prototype's visibility is read now, so a Prototype
-	made private stops handing out passes at once. Any refusal is a 404.
-	"""
-	actor = _actor(name, username, signature.signed_user(name, username, exp, sig, signature.COMMENT_MINT))
-	stamp = signature.mint(signature.subject(name, actor.username), PASS_TTL_SECONDS, signature.COMMENT)
-	return {"exp": stamp["exp"], "sig": stamp["sig"], "ttl": PASS_TTL_SECONDS}
-
-
-def actor_for(name: str, username: str, exp, sig) -> Actor:
-	"""Check a pass and who it names. Every refusal is the same 404.
-
-	The Prototype is read again each time: an owner who makes it private closes
-	the door at once, not when the pass runs out.
-	"""
-	return _actor(name, username, signature.signed_user(name, username, exp, sig, signature.COMMENT))
-
-
-def _actor(name: str, username: str, user: str) -> Actor:
 	owner = frappe.db.get_value(PROTOTYPE, name, "owner")
 	if not owner or not sharing.can_view(name, user):
 		raise frappe.DoesNotExistError

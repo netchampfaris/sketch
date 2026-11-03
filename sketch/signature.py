@@ -17,72 +17,31 @@ Sketch owns this instead of `frappe.utils.verified_command` for two reasons
 The signature covers the hash id, not the URL. Rename a slug or a username and
 an old signature signs nothing.
 
-It also covers a scope, so one signature opens one thing.
+It opens one thing: the Prototype's document for `check`, which comes in as a
+Guest (sketch/checkd.py). Nothing a person uses carries one. The Viewer's shell
+acts with the reader's session (sketch/viewer_api.py), and the Prototype's
+frame holds no credential at all.
 """
 
 import hashlib
 import hmac
 import time
 
-import frappe
 from frappe.utils.verified_command import get_secret
 
 DEFAULT_TTL = 60
 
-#: What a signature opens. The scope is inside the HMAC message, so a
-#: signature minted for one scope verifies under no other one.
-#:
-#: - VIEW opens the whole Viewer document, which carries the source tree. Only
-#:   `check` mints it, and it lives for `DEFAULT_TTL` seconds.
-#: - REVISION opens one number, `sketch.api.signed_revision`, and nothing
-#:   else. The Viewer mints it into the page, where the Prototype's own
-#:   JavaScript reads it, so it must never open the document as well: a
-#:   forked tree runs a stranger's code, and that code would hold a link to
-#:   the reader's own Prototype for as long as the signature lasts.
-#: - ANNOTATE writes the owner's notes and tweaks for one Prototype
-#:   (`sketch.api.save_annotations`). Like REVISION it is minted into the page
-#:   and read by the Prototype's own JavaScript, so it must open nothing else.
-#:   What it can do is put rows in front of the owner's agent, which is why the
-#:   save is size- and shape-checked and the MCP tool tells the agent to treat
-#:   the rows as requests to check, never as orders.
-#: - COMMENT writes and reads one signed-in person's comments on one Prototype
-#:   (`sketch.api.comment_*`). It is minted over the hash id and the username
-#:   together (`subject`), so it speaks for that one person on
-#:   that one Prototype and nothing else. It lasts 15 minutes and is minted when
-#:   the person enters Comment mode, never into the page payload.
-#: - COMMENT_MINT is the one thing the payload carries for a commenter: it
-#:   opens `sketch.api.comment_pass` and nothing else. The Viewer sits in an
-#:   opaque origin and sends no cookie (measured: a fetch from it reaches the
-#:   server as Guest), so a call that only a session cookie could make is not
-#:   possible from the toolbar. This stands in for the cookie until the toolbar
-#:   moves out of the Prototype's page.
-#: - VARIANT_DEFAULT moves one slot of a `<Variants>` set to the front of its
-#:   file and saves a version (`sketch.api.set_variant_default_signed`). It is
-#:   minted into the owner's live page only, and what it can do is reorder
-#:   slots in a `.vue` file the owner already owns, which Undo reverses.
-#: - VARIANT_EDIT deletes a variant (`sketch.api.delete_variant_signed`). It is
-#:   minted over the hash id and one username together, like COMMENT, into the
-#:   page of the owner and of each invited editor. The server reads the person
-#:   from it: an editor can delete files in their own folder, the owner any
-#:   variant, and what is deleted comes back with Undo.
-#: - SEEN marks what one signed-in person has looked at on one Prototype
-#:   (`sketch.api.seen_mark`). Minted over the hash id and the username together, like
-#:   COMMENT, into the page of anyone who may comment. It opens one write, a mark on that
-#:   person's own list of seen variants and threads, which the person could make by hand.
+#: The one scope. It is inside the HMAC message, so a signature minted for
+#: anything else, by an older build, verifies as nothing here. VIEW opens the
+#: whole Viewer document, which carries the source tree. Only `check` mints
+#: it, and it lives for `DEFAULT_TTL` seconds.
 VIEW = "view"
-REVISION = "revision"
-ANNOTATE = "annotate"
-COMMENT = "comment"
-COMMENT_MINT = "comment-mint"
-VARIANT_DEFAULT = "variant_default"
-VARIANT_EDIT = "variant_edit"
-SEEN = "seen"
 
 
-def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:
-	"""The hex HMAC-SHA256 over "<scope>:<name>:<exp>" with the site secret."""
+def _digest(prototype_name: str, exp: int) -> str:
+	"""The hex HMAC-SHA256 over "view:<name>:<exp>" with the site secret."""
 	secret = get_secret()
-	message = f"{scope}:{prototype_name}:{exp}"
+	message = f"{VIEW}:{prototype_name}:{exp}"
 	return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
@@ -91,17 +50,17 @@ def _now() -> int:
 	return int(time.time())
 
 
-def mint(prototype_name: str, ttl_seconds: int = DEFAULT_TTL, scope: str = VIEW) -> dict:
-	"""Sign this Prototype, for this scope, for the next ttl_seconds.
+def mint(prototype_name: str, ttl_seconds: int = DEFAULT_TTL) -> dict:
+	"""Sign this Prototype for the next ttl_seconds.
 
 	Returns {"exp": <int unix seconds>, "sig": <hex str>}.
 	"""
 	exp = _now() + int(ttl_seconds)
-	return {"exp": exp, "sig": _digest(prototype_name, exp, scope)}
+	return {"exp": exp, "sig": _digest(prototype_name, exp)}
 
 
-def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
-	"""True only for an unexpired signature over this hash id and this scope.
+def verify(prototype_name: str, exp, sig) -> bool:
+	"""True only for an unexpired signature over this hash id.
 
 	Never raises. A malformed exp or sig is False, not an error.
 	"""
@@ -118,26 +77,6 @@ def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
 		return False
 
 	try:
-		return hmac.compare_digest(given, _digest(prototype_name, expiry, scope))
+		return hmac.compare_digest(given, _digest(prototype_name, expiry))
 	except (TypeError, ValueError):
 		return False
-
-
-def subject(prototype_name: str, username: str) -> str:
-	"""What a signature for one person covers: this Prototype, for this one person."""
-	return f"{prototype_name}|{username}"
-
-
-def signed_user(prototype_name: str, username: str, exp, sig, scope: str) -> str:
-	"""The enabled user a signature for one person names. Every refusal is the same 404.
-
-	The caller still checks what that person may do here: this says only who they are.
-	"""
-	if not username or not verify(subject(prototype_name, username), exp, sig, scope):
-		raise frappe.DoesNotExistError
-
-	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
-	if not user:
-		raise frappe.DoesNotExistError
-
-	return user

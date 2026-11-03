@@ -21,17 +21,14 @@ from sketch import (
 	badges,
 	checkd,
 	comments,
-	editor_variants,
 	prototype,
 	prototype_files,
 	sharing,
-	signature,
 	snapshots,
 	thumbnail,
 	thumbnails,
 	variant_default,
 	versions,
-	viewer_api,
 )
 from sketch.sketch.doctype.sketch_token import sketch_token
 
@@ -555,28 +552,6 @@ def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
 	return variant_default.set_default(doc, file, name, option)
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def set_variant_default_signed(
-	name: str, exp: str = "", sig: str = "", file: str = "", set_name: str = "", option: str = ""
-) -> dict:
-	"""`set_variant_default` for the Viewer, which sends no session cookie.
-
-	The same door as `save_annotations`: the Viewer is sandboxed into an opaque
-	origin, so the signature minted into the owner's live page is the whole
-	authentication, and `allow_guest` follows from that. Its scope is
-	VARIANT_DEFAULT, so no other signature opens it and it opens nothing else.
-	A bad or expired signature answers 404.
-
-	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
-		raise frappe.DoesNotExistError
-
-	doc = frappe.get_doc("Sketch Prototype", name)
-	return variant_default.set_default(doc, file, set_name, option)
-
-
 @frappe.whitelist(methods=["POST"])
 def undo_variant_default(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
 	"""Put `file` back exactly as it was before version `sequence` made `option` the default.
@@ -586,19 +561,6 @@ def undo_variant_default(slug: str, file: str, sequence: int, name: str, option:
 	"""
 	doc = prototype.resolve_owned(slug)
 	return variant_default.undo_default(doc, file, sequence, name, option)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def undo_variant_default_signed(
-	name: str, exp: str = "", sig: str = "", file: str = "", sequence: str = "", set_name: str = "", option: str = ""
-) -> dict:
-	"""`undo_variant_default` for the Viewer, behind the same VARIANT_DEFAULT signature."""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
-		raise frappe.DoesNotExistError
-
-	doc = frappe.get_doc("Sketch Prototype", name)
-	return variant_default.undo_default(doc, file, sequence, set_name, option)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -611,40 +573,11 @@ def keep_variant(slug: str, file: str, name: str, option: str) -> dict:
 	return variant_default.keep_only(doc, file, name, option)
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def keep_variant_signed(
-	name: str, exp: str = "", sig: str = "", file: str = "", set_name: str = "", option: str = ""
-) -> dict:
-	"""`keep_variant` for the Viewer, behind the owner-only VARIANT_DEFAULT signature.
-
-	An editor's signature (VARIANT_EDIT) does not open it.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
-		raise frappe.DoesNotExistError
-
-	doc = frappe.get_doc("Sketch Prototype", name)
-	return variant_default.keep_only(doc, file, set_name, option)
-
-
 @frappe.whitelist(methods=["POST"])
 def undo_keep_variant(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
 	"""Bring back what version `sequence` removed. Refused when any of it changed since."""
 	doc = prototype.resolve_owned(slug)
 	return variant_default.undo_keep(doc, file, sequence, name, option)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def undo_keep_variant_signed(
-	name: str, exp: str = "", sig: str = "", file: str = "", sequence: str = "", set_name: str = "", option: str = ""
-) -> dict:
-	"""`undo_keep_variant` for the Viewer, behind the same VARIANT_DEFAULT signature."""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.VARIANT_DEFAULT):
-		raise frappe.DoesNotExistError
-
-	doc = frappe.get_doc("Sketch Prototype", name)
-	return variant_default.undo_keep(doc, file, sequence, set_name, option)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -671,111 +604,23 @@ def prototype_revision(slug: str) -> dict:
 
 	`resolve_owned` is the permission check, so only the owner may read it.
 
-	The Viewer does not call this. Its document is sandboxed into an opaque
-	origin, which sends no cookie, so it calls `signed_revision` below. This
-	stays for the Sketch UI, which is a plain same-origin page with a session.
+	The Viewer's shell polls it for the owner's live reload (runtime/shell/liveReload.ts):
+	the shell is Sketch's own page and sends the session. The Prototype's frame
+	sends no cookie and cannot call it.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return {"rev": prototype_files.revision(doc.name)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
-def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
-	"""The current revision of one Prototype's tree, for the Viewer's poller.
-
-	The Viewer serves every Prototype from an opaque origin (`sketch/viewer.py`
-	SANDBOX), because a Prototype is JavaScript one user wrote and a fork puts
-	a stranger's code inside the reader's own tree. An opaque origin sends no
-	session cookie, so `prototype_revision` above cannot answer the owner's own
-	tab. This one takes the short-lived signature the Viewer minted into the
-	page instead, and `allow_guest` follows from that: there is no session to
-	read.
-
-	The signature is not a session. It authenticates this read and nothing
-	else:
-
-	- the scope is REVISION, which is inside the HMAC message, so the same
-	  string opens no Viewer document (`sketch/signature.py`);
-	- it covers one Prototype hash id, so it cannot be replayed against
-	  another Prototype;
-	- it expires;
-	- the answer is the revision string and nothing else. No title, no owner,
-	  no file.
-
-	A bad or expired signature answers 404, which is the Viewer's own answer
-	to the same question. A named error would confirm which hash ids exist.
-
-	`Access-Control-Allow-Origin: *` because the caller's origin is "null" and
-	matches no allowlist. No `Access-Control-Allow-Credentials`: the signature
-	is the whole authentication, and a cookie must never widen it.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.REVISION):
-		raise frappe.DoesNotExistError
-
-	return {"rev": prototype_files.revision(name)}
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def save_annotations(
-	name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "", username: str = ""
-) -> dict:
-	"""Save the owner's notes and tweaks from the Viewer's toolbar.
-
-	The same door as `signed_revision`, for the same reason: the Viewer is in an
-	opaque origin and sends no cookie, so the signature minted into the page is
-	the whole authentication, and `allow_guest` follows from that. Its scope is
-	ANNOTATE, so a revision signature cannot write and this one reads nothing.
-
-	A bad or expired signature answers 404, as `signed_revision` does. The body
-	is size-capped at 256 KB (413) and shape-checked before it is stored
-	(`sketch.annotations.parse`), because the page that sends it may be running a
-	forked stranger's code and the rows reach the owner's agent. `epoch` is the
-	one the page loaded with; a page from before the agent's last clear gets 409.
-
-	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
-
-	`xss_safe`: Frappe strips HTML from a Guest's form data, which turned a note
-	like "use <Badge>" into "use ". The body is stored as JSON, shown only as
-	escaped text by the toolbar and handed to the agent as data, never as HTML.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if username:
-		# An invited editor's own notes: their signature covers the Prototype and their name together, and they
-		# must still be invited. The owner's notes are never reachable this way (decision 29).
-		user = signature.signed_user(name, username, exp, sig, signature.ANNOTATE)
-		if not sharing.is_editor(name, user):
-			raise frappe.DoesNotExistError
-
-		return viewer_api.save_notes_as(name, data, epoch, editor=user)
-
-	if not signature.verify(name, exp, sig, signature.ANNOTATE):
-		raise frappe.DoesNotExistError
-
-	return viewer_api.save_notes_as(name, data, epoch)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def comment_pass(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
-	"""Mint a 15 minute comment pass. The toolbar calls it when Comment mode opens.
-
-	The page holds a ticket (`sketch.comments.mint_ticket`), not a pass. The
-	Viewer is in an opaque origin and sends no cookie, so the ticket stands in
-	for it. A bad ticket, a missing Prototype and a private Prototype that is not
-	theirs all answer 404.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	return comments.mint_pass(name, username, exp, sig)
-
-
-@frappe.whitelist(allow_guest=True, methods=["GET"])
 def sign_in_to_comment(back: str = "/") -> None:
 	"""Send a signed-out visitor to the login page and bring them back to `back`.
 
-	The Viewer is sandboxed and cannot set the `sketch_after_login` cookie
-	itself (sketch/www/sketch.py), so its "Sign in to comment" link comes here.
-	Only a path into a Prototype is remembered; anything else is dropped and the
-	visitor lands where login normally sends them.
+	The Viewer's "Sign in to comment" button comes here, so the path to come
+	back to is checked and remembered on the server, in the same
+	`sketch_after_login` cookie login reads (sketch/www/sketch.py). Only a path
+	into a Prototype is remembered; anything else is dropped and the visitor
+	lands where login normally sends them.
 	"""
 	from sketch.www import sketch as sketch_page
 
@@ -784,87 +629,6 @@ def sign_in_to_comment(back: str = "/") -> None:
 
 	frappe.local.response["type"] = "redirect"
 	frappe.local.response["location"] = sketch_page.LOGIN_PATH
-
-
-def _commenter(name: str, username: str, exp: str, sig: str) -> comments.Actor:
-	"""The pass-authenticated door every other comment call shares.
-
-	Like `signed_revision`: `Access-Control-Allow-Origin: *`, no credentials, the
-	pass is the whole authentication. Any refusal is a 404.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	return comments.actor_for(name, username, exp, sig)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comments_list(name: str, username: str = "", exp: str = "", sig: str = "") -> dict:
-	"""Every thread on a Prototype, for someone who may comment on it."""
-	return viewer_api.comments_list_as(name, _commenter(name, username, exp, sig))
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_add(name: str, username: str = "", exp: str = "", sig: str = "", anchor: str = "", text: str = ""):
-	"""Start a thread on an element. Returns the thread."""
-	return viewer_api.comment_add_as(name, _commenter(name, username, exp, sig), anchor, text)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_reply(name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", text: str = ""):
-	"""Reply in a thread. Returns the thread."""
-	return viewer_api.comment_reply_as(name, _commenter(name, username, exp, sig), thread, text)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_edit(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "", text: str = ""):
-	"""Edit your own comment. Returns its thread."""
-	return viewer_api.comment_edit_as(name, _commenter(name, username, exp, sig), comment, text)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_delete(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
-	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
-	return viewer_api.comment_delete_as(name, _commenter(name, username, exp, sig), comment)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_restore(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = ""):
-	"""Undo a delete, for the person who made it, within minutes. Returns the thread."""
-	return viewer_api.comment_restore_as(name, _commenter(name, username, exp, sig), comment)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comments_delete_resolved(name: str, username: str = "", exp: str = "", sig: str = "", also: str = "") -> dict:
-	"""The owner deletes every resolved thread with its replies, and the threads named in `also` (a JSON list of ids:
-	the ones on canvas tiles that have gone, which the page counts as resolved). Anyone else gets 403."""
-	return viewer_api.comments_delete_resolved_as(name, _commenter(name, username, exp, sig), also)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_resolve(
-	name: str, username: str = "", exp: str = "", sig: str = "", thread: str = "", resolved: str = "1"
-):
-	"""Resolve (or reopen, with resolved=0) a thread. Returns the thread."""
-	return viewer_api.comment_resolve_as(name, _commenter(name, username, exp, sig), thread, resolved)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def seen_mark(name: str, username: str = "", exp: str = "", sig: str = "", variants: str = "", threads: str = "") -> dict:
-	"""Record that this person has looked at some variants (option values) and threads (ids).
-
-	The Viewer is sandboxed and sends no cookie, so the page's `seen` credential stands in
-	(`signature.SEEN`). It names the person; their standing is read again on every call.
-	Both lists are JSON arrays. A bad credential, or a person with no badges here, is a 404.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	user = signature.signed_user(name, username, exp, sig, signature.SEEN)
-	return viewer_api.seen_mark_as(name, user, variants, threads)
-
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def comment_note_draft(name: str, username: str = "", exp: str = "", sig: str = "", comment: str = "") -> dict:
-	"""The note a thread would make, for the owner to edit and save. Saves nothing. Returns the words and the anchor."""
-	actor = _commenter(name, username, exp, sig)
-	return comments.note_draft(name, actor, comment)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1161,38 +925,6 @@ def conversations() -> list[dict]:
 	user = frappe.session.user
 	rows = (_shared_row(name, user) for name in comments.conversations(_username(), user))
 	return [row for row in rows if row]
-
-
-def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:
-	"""Who a variant credential speaks for, and whether they own the Prototype. Any refusal is a 404."""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	user = signature.signed_user(name, username, exp, sig, signature.VARIANT_EDIT)
-	owner = frappe.db.get_value("Sketch Prototype", name, "owner")
-	if not owner or not (user == owner or sharing.is_editor(name, user)):
-		raise frappe.DoesNotExistError
-
-	return frappe.get_doc("Sketch Prototype", name), user == owner
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def delete_variant_signed(name: str, username: str = "", exp: str = "", sig: str = "", option: str = "") -> dict:
-	"""Delete a variant an invited editor added, from the Viewer. Saves a version, so Undo can bring it back.
-
-	The owner may delete any variant; an editor, their own. The credential in
-	the page names the person (`signature.VARIANT_EDIT`), and the server reads
-	their standing again on every call: an editor who was removed deletes nothing.
-	"""
-	doc, is_owner = _variant_person(name, username, exp, sig)
-	return editor_variants.delete(doc, username, is_owner, option)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def undo_delete_variant_signed(
-	name: str, username: str = "", exp: str = "", sig: str = "", option: str = "", sequence: str = ""
-) -> dict:
-	"""Bring back the variant version `sequence` deleted, unless the tree changed since."""
-	doc, is_owner = _variant_person(name, username, exp, sig)
-	return editor_variants.undo_delete(doc, username, is_owner, sequence, option)
 
 
 @frappe.whitelist(methods=["POST"])

@@ -56,7 +56,7 @@ def _commenter(name: str) -> comments.Actor:
 	if not who.username:
 		raise frappe.DoesNotExistError
 
-	return comments._actor(name, who.username, who.user)
+	return comments.commenter(name, who.username, who.user)
 
 
 # ------------------------------------------------------------------- variants
@@ -93,79 +93,86 @@ def save_annotations(name: str, data: str = "", epoch: str = "") -> dict:
 	"""Save the toolbar's notes and tweaks: the owner's for the owner, an invited editor's own for them.
 
 	Anyone else gets 404, as if there were no notes to write. The owner's notes
-	and an editor's never mix (decision 29).
+	and an editor's never mix (decision 29). Capped at 256 KB (413),
+	shape-checked, and 409 for a page from before the agent's last clear
+	(`annotations.save`).
 	"""
 	who = _actor(name)
-	if who.role == "owner":
-		return save_notes_as(name, data, epoch)
+	if who.role not in ("owner", "editor"):
+		raise frappe.DoesNotExistError
 
-	if who.role == "editor":
-		return save_notes_as(name, data, epoch, editor=who.user)
-
-	raise frappe.DoesNotExistError
-
-
-def save_notes_as(name: str, data: str, epoch, editor: str | None = None) -> dict:
-	"""The one save both doors share. Capped at 256 KB (413), shape-checked, and 409 for a page from before a clear.
-
-	See `annotations.save`.
-	"""
+	editor = who.user if who.role == "editor" else None
 	saved = annotations.save(name, data, frappe.utils.cint(epoch), editor=editor)
 	return {"updated": saved["updated"]}
 
 
 # ------------------------------------------------------------------- comments
-#
-# Each method below is `_commenter` plus a body that takes the actor. The
-# bodies are shared with the signed twins in `sketch.api` until those go.
 
 
 @frappe.whitelist(methods=["POST"])
 def comments_list(name: str) -> dict:
 	"""Every thread on a Prototype, for someone who may comment on it."""
-	return comments_list_as(name, _commenter(name))
+	actor = _commenter(name)
+	threads = badges.decorate(name, actor.user, comments.list_threads(name))
+	return {
+		"threads": threads,
+		"people": comments.people_in(threads),
+		"mentionable": [p for p in comments.mentionable(name) if p["username"] != actor.username],
+		"me": actor.username,
+		"is_owner": actor.is_owner,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_add(name: str, anchor: str = "", text: str = ""):
 	"""Start a thread on an element. Returns the thread."""
-	return comment_add_as(name, _commenter(name), anchor, text)
+	actor = _commenter(name)
+	thread = comments.add_thread(name, actor, anchor, text)
+	return comments.one_thread(name, thread, actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_reply(name: str, thread: str = "", text: str = ""):
 	"""Reply in a thread. Returns the thread."""
-	return comment_reply_as(name, _commenter(name), thread, text)
+	actor = _commenter(name)
+	comments.add_reply(name, actor, thread, text)
+	return comments.one_thread(name, thread, actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_edit(name: str, comment: str = "", text: str = ""):
 	"""Edit your own comment. Returns its thread."""
-	return comment_edit_as(name, _commenter(name), comment, text)
+	actor = _commenter(name)
+	return comments.one_thread(name, comments.edit(name, actor, comment, text), actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_delete(name: str, comment: str = ""):
 	"""Delete a comment for good. Returns its thread, or null when the thread went with it."""
-	return comment_delete_as(name, _commenter(name), comment)
+	actor = _commenter(name)
+	return comments.one_thread(name, comments.delete(name, actor, comment), actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_restore(name: str, comment: str = ""):
 	"""Undo a delete, for the person who made it, within minutes. Returns the thread."""
-	return comment_restore_as(name, _commenter(name), comment)
+	actor = _commenter(name)
+	return comments.one_thread(name, comments.restore(name, actor, comment), actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comment_resolve(name: str, thread: str = "", resolved: str = "1"):
 	"""Resolve (or reopen, with resolved=0) a thread. Returns the thread."""
-	return comment_resolve_as(name, _commenter(name), thread, resolved)
+	actor = _commenter(name)
+	comments.set_resolved(name, actor, thread, bool(frappe.utils.cint(resolved)))
+	return comments.one_thread(name, thread, actor.user)
 
 
 @frappe.whitelist(methods=["POST"])
 def comments_delete_resolved(name: str, also: str = "") -> dict:
-	"""The owner deletes every resolved thread, and the ones named in `also`. Anyone else gets 403."""
-	return comments_delete_resolved_as(name, _commenter(name), also)
+	"""The owner deletes every resolved thread, and the ones named in `also` (a JSON list of ids: the ones on
+	canvas tiles that have gone, which the page counts as resolved). Anyone else gets 403."""
+	return {"deleted": comments.delete_resolved(name, _commenter(name), json_list(also))}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -180,52 +187,7 @@ def seen_mark(name: str, variants: str = "", threads: str = "") -> dict:
 
 	A person with no badges here is a 404 (`badges.mark`).
 	"""
-	return seen_mark_as(name, _commenter(name).user, variants, threads)
-
-
-def comments_list_as(name: str, actor: comments.Actor) -> dict:
-	threads = badges.decorate(name, actor.user, comments.list_threads(name))
-	return {
-		"threads": threads,
-		"people": comments.people_in(threads),
-		"mentionable": [p for p in comments.mentionable(name) if p["username"] != actor.username],
-		"me": actor.username,
-		"is_owner": actor.is_owner,
-	}
-
-
-def comment_add_as(name: str, actor: comments.Actor, anchor, text):
-	thread = comments.add_thread(name, actor, anchor, text)
-	return comments.one_thread(name, thread, actor.user)
-
-
-def comment_reply_as(name: str, actor: comments.Actor, thread, text):
-	comments.add_reply(name, actor, thread, text)
-	return comments.one_thread(name, thread, actor.user)
-
-
-def comment_edit_as(name: str, actor: comments.Actor, comment, text):
-	return comments.one_thread(name, comments.edit(name, actor, comment, text), actor.user)
-
-
-def comment_delete_as(name: str, actor: comments.Actor, comment):
-	return comments.one_thread(name, comments.delete(name, actor, comment), actor.user)
-
-
-def comment_restore_as(name: str, actor: comments.Actor, comment):
-	return comments.one_thread(name, comments.restore(name, actor, comment), actor.user)
-
-
-def comment_resolve_as(name: str, actor: comments.Actor, thread, resolved):
-	comments.set_resolved(name, actor, thread, bool(frappe.utils.cint(resolved)))
-	return comments.one_thread(name, thread, actor.user)
-
-
-def comments_delete_resolved_as(name: str, actor: comments.Actor, also) -> dict:
-	return {"deleted": comments.delete_resolved(name, actor, json_list(also))}
-
-
-def seen_mark_as(name: str, user: str, variants, threads) -> dict:
+	user = _commenter(name).user
 	return {"marked": badges.mark(name, user, json_list(variants), json_list(threads))}
 
 

@@ -3,13 +3,15 @@
 
 """The notes and tweaks an owner leaves on a live Prototype.
 
-The Viewer's toolbar (runtime/annotate) keeps them in memory and saves the whole
-set here, so the owner's agent can read them over MCP and a reload loses nothing.
+The Viewer's toolbar (runtime/shell, through `sketch.viewer_api.save_annotations`)
+keeps them in memory and saves the whole set here, so the owner's agent can read
+them over MCP and a reload loses nothing.
 They live in one hidden Long Text field on the Prototype, the way
 `pending_changes` does: `{notes, tweaks, prompt, anchor?, updated}`.
 
-The writer is a page that runs the Prototype's own JavaScript, and a fork means
-that code is a stranger's. So everything here treats the saved rows as data
+The rows describe the Prototype's own page, which runs the Prototype's
+JavaScript, and a fork means that code is a stranger's: what a note says about an
+element came from that page. So everything here treats the saved rows as data
 written from an untrusted place: the size and the shape are checked, and unknown
 keys are dropped. What the rows say is for the agent to weigh, never to obey
 (sketch/mcp/tools.py `get_annotations`).

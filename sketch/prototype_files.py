@@ -37,7 +37,7 @@ MAX_BATCH_FILES = 100
 MAX_FILE_BYTES = 1_000_000
 
 #: The most files one tree may hold. Every reader loads the whole tree
-#: (`viewer.payload`, `api.export_prototype`), so the tree is the reader's cost.
+#: (`viewer.SketchViewerRenderer.frame_payload`, `api.export_prototype`), so the tree is the reader's cost.
 MAX_TREE_FILES = 500
 
 #: The most bytes one tree may hold. Same reason as MAX_TREE_FILES, and it is
