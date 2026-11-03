@@ -168,7 +168,6 @@ export function takeAfterLogin(): string {
   return isSafePath(path) ? path : ''
 }
 
-/** Send a signed-out visitor to the login page and back again. */
 /**
  * The session ended while the gallery was open (signed out in another tab, or
  * it expired). Every call after that is refused with the server's own words,
@@ -200,6 +199,7 @@ export function errorText(error: unknown): string {
   return ((error as Error)?.message ?? '').replace(/^\w*(Error|Exception):\s*/, '') || 'Something went wrong. Try again.'
 }
 
+/** Send a signed-out visitor to the login page and back again. */
 export function goToLogin(): void {
   rememberAfterLogin(window.location.pathname + window.location.search)
   window.location.href = '/login'

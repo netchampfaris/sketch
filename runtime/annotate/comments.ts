@@ -218,7 +218,7 @@ export const whenOf = (ts: number) => new Date(ts * 1000).toLocaleString()
 
 // ---- Mentions ----------------------------------------------------------------------------------
 // A mention is stored in the text as `@[username]` (sketch/comments.py), and drawn as the person's full name.
-const TOKEN = /@\[([a-z][a-z0-9-]{2,29})\]/g
+export const TOKEN = /@\[([a-z][a-z0-9-]{2,29})\]/g
 export const nameOf = (username: string) => people.value[username]?.name || mentionable.value.find((m) => m.username === username)?.name || username
 
 // The words with each mention as "@Full Name", for a list row or a title.
