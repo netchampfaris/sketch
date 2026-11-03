@@ -110,7 +110,7 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 	},
 	// layout, demo, hover, pick, drag, rects, track, key, canvas, tile:pick, canvas:click and canvas:revealed go to
 	// frame.ts (`receive`), for the toolbar and the canvas layer; model to demo.ts (the Demo pill), tile:menu to
-	// TileMenu.vue. tweak:info is read by its validator already and handled from plan step 6.
+	// TileMenu.vue, tweak:info and tweak:rects to tweaks.ts and TweakLayer.vue.
 }
 
 function onMessage(e: MessageEvent) {

@@ -10,13 +10,13 @@
 // boxes from the rects it reports (frame.ts). Words and people never go to the frame, and nothing the frame
 // says can save anything: notes and comments are written from this file's own buttons and keys.
 //
-// Tweak's tab is here, as on the in-frame toolbar, and inert until Tweak moves to the shell (plan step 6).
+// Tweak draws here too (TweakLayer.vue): the frame picks and writes, the shell holds the tweaks, their list and the prompt.
 // Over the frame's canvas this is the canvas's toolbar, as in the frame: its tiles take the pins (CanvasLayer.vue draws
 // them), a click on a tile comes from the frame as a `tile:pick`, and the panel's Comments and Notes tabs are drawn
 // from here.
 import { computed, defineComponent, h, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
-import { BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
+import { Badge, BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import {
 	ANCHORS,
 	active,
@@ -56,6 +56,8 @@ import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../sha
 import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
 import NotePins from './NotePins.vue'
+import TweakLayer from './TweakLayer.vue'
+import { buildTweakPrompt, findRow, highlight, inspect, removeTweak, resetAll, routeOfRow, tweakCount, tweakItems } from './tweaks'
 import { labels, onFrame, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
 import { demo } from './demo'
 import { pinHover } from './pinHover'
@@ -89,7 +91,9 @@ providePortalTarget(() => portalHost.value ?? undefined)
 const pins = computed(() => mode.value === 'note' || mode.value === 'comment')
 const picking = computed(() => enabled.value && active.value && pins.value && !guest && !sheetOpen.value && !canvasOpen.value)
 const tilePicking = computed(() => enabled.value && active.value && pins.value && !guest && canvasOpen.value && !sheetOpen.value)
-watch([picking, mode, () => page.ready], () => post('tool', { mode: mode.value, active: picking.value }), { immediate: true })
+// Tweak picks in the frame too, on the live page only (tweakPick.ts).
+const tweakLive = computed(() => noter && enabled.value && active.value && mode.value === 'tweak' && !canvasOpen.value)
+watch([picking, tweakLive, mode, () => page.ready], () => post('tool', { mode: mode.value, active: picking.value || tweakLive.value }), { immediate: true })
 watch(
 	[tilePicking, mode, () => page.ready],
 	() => {
@@ -961,13 +965,12 @@ const unread = computed(() => hasUnreadThreads(canvasOpen.value ? undefined : pa
 const unreadDot = computed(() => unread.value && !(active.value && mode.value === 'comment'))
 
 // ---- Toolbar actions: the count and copy belong to the tool in use ---------------------
-// Tweak is inert here until plan step 6: it has no count and nothing to copy.
 const unsent = computed(() => notes.value.filter((n) => !n.sent))
 const hasSent = computed(() => notes.value.some((n) => n.sent))
-const count = computed(() => (mode.value === 'note' ? notes.value.length : 0))
+const count = computed(() => (mode.value === 'tweak' ? tweakCount.value : mode.value === 'note' ? notes.value.length : 0))
 const noun = computed(() => (mode.value === 'tweak' ? 'tweak' : 'note'))
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-const countLabel = computed(() => (unsent.value.length ? plural(unsent.value.length, 'note') : 'All sent'))
+const countLabel = computed(() => (mode.value === 'tweak' ? plural(tweakCount.value, 'tweak') : unsent.value.length ? plural(unsent.value.length, 'note') : 'All sent'))
 
 // Tabs: one tooltip for the three, worded for the tab under the pointer. The Comment tab carries
 // the number of threads still open.
@@ -1038,7 +1041,12 @@ const panelRect = computed(() =>
 
 // Notes: copies what hasn't gone out yet, or everything when it all has; then marks it sent.
 async function copy() {
-	if (mode.value === 'tweak') return
+	if (mode.value === 'tweak') {
+		const n = tweakCount.value
+		if (!n) return
+		if (!(await copyText(buildTweakPrompt()))) return toast.error('Could not copy to the clipboard')
+		return toast.success(`Copied ${plural(n, 'tweak')}`)
+	}
 	const list = unsent.value.length ? unsent.value : notes.value
 	if (!list.length) return
 	const ok = await copyText(buildPrompt(list))
@@ -1047,7 +1055,7 @@ async function copy() {
 	toast.success(`Copied ${plural(list.length, 'note')}`)
 }
 
-// Clearing asks in place: the first click turns the button into "Clear 3 notes", a second click
+// Clearing asks in place: the first click turns the button into "Clear 3 notes" (or "Reset 3 tweaks"), a second click
 // within 3s does it.
 const confirming = ref(false)
 let confirmTimer = 0
@@ -1059,9 +1067,12 @@ function clear() {
 		return
 	}
 	confirming.value = false
-	clearNotes()
-	noteRefs.clear()
-	close()
+	if (mode.value === 'tweak') resetAll()
+	else {
+		clearNotes()
+		noteRefs.clear()
+		close()
+	}
 }
 watch([mode, enabled], () => (confirming.value = false))
 
@@ -1076,9 +1087,19 @@ const groups = computed(() => {
 	}
 	return [...m]
 })
-// The list has nothing left to show at zero.
+const tweakGroups = computed(() => {
+	const m = new Map<string, typeof tweakItems.value>()
+	for (const t of tweakItems.value) m.set(t.route, [...(m.get(t.route) ?? []), t])
+	return [...m]
+})
+// The list has nothing left to show at zero, and a hovered tweak row must not leave its highlight behind.
 watch(count, (n) => !n && (listOpen.value = false))
-watch(listOpen, (on) => !on && (confirming.value = false))
+watch(listOpen, (on) => {
+	if (!on) {
+		confirming.value = false
+		highlight(null)
+	}
+})
 
 const panelBelow = computed(() => anchor.value.startsWith('top'))
 const panelStyle = computed(() => {
@@ -1141,13 +1162,27 @@ function signIn() {
 	location.assign(`/api/method/sketch.api.sign_in_to_comment?back=${encodeURIComponent(back)}`)
 }
 
+// A tweak row: its page, its elements (opening the popover they live in), then Tweak on with them selected.
+async function revealTweak(id: string) {
+	listOpen.value = false
+	const route = routeOfRow(id)
+	if (!route) return
+	await goTo(route)
+	if (!(await findRow(id)) || unmounted) return
+	setEnabled(true)
+	use('tweak')
+	// Tweak turning on clears the frame's selection: select once the frame has heard it.
+	await nextTick()
+	inspect('select')
+}
+
 const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? draft.value.editing.id : undefined))
 </script>
 
 <template>
 	<div ref="portalHost" />
 	<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
-	<Tooltip v-if="!guest && !canvasOpen" :text="noter ? 'Annotate (N)' : 'Comment (C)'">
+	<Tooltip v-if="!guest && !canvasOpen" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : noter ? 'Annotate (N)' : 'Comment (C)'">
 		<button
 			type="button"
 			data-annotate-ui
@@ -1156,15 +1191,20 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 			:tabindex="enabled ? -1 : 0"
 			:style="triggerStyle"
 			class="fixed z-[2147482995] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
-			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', unread ? 'opacity-60' : 'opacity-20']"
+			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount || unread ? 'opacity-60' : 'opacity-20']"
 			@mousedown="keepFocus"
 			@click="openFromTrigger"
 		>
 			<span :class="noter ? 'lucide-mouse-pointer-click' : 'lucide-message-circle'" class="size-4" aria-hidden="true" />
+			<!-- Tweaks stay applied with the toolbar closed; the dot says the page isn't as built. -->
+			<span v-if="tweakCount" class="absolute -right-1 size-2.5 rounded-full bg-surface-violet-7 ring-2 ring-surface-base" :class="unread ? '-bottom-1' : '-top-1'" aria-hidden="true" />
 			<!-- Unread comments: the dot on the door to them. -->
 			<span v-if="unread" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-blue-6 ring-2 ring-surface-base" role="img" aria-label="Unread comments" />
 		</button>
 	</Tooltip>
+
+	<!-- Always mounted so a hovered list row still outlines its elements with the picker off. -->
+	<TweakLayer v-if="noter" :live="tweakLive" />
 
 	<template v-if="enabled">
 		<NotePins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="noteSelected" :refs="noteRefs" @open="(n, x, y) => openEdit(n, x, y)" />
@@ -1311,6 +1351,8 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 				:style="panelStyle"
 			>
 				<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
+					<!-- Notes -->
+					<template v-if="mode === 'note'">
 					<template v-for="[r, list] in groups" :key="r">
 						<p v-if="groups.length > 1" class="px-2 pt-2 pb-1 text-sm text-ink-gray-5">{{ r }}</p>
 						<div
@@ -1341,6 +1383,50 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 							</span>
 						</div>
 					</template>
+					</template>
+
+					<!-- Tweaks -->
+					<template v-else>
+						<template v-for="[r, list] in tweakGroups" :key="r">
+							<p class="flex items-baseline gap-1.5 px-2 pt-2 pb-1 text-sm text-ink-gray-5">
+								{{ list[0].page }}
+								<span class="tabular-nums text-ink-gray-4">{{ list.length }}</span>
+							</p>
+							<div
+								v-for="t in list"
+								:key="t.id"
+								data-annotate-ui
+								role="button"
+								tabindex="0"
+								class="group flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 transition-colors duration-100 hover:bg-surface-gray-2"
+								@mouseenter="highlight(t.id)"
+								@mouseleave="highlight(null)"
+								@click="revealTweak(t.id)"
+								@keydown.enter.self="revealTweak(t.id)"
+							>
+								<div class="min-w-0 flex-1">
+									<p class="flex items-center gap-2">
+										<span class="min-w-0 truncate text-base font-medium text-ink-gray-8">{{ t.title }}</span>
+										<Badge v-if="t.badge" class="shrink-0" theme="gray" variant="subtle" size="sm" :label="t.badge" />
+									</p>
+									<p v-if="t.changes.length" class="mt-0.5 flex flex-wrap items-center gap-2 text-p-sm text-ink-gray-6">
+										<span v-for="(c, ci) in t.changes" :key="ci" class="inline-flex items-center gap-1">
+											<span v-if="c.icon" class="size-3.5 shrink-0 text-ink-gray-5" :class="c.icon" aria-hidden="true" />
+											<span v-else-if="c.swatch?.kind === 'ink'" class="size-2.5 shrink-0 rounded-full bg-current" :class="c.swatch.cls" aria-hidden="true" />
+											<span v-else-if="c.swatch?.kind === 'bg'" class="size-2.5 shrink-0 rounded-full border border-outline-gray-2" :class="c.swatch.cls" aria-hidden="true" />
+											<span v-else-if="c.swatch" class="size-2.5 shrink-0 rounded-full border-2 border-solid" :class="c.swatch.cls" aria-hidden="true" />
+											{{ c.text }}
+										</span>
+									</p>
+								</div>
+								<span class="hidden shrink-0 items-start group-hover:flex group-focus-within:flex">
+									<Tooltip text="Revert" :hover-delay="600">
+										<Button variant="ghost" icon="lucide-x" aria-label="Revert tweak" @click.stop="removeTweak(t.id)" />
+									</Tooltip>
+								</span>
+							</div>
+						</template>
+					</template>
 				</div>
 
 				<div class="flex items-center gap-1.5 border-t border-outline-gray-1 p-1.5">
@@ -1357,12 +1443,12 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 						/>
 						{{ saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Not saved' : 'Saving…' }}
 					</span>
-					<Button v-if="hasSent" variant="ghost" label="Clear sent" @click="clearSent" />
+					<Button v-if="mode === 'note' && hasSent" variant="ghost" label="Clear sent" @click="clearSent" />
 					<Button
 						class="ml-auto"
 						:variant="confirming ? 'subtle' : 'ghost'"
 						:theme="confirming ? 'red' : 'gray'"
-						:label="confirming ? `Clear ${plural(count, 'note')}` : 'Clear all'"
+						:label="confirming ? (mode === 'tweak' ? `Reset ${plural(count, 'tweak')}` : `Clear ${plural(count, 'note')}`) : mode === 'tweak' ? 'Reset all' : 'Clear all'"
 						@click="clear"
 					/>
 				</div>
@@ -1435,7 +1521,7 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 				</Tooltip>
 
 				<span v-if="noter && count && !canvasOpen" data-notes-trigger>
-					<Tooltip text="Show notes" :hover-delay="600">
+					<Tooltip :text="mode === 'tweak' ? 'Show tweaks' : 'Show notes'" :hover-delay="600">
 						<Button :variant="listOpen ? 'subtle' : 'ghost'" :label="countLabel" @click="listOpen = !listOpen" />
 					</Tooltip>
 				</span>
