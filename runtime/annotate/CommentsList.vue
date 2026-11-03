@@ -5,8 +5,9 @@
 import { computed } from 'vue'
 import { Button, ScrollArea, Skeleton } from 'frappe-ui'
 import { bridge, findTile } from 'sketch:variants'
-import { load, matching, openThread, pageName, query, spotOfThread, status, threads, type Thread } from './comments'
+import { load, matching, openThread, query, spotOfThread, status, threads, type Thread } from './comments'
 import CommentRow from './CommentRow.vue'
+import { pageNameOf } from './host'
 
 const props = defineProps<{ route: string; embedded?: boolean; width: string; max: string }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement] }>()
@@ -31,7 +32,7 @@ const pageOrder = (route: string) => {
 	const i = bridge.model?.findIndex((p) => p.path === route) ?? -1
 	return i < 0 ? 1e6 : i
 }
-const nameOfRoute = (t: Thread) => t.anchor.tile?.page || pageName(t.anchor.route)
+const nameOfRoute = (t: Thread) => t.anchor.tile?.page || pageNameOf(t.anchor.route)
 
 const groups = computed<Group[]>(() => {
 	const list = matching.value
@@ -50,7 +51,7 @@ const groups = computed<Group[]>(() => {
 	const by = new Map<string, Thread[]>()
 	for (const t of list) by.set(t.anchor.route, [...(by.get(t.anchor.route) ?? []), t])
 	const routes = [...by.keys()].sort((a, b) => Number(b === props.route) - Number(a === props.route))
-	return routes.map((r) => ({ key: r, name: r === props.route ? 'This page' : pageName(r), threads: by.get(r)! }))
+	return routes.map((r) => ({ key: r, name: r === props.route ? 'This page' : pageNameOf(r), threads: by.get(r)! }))
 })
 // A header names the group when there is more than one, and always on the canvas, where "This view" is one of them.
 const headers = computed(() => onCanvas.value || groups.value.length > 1)

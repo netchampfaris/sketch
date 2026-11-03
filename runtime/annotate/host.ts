@@ -2,6 +2,7 @@
 // there are no Prototype imports: boot.js hands over the payload, the router comes from the
 // Prototype's own app, and everything else (files, title, saved notes) is read from the payload.
 import type { Router } from 'vue-router'
+import { titleOfRoute } from 'sketch:variants'
 
 // The shape the server stores in `Sketch Prototype.annotations`. Lists are kept loose here:
 // annotate.ts and tweak.ts validate each row they read back, so one bad row never costs the rest.
@@ -88,25 +89,13 @@ export function isDataFile(path: string): boolean {
   return parts.slice(0, -1).some((p) => /^(data|fixtures|mocks)$/i.test(p)) || /^(data|fixtures|mock[^.]*)\./i.test(base)
 }
 
-// "TimeOff" reads as "Time off"; "time-off" the same.
-export function humanise(name: string): string {
-  const words = name
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replace(/[-_]+/g, ' ')
-    .trim()
-    .toLowerCase()
-  return words ? words[0].toUpperCase() + words.slice(1) : ''
-}
-
-// The page a route belongs to: the matched route's component name, humanised. A route with no
-// named component falls back to its first path segment, and the root to "Home".
+// The page a route belongs to, named the way the canvas names it (titleOfRoute: meta.title, else the humanised
+// component name). A route that matches nothing falls back to its first path segment, and the root to "Home".
 export function pageNameOf(route: string): string {
   const path = route.split(/[?#]/)[0] || '/'
   try {
     const matched = host.router?.resolve(path).matched ?? []
-    const comp: any = matched[matched.length - 1]?.components?.default
-    const name = comp && typeof comp === 'object' ? comp.__name || comp.name : ''
-    if (name) return humanise(name)
+    if (matched.length) return titleOfRoute(matched[matched.length - 1])
   } catch {}
   const seg = path.split('/').filter(Boolean)[0]
   return seg ? seg[0].toUpperCase() + seg.slice(1) : 'Home'

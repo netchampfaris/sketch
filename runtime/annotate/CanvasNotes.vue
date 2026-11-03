@@ -5,7 +5,7 @@
 import { computed, ref } from 'vue'
 import { Button, ScrollArea, TextInput, Tooltip } from 'frappe-ui'
 import { bridge, findTile, tileExists, tileLabel } from 'sketch:variants'
-import { pageName } from './comments'
+import { pageNameOf } from './host'
 import { noteNumber, notes, type Note } from './annotate'
 
 defineProps<{ selected?: string }>()
@@ -33,7 +33,7 @@ const groups = computed(() => {
 	for (const n of list) if (!here.includes(n)) by.set(n.route, [...(by.get(n.route) ?? []), n])
 	return [
 		...(here.length ? [{ key: 'here', name: 'This view', notes: here }] : []),
-		...[...by].map(([r, ns]) => ({ key: r, name: ns[0].tile?.page || pageName(r), notes: ns })),
+		...[...by].map(([r, ns]) => ({ key: r, name: ns[0].tile?.page || pageNameOf(r), notes: ns })),
 	]
 })
 const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.key === 'here') : n.component || n.element.split(/[.\s]/)[0] || 'Page')

@@ -15,7 +15,7 @@ export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnr
 export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { menuBind } from './menus'
-export { closeCanvas, openCanvas } from './state'
+export { closeCanvas, openCanvas, titleOfRoute } from './state'
 export { applyPicks, currentPicks, picksAvailable, picksShown, picksWords } from './picks'
 export type { DemoPick } from './picks'
 

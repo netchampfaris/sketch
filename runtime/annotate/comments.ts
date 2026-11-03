@@ -237,16 +237,3 @@ export function pieces(text: string): Piece[] {
   if (at < text.length) out.push({ text: text.slice(at) })
   return out
 }
-
-
-// A page's name for the list: the router's name for it, else its last path segment ("/" is Home).
-export function pageName(route: string): string {
-  let name = ''
-  try {
-    const n = host.router?.resolve(route).name
-    if (typeof n === 'string') name = n
-  } catch {}
-  if (!name) name = route.split('?')[0].split('/').filter(Boolean).pop() ?? 'Home'
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
