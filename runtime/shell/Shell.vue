@@ -14,9 +14,10 @@ import type { ShellBoot } from './boot'
 import { applyTheme, resolveTheme, watchTheme } from './theme'
 import { startLiveReload } from './liveReload'
 import { call, initApi } from './api'
-import { initBadges } from './badges'
+import { freshOptions, initBadges } from './badges'
 import { frameGone, page, post, receive, setFrameWindow } from './frame'
 import { restoreNotes, startSaving } from './notes'
+import CanvasLayer from './CanvasLayer.vue'
 import Toolbar from './Toolbar.vue'
 
 const props = defineProps<{ boot: ShellBoot }>()
@@ -84,6 +85,9 @@ function reloadFrame() {
 // ---- Frame -> shell -------------------------------------------------------------------------
 const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 	ready: ({ status }) => {
+		// The options new to this reader, for the "New" badge on their tiles: option values, nothing about anyone.
+		const fresh = freshOptions()
+		if (fresh.length) post('display', { newOptions: fresh })
 		if (STATUS_SCREENS.includes(status)) {
 			const owner = props.boot.role === 'owner'
 			post('copy', { owner, reloads: owner && !!props.boot.rev })
@@ -99,8 +103,9 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 		theme.value = next
 		applyTheme(next)
 	},
-	// layout, demo, canvas, hover, pick, drag, rects, track and key go to frame.ts (`receive`), for the toolbar.
-	// model, tile:menu, tile:pick and tweak:info are read by the validators already and handled from plan steps 4 to 6.
+	// layout, demo, hover, pick, drag, rects, track, key, canvas, tile:pick, canvas:click and canvas:revealed go to
+	// frame.ts (`receive`), for the toolbar and the canvas layer. model, tile:menu and tweak:info are read by the
+	// validators already and handled from plan steps 5 and 6.
 }
 
 function onMessage(e: MessageEvent) {
@@ -161,6 +166,7 @@ onBeforeUnmount(() => {
 		/>
 		<!-- Sketch's chrome over the frame. It takes no pointer events itself; each widget opts back in. -->
 		<div data-sketch-ui="shell" class="pointer-events-none fixed inset-0">
+			<CanvasLayer />
 			<Toolbar v-if="shown" :noter="noter" />
 		</div>
 	</FrappeUIProvider>

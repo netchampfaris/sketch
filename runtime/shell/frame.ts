@@ -1,5 +1,5 @@
 // The shell's side of the frame, for everything drawn over it: what the frame last reported about the page
-// (its route, layout, Demo and canvas), the rects of the elements the shell draws on, and the asks that wait
+// (its route, layout and Demo; the canvas is variants.ts's), the rects of the elements the shell draws on, and the asks that wait
 // for an answer. Shell.vue owns the iframe and hands every validated message to `receive`.
 //
 // Nothing sent from here is secret (runtime/shared/protocol.ts): selectors, refs, modes and rects only.
@@ -11,8 +11,9 @@ const win = shallowRef<Window | null>(null)
 export const setFrameWindow = (w: Window | null) => (win.value = w)
 
 export function post<K extends keyof ToFrame>(type: K, data: ToFrame[K]) {
-	// An opaque origin has no name to target. Nothing the shell sends the frame is secret.
-	win.value?.postMessage(envelope(type, data), '*')
+	// An opaque origin has no name to target. Nothing the shell sends the frame is secret. Plain data only: a
+	// reactive object (a thread's anchor, say) cannot be cloned across.
+	win.value?.postMessage(JSON.parse(JSON.stringify(envelope(type, data))), '*')
 }
 
 // What the frame last said about the page.
@@ -32,7 +33,6 @@ export const page = reactive({
 	dialogOpen: false,
 	variantsH: 0,
 	demo: [] as DemoEntry[],
-	canvas: { open: false, phone: false },
 })
 
 // ---- Listeners for the messages the toolbar acts on -------------------------------------------
@@ -108,9 +108,6 @@ export function receive<K extends keyof FromFrame>(type: K, data: FromFrame[K]) 
 		case 'demo':
 			page.demo = d.entries
 			break
-		case 'canvas':
-			page.canvas = { open: d.open, phone: d.phone }
-			break
 		case 'track':
 			for (const k of Object.keys(rects)) if (!(k in d.map)) delete rects[k]
 			Object.assign(rects, d.map)
@@ -125,7 +122,10 @@ export function receive<K extends keyof FromFrame>(type: K, data: FromFrame[K]) 
 }
 
 // The frame is being replaced (a live reload): what it said no longer holds.
+const gone = new Set<() => void>()
+export const onGone = (fn: () => void) => (gone.add(fn), () => gone.delete(fn))
 export function frameGone() {
 	page.ready = false
 	for (const k of Object.keys(rects)) delete rects[k]
+	gone.forEach((fn) => fn())
 }

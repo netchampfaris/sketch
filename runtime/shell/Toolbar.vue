@@ -11,8 +11,10 @@
 // says can save anything: notes and comments are written from this file's own buttons and keys.
 //
 // Tweak's tab is here, as on the in-frame toolbar, and inert until Tweak moves to the shell (plan step 6).
-// The canvas is plan step 4: while it is open the shell's page tools step aside.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+// Over the frame's canvas this is the canvas's toolbar, as in the frame: its tiles take the pins (CanvasLayer.vue draws
+// them), a click on a tile comes from the frame as a `tile:pick`, and the panel's Comments and Notes tabs are drawn
+// from here.
+import { computed, defineComponent, h, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useElementSize, useEventListener, useWindowSize } from '@vueuse/core'
 import { BottomSheet, Button, TabButtons, Tooltip, providePortalTarget, toast } from 'frappe-ui'
 import {
@@ -40,12 +42,16 @@ import {
 	type Mode,
 	type Note,
 } from '../annotate/annotate'
-import { heldDrafts, openCount, openThread, read, spotOfThread, startListening, stopListening, threadById, type Anchor as PinAnchor, type Thread } from '../annotate/comments'
+import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from '../annotate/comments'
 import { host, isGuest } from '../annotate/host'
+import CanvasComments from '../annotate/CanvasComments.vue'
+import CanvasNotes from '../annotate/CanvasNotes.vue'
 import CommentPopover from '../annotate/CommentPopover.vue'
 import CommentsPanel from '../annotate/CommentsPanel.vue'
 import NotePopover from '../annotate/NotePopover.vue'
-import { tileLabel, whereOf } from '../shared/tiles'
+import TilePins from '../annotate/TilePins.vue'
+import { canvasUi, handlers, tileAnchor } from '../annotate/tiles'
+import { tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
 import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../shared/protocol'
 import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
@@ -53,7 +59,7 @@ import NotePins from './NotePins.vue'
 import { labels, onFrame, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
-import { applyPicks, hasUnreadThreads, picksShown } from './variants'
+import { applyPicks, bridge, hasUnreadThreads, picksShown, pointOf, revealTile, tileExists } from './variants'
 
 const props = defineProps<{ noter: boolean }>()
 
@@ -68,19 +74,29 @@ if (!noter) mode.value = 'comment'
 if (guest) setEnabled(true)
 // Phone only: the comments list as a bottom sheet.
 const sheetOpen = ref(false)
-// The canvas is the frame's own until plan step 4: while it is open, nothing of this toolbar shows.
-const canvasOpen = computed(() => page.canvas.open)
-const sheetMode = computed(() => vw.value < 640)
+// The canvas is open over the page: its tiles take the pins, and its panel (or on a phone the sheet) takes the list.
+const canvasOpen = computed(() => bridge.open)
+const sheetMode = computed(() => (canvasOpen.value ? bridge.phone : vw.value < 640))
 // Our tooltips and sheet open in a plain host inside ours, so they keep their own z-index.
 const menuHost = ref<HTMLElement | null>(null)
 const portalHost = ref<HTMLElement | null>(null)
 providePortalTarget(() => portalHost.value ?? undefined)
 
 // Picking (hover, box, measuring) runs in the frame for the two tools that pin things to the page.
-// A phone's comments sheet covers the page, so nothing is picked while it is open.
+// A phone's comments sheet covers the page, so nothing is picked while it is open. Over the canvas a click picks a
+// tile instead of an element (the frame's canvas reports it), so the page behind is never picked.
 const pins = computed(() => mode.value === 'note' || mode.value === 'comment')
 const picking = computed(() => enabled.value && active.value && pins.value && !guest && !sheetOpen.value && !canvasOpen.value)
+const tilePicking = computed(() => enabled.value && active.value && pins.value && !guest && canvasOpen.value && !sheetOpen.value)
 watch([picking, mode, () => page.ready], () => post('tool', { mode: mode.value, active: picking.value }), { immediate: true })
+watch(
+	[tilePicking, mode, () => page.ready],
+	() => {
+		bridge.tool = tilePicking.value ? (mode.value === 'note' ? 'note' : 'comment') : ''
+		post('canvas:tool', { tool: bridge.tool })
+	},
+	{ immediate: true },
+)
 
 // ---- Popover ---------------------------------------------------------------------------
 // One element of the box: its ref while the frame knows it, its selector after; what it was when picked.
@@ -98,6 +114,8 @@ type Draft = {
 	anchor?: PinAnchor
 	// The note or thread the box is open on; none for a new one.
 	editing?: Editing
+	// A click on a canvas tile: which tile, and where on it.
+	tile?: TileHit
 	component: string
 	extra: number
 }
@@ -106,9 +124,10 @@ const draft = shallowRef<Draft | null>(null)
 const draftKey = ref(0)
 const text = ref('')
 
-// The elements the frame keeps measuring for the box: its selection (outlines), and the element its pin rides on.
+// The elements the frame keeps measuring for the box: its selection (outlines), and the element its pin rides on. On the
+// canvas the pin rides on a tile (`spot`), whose place the shell works out from the canvas's pan and zoom.
 type Point = { x: number; y: number }
-type Follow = Target & { fx: number; fy: number }
+type Follow = Target & { fx: number; fy: number; spot?: TileSpot }
 const follow = shallowRef<Follow | null>(null)
 let nudge: Point | null = null
 let pendingAt: Point | null = null
@@ -116,7 +135,7 @@ onBeforeUnmount(
 	track(() => {
 		const out: Record<string, Target> = {}
 		draft.value?.els.forEach((e, i) => (out[`sel-${i}`] = { sel: e.sel, ref: e.ref }))
-		if (follow.value) out.box = { sel: follow.value.sel, ref: follow.value.ref }
+		if (follow.value && !follow.value.spot) out.box = { sel: follow.value.sel, ref: follow.value.ref }
 		if (flash.value) out.flash = flash.value
 		return out
 	}),
@@ -128,9 +147,10 @@ watch(draft, (d) => post('selection', { refs: (d?.els ?? []).map((e) => e.ref).f
 // its offset from that point.
 const at = computed<Point | null>(() => {
 	const f = follow.value
-	const r = rects.box
-	if (!f || !r || !draft.value) return null
-	const p = { x: r.x + f.fx * r.w, y: r.y + f.fy * r.h }
+	if (!f || !draft.value) return null
+	const r = f.spot ? null : rects.box
+	const p = f.spot ? pointOf(f.spot, f) : r && { x: r.x + f.fx * r.w, y: r.y + f.fy * r.h }
+	if (!p) return null
 	if (pendingAt) {
 		nudge = { x: pendingAt.x - p.x, y: pendingAt.y - p.y }
 		pendingAt = null
@@ -144,6 +164,9 @@ function followPin(f: Follow | null, x: number, y: number) {
 	pendingAt = f ? { x, y } : null
 }
 watch(draft, (d) => !d && (follow.value = null))
+// What a pin rides on: its tile on the canvas, else its element.
+const followOf = (a: PinAnchor): Follow =>
+	a.tile ? { sel: '', spot: { route: a.route, tile: a.tile }, fx: a.offset.x, fy: a.offset.y } : { sel: a.selector, fx: a.offset.x, fy: a.offset.y }
 
 // Closing a new comment that has words keeps it as a Draft pin on the page (`heldDrafts`), whatever closed it: a click
 // outside, Escape, another tool. An empty one just goes. `as` is the tool the box was opened in, for a tool change.
@@ -167,7 +190,7 @@ function reopenDraft(id: string, x: number, y: number) {
 	draft.value = { ...(h.state as Draft), x, y }
 	text.value = h.text
 	draftKey.value++
-	followPin({ sel: a.selector, fx: a.offset.x, fy: a.offset.y }, x, y)
+	followPin(followOf(a), x, y)
 }
 // A new note may be re-aimed while nothing is typed; an edit never is.
 const canRetarget = () => !draft.value || (!draft.value.editing && !text.value.trim())
@@ -233,7 +256,8 @@ function save() {
 	} else if (d.anchor) {
 		const { picks, ...where } = d.anchor
 		addNote({ ...where, note: t })
-	} else {
+	} else if (d.tile) addNote({ ...tileAnchor(d.tile, d.tile), note: t })
+	else {
 		addNote({ ...anchorOf(d), note: t })
 		// The pins of a note made this visit follow the very elements it was made on, as long as they live.
 		const n = notes.value[notes.value.length - 1]
@@ -272,6 +296,30 @@ onBeforeUnmount(
 	}),
 )
 
+// A click on a canvas tile opens the same box a click on an element does, with the tile as its anchor.
+function onTilePick(hit: TileHit) {
+	const d = draft.value
+	// A comment box open: the first click outside it only closes it.
+	if (d && mode.value === 'comment') return close()
+	if (d && (d.editing || text.value.trim())) return
+	const fresh = !d
+	draft.value = { x: hit.x, y: hit.y, els: [], tile: hit, component: tileLabel(hit.tile), extra: 0 }
+	if (fresh) {
+		text.value = ''
+		draftKey.value++
+	}
+	followPin({ sel: '', spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy }, hit.x, hit.y)
+}
+onBeforeUnmount(
+	onFrame('tile:pick', (p) => {
+		if (!tilePicking.value) return
+		const clamp01 = (n: number) => clamp(n, 0, 1)
+		onTilePick({ ...p.spot, fx: clamp01(p.fx), fy: clamp01(p.fy), x: p.x, y: p.y })
+	}),
+)
+// A click on the canvas off every tile: a click outside the comment box, which closes it.
+onBeforeUnmount(onFrame('canvas:click', () => draft.value && mode.value === 'comment' && close()))
+
 // ---- Comments: the thread open beside its pin ---------------------------------------------
 const thread = computed(() => {
 	const e = draft.value?.editing
@@ -279,7 +327,9 @@ const thread = computed(() => {
 })
 const newAnchor = computed(() => {
 	const d = draft.value
-	if (!d || d.editing || !d.comp) return undefined
+	if (!d || d.editing) return undefined
+	if (d.tile) return tileAnchor(d.tile, d.tile)
+	if (!d.comp) return undefined
 	// On the live page the thread also keeps what the Demo showed, so it can be put back that way.
 	return d.picks?.length ? { ...anchorOf(d), picks: d.picks } : anchorOf(d)
 })
@@ -309,7 +359,7 @@ function openThreadNow(t: Thread, x: number, y: number) {
 	const els = [a.selector, ...(a.extras ?? []).map((e) => e.selector)].map((sel) => ({ sel }))
 	draft.value = { x, y, els, box: a.box, editing: { kind: 'thread', id: t.id }, component: a.component || a.element.split(/[.\s]/)[0], extra: a.extras?.length ?? 0 }
 	draftKey.value++
-	followPin({ sel: a.selector, fx: a.offset.x, fy: a.offset.y }, x, y)
+	followPin(followOf(a), x, y)
 }
 // A thread you made keeps its popover: it turns from the composer into the thread in place.
 function onCreated(t: Thread) {
@@ -336,6 +386,15 @@ async function onNoteDraft(d: { note: string; anchor: PinAnchor }) {
 watch(thread, (t, was) => {
 	if (was && !t && draft.value?.editing?.kind === 'thread' && draft.value.editing.id === was.id) close()
 })
+// A new comment or note on a tile has no pin yet: the canvas layer draws a draft one where the tile was clicked.
+watch(
+	draft,
+	(d) => {
+		const t = d && !d.editing ? d.tile : undefined
+		canvasUi.draft = t ? { spot: { route: t.route, tile: t.tile }, fx: t.fx, fy: t.fy } : null
+	},
+	{ immediate: true },
+)
 watch(
 	() => {
 		const e = draft.value?.editing
@@ -343,6 +402,7 @@ watch(
 	},
 	() => {
 		const e = draft.value?.editing
+		canvasUi.noteId = e?.kind === 'note' ? e.id : ''
 		openThread.value = e?.kind === 'thread' ? e.id : null
 		// Opening a thread is reading it.
 		if (e?.kind === 'thread') read(e.id)
@@ -355,15 +415,36 @@ async function goTo(route: string) {
 	post('nav', { path: route })
 	await until(() => key.value === route, 2000)
 }
-// Reaching a thread from the list: its page first, then the pin, then the thread.
+// ---- The canvas: reaching a tile's thread or note from a list, from the live page or the canvas
+// A thread or note opened from the canvas's list lives on the live page, so the toolbar stays open for it.
+let stayOpen = false
+async function leaveCanvas() {
+	if (!canvasOpen.value) return
+	stayOpen = true
+	post('canvas:close', {})
+	await until(() => !bridge.open)
+}
+// Show something pinned to a tile: open the canvas if it is not, bring the tile into view, then open the box at
+// its pin. A tile that has gone has no pin to open at (its row sits under "Removed from canvas"), so the box opens beside
+// the row instead, and the thread can still be read and resolved.
+async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
+	if (!canvasOpen.value) {
+		post('canvas:open', { view: spot.tile.view || `page:${spot.route}` })
+		if (!(await until(() => bridge.open && !!bridge.model))) return
+	}
+	const point = tileExists(bridge.model, spot) === false ? null : await revealTile(spot, { fx: at.x, fy: at.y })
+	if (unmounted) return
+	if (point) return show(point.x, point.y)
+	const r = row?.getBoundingClientRect()
+	show(r ? r.left : vw.value / 2, r ? r.top + r.height / 2 : vh.value / 2)
+}
+// Reaching a thread from the list: its page first, then the pin, then the thread. On a tile: the canvas, then the tile.
 async function openFromList(t: Thread, row?: HTMLElement) {
 	sheetOpen.value = false
 	const a = t.anchor
-	// A thread on a canvas tile opens beside its row until the canvas moves to the shell (plan step 4).
-	if (spotOfThread(t)) {
-		const r = row?.getBoundingClientRect()
-		return openThreadNow(t, r ? r.left : vw.value / 2, r ? r.top + r.height / 2 : vh.value / 2)
-	}
+	const spot = spotOfThread(t)
+	if (spot) return openOnCanvas(spot, a.offset, (x, y) => openThreadAt(t, x, y), row)
+	await leaveCanvas()
 	await goTo(a.route)
 	// Made on other options than the Demo shows: show those first, so its element is on the page to be found.
 	if (!picksShown(a.picks)) {
@@ -402,6 +483,34 @@ function openCommenting() {
 	use('comment')
 }
 onMounted(openCommenting)
+
+// The canvas layer draws the pins and the panel's extra tabs from components registered here. The pins call back into
+// `handlers`; the tabs are the lists with this toolbar's actions wired in.
+const commentsTab = markRaw(defineComponent({ setup: () => () => h(CanvasComments, { route: key.value, onChoose: openFromList }) }))
+const notesTab = markRaw(defineComponent({ setup: () => () => h(CanvasNotes, { selected: canvasUi.noteId, onChoose: openNoteFromList }) }))
+bridge.canComment = !guest
+bridge.canNote = noter
+bridge.Pins = markRaw(TilePins)
+bridge.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
+handlers.thread = openThreadAt
+handlers.note = openEdit
+handlers.draft = reopenDraft
+onBeforeUnmount(() => {
+	Object.assign(bridge, { canComment: false, canNote: false, tool: '', Pins: null, tabs: {}, tab: 'browse' })
+	handlers.thread = handlers.note = handlers.draft = null
+})
+// The canvas reads the threads as it opens, and its tab shows no count until it knows both the threads and the tiles:
+// the server's number cannot know which tiles have gone, and a count that changes when the tab opens is wrong at first.
+watch(canvasOpen, (open) => open && !guest && void load(true), { immediate: true })
+const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !bridge.model) ? 0 : openCount.value))
+watch([tabCount, () => notes.value.length], ([c, n]) => (bridge.counts = { comments: c, notes: n }), { immediate: true })
+
+// A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
+async function openNoteFromList(n: Note, row?: HTMLElement) {
+	if (n.tile) return openOnCanvas({ route: n.route, tile: n.tile }, n.offset, (x, y) => openEdit(n, x, y), row)
+	await leaveCanvas()
+	await edit(n)
+}
 
 function remove() {
 	const e = draft.value?.editing
@@ -517,7 +626,52 @@ watch(mode, (_m, was) => {
 	listOpen.value = false
 	close(was)
 })
-watch(canvasOpen, () => close())
+// The panel's tab and the tool follow each other. Comment mode is the Comments tab, Note mode the Notes tab, and
+// anything else Browse; picking a tab picks the tool, and Escape or the Browse tab puts the tool down.
+watch(
+	[canvasOpen, enabled, active, mode],
+	() => {
+		if (!canvasOpen.value) return
+		const tab = enabled.value && active.value && !guest ? (mode.value === 'note' ? 'notes' : mode.value === 'comment' ? 'comments' : 'browse') : 'browse'
+		if (bridge.tab !== tab) bridge.tab = tab
+	},
+	{ immediate: true },
+)
+watch(
+	() => bridge.tab,
+	(tab) => {
+		if (!canvasOpen.value || guest) return
+		if (tab === 'browse') {
+			if (active.value && pins.value) active.value = false
+		} else if (tab === 'comments' || (tab === 'notes' && noter)) {
+			const m: Mode = tab === 'notes' ? 'note' : 'comment'
+			if (!(enabled.value && active.value && mode.value === m)) {
+				setEnabled(true)
+				use(m)
+			}
+		}
+	},
+)
+// The canvas has its own toolbar: this one, placed beside the panel. It is open while the canvas is (so nothing
+// floats over it twice), and the page's faint trigger and close button are hidden. Leaving puts it back as it was.
+// Tweaks are for the live page: the canvas has none.
+let openBefore = enabled.value
+watch(
+	canvasOpen,
+	(open) => {
+		close()
+		if (open) {
+			openBefore = enabled.value
+			setEnabled(true)
+		} else if (!guest) setEnabled(stayOpen || openBefore)
+		if (!open) stayOpen = false
+		if (open && mode.value === 'tweak') {
+			active.value = false
+			mode.value = 'note'
+		}
+	},
+	{ immediate: true },
+)
 // Comment mode is the only time comments are read and kept fresh.
 watch(
 	() => !guest && enabled.value && mode.value === 'comment',
@@ -610,7 +764,7 @@ function onKey(k: Key, prevent: () => void) {
 	}
 	if (k.meta || k.ctrl || k.alt) return
 	const key = k.key.toLowerCase()
-	const tool: Mode | null = guest ? null : key === 'c' ? 'comment' : noter && key === 'n' ? 'note' : noter && key === 't' ? 'tweak' : null
+	const tool: Mode | null = guest ? null : key === 'c' ? 'comment' : noter && key === 'n' ? 'note' : noter && key === 't' && !canvasOpen.value ? 'tweak' : null
 	if (tool && !k.repeat) {
 		if (!enabled.value) {
 			setEnabled(true)
@@ -688,13 +842,15 @@ watch(
 	{ immediate: true },
 )
 // The faint trigger sits where the toolbar last snapped: 12px in from a corner, centred on a centre anchor.
+// The canvas's panel covers the right edge: the toolbar and its trigger sit in the room left of it.
+const reserve = computed(() => (canvasOpen.value ? bridge.reserve : 0))
 const triggerStyle = computed(() => {
 	const [v, h] = (moved.value ? anchor.value : 'bottom-right').split('-')
 	const s: Record<string, string> = v === 'top' ? { top: '12px' } : { bottom: `${12 + navH.value}px` }
 	// Above the Variants pill when there is one: --sketch-variants-h is its own height plus the bar's, and the -8px fallback cancels the +8px.
 	if (v === 'bottom' && h === 'right') s.bottom = `calc(12px + max(var(--sketch-variants-h, -8px) + 8px, ${navH.value}px))`
 	if (h === 'left') s.left = '12px'
-	else if (h === 'right') s.right = '12px'
+	else if (h === 'right') s.right = `${12 + reserve.value}px`
 	else s.left = 'calc(50% - 16px)'
 	return s
 })
@@ -712,11 +868,17 @@ const { width: gw } = useElementSize(ghost, { width: 0, height: 0 }, { box: 'bor
 watch([bw, gw], ([w, g]) => (widest.value = Math.max(widest.value, w, g)))
 const phone = computed(() => vw.value < 640)
 watch(phone, () => (widest.value = bw.value))
-const slotW = computed(() => Math.max(bw.value, widest.value))
+// On the canvas the bar is as wide as its own widest mode (the twin below, without Close and the count), never the live page's.
+const slotW = computed(() => (canvasOpen.value ? Math.max(bw.value, gw.value) : Math.max(bw.value, widest.value)))
 function place(a: Anchor) {
+	// On the canvas the toolbar keeps the panel's 12px from the edges.
+	const INSET = canvasOpen.value ? 12 : LIVE_INSET
 	const [v, h] = a.split('-')
-	const left = h === 'left' ? LIVE_INSET : h === 'right' ? vw.value - slotW.value - LIVE_INSET : (vw.value - slotW.value) / 2
-	const top = v === 'top' ? LIVE_INSET : vh.value - bh.value - LIVE_INSET - navH.value
+	const room = vw.value - reserve.value
+	// On the canvas the zoom pill holds the bottom-right corner; parked there, the toolbar stands left of it.
+	const corner = canvasOpen.value && v === 'bottom' && h === 'right' ? bridge.corner : 0
+	const left = h === 'left' ? INSET : h === 'right' ? room - slotW.value - INSET - corner : (room - slotW.value) / 2
+	const top = v === 'top' ? INSET : vh.value - bh.value - INSET - navH.value
 	return { left: clamp(left, 0, Math.max(0, vw.value - bw.value)), top: clamp(top, 0, Math.max(0, vh.value - bh.value)) }
 }
 const dragPos = ref<{ left: number; top: number } | null>(null)
@@ -735,6 +897,12 @@ watch(
 const snapping = ref(false)
 const barDragging = ref(false)
 let snapTimer = 0
+// The panel opening or closing slides the toolbar to its new place.
+watch(reserve, () => {
+	clearTimeout(snapTimer)
+	snapping.value = true
+	snapTimer = window.setTimeout(() => (snapping.value = false), 200)
+})
 let grab: { x: number; y: number; left: number; top: number } | null = null
 let swallowBarClick = false
 function barDown(e: PointerEvent) {
@@ -791,9 +959,9 @@ function barClick(e: MouseEvent) {
 // open and the tool keys still reach the frame. Typing into the toolbar is never needed.
 const keepFocus = (e: MouseEvent) => e.preventDefault()
 
-// Unread threads on this page: the dot on the Comment tool and on the closed launcher, the doors to them. While Comment
-// is the tool in use the rows carry their own dots.
-const unread = computed(() => hasUnreadThreads(page.path))
+// Unread threads on this page (any page, on the canvas): the dot on the Comment tool and on the closed launcher, the doors
+// to them. While Comment is the tool in use the rows carry their own dots.
+const unread = computed(() => hasUnreadThreads(canvasOpen.value ? undefined : page.path))
 const unreadDot = computed(() => unread.value && !(active.value && mode.value === 'comment'))
 
 // ---- Toolbar actions: the count and copy belong to the tool in use ---------------------
@@ -814,12 +982,16 @@ const tab = (label: string, value: Mode, icon: string, name = label) =>
 	phone.value ? { label: name, value, icon, onClick: () => tool(value) } : { label, value, iconLeft: icon, onClick: () => tool(value) }
 // With a count beside it the Comment icon is no longer a square: it sizes to its content, the tab's own padding around both,
 // and its name moves to screen-reader text beside the count.
-const shownOpen = computed(() => openCount.value)
+// On the canvas the panel's Comments tab carries the number, so the toolbar does not say it twice.
+const shownOpen = computed(() => (canvasOpen.value ? 0 : openCount.value))
 const commentTab = () =>
 	phone.value && shownOpen.value
 		? { label: '', name: `Comment, ${shownOpen.value} open`, value: 'comment' as Mode, iconLeft: 'lucide-message-circle', onClick: () => tool('comment') }
 		: tab('Comment', 'comment', 'lucide-message-circle', shownOpen.value ? `Comment, ${shownOpen.value} open` : 'Comment')
-const tabOptions = computed(() => (noter ? [tab('Note', 'note', 'lucide-sticky-note'), tab('Tweak', 'tweak', 'lucide-paintbrush'), commentTab()] : [commentTab()]))
+// The canvas has no Tweak: tokens change on the live page.
+const tabOptions = computed(() =>
+	(noter ? [tab('Note', 'note', 'lucide-sticky-note'), tab('Tweak', 'tweak', 'lucide-paintbrush'), commentTab()] : [commentTab()]).filter((o) => !(canvasOpen.value && o.value === 'tweak')),
+)
 const tabHover = ref<Mode>('note')
 function onTabHover(e: PointerEvent) {
 	const v = (e.target as Element).closest('[data-value]')?.getAttribute('data-value')
@@ -857,10 +1029,15 @@ const panelBox = computed(() => {
 // Where the card really is, so a comment box can keep off it.
 const panelEl = ref<HTMLElement | null>(null)
 const { width: panelW, height: panelH } = useElementSize(panelEl, { width: 288, height: 0 }, { box: 'border-box' })
+// On the canvas the card is the canvas's own panel, which takes `reserve` from the right edge.
 const panelRect = computed(() =>
-	showPanel.value && !phone.value && panelOpen.value && panelH.value
-		? { left: vw.value - 12 - panelW.value, right: vw.value - 12, top: panelTop.value, bottom: panelTop.value + panelH.value }
-		: null,
+	canvasOpen.value
+		? reserve.value && !sheetMode.value
+			? { left: vw.value - reserve.value, right: vw.value, top: 0, bottom: vh.value }
+			: null
+		: showPanel.value && !phone.value && panelOpen.value && panelH.value
+			? { left: vw.value - 12 - panelW.value, right: vw.value - 12, top: panelTop.value, bottom: panelTop.value + panelH.value }
+			: null,
 )
 
 // Notes: copies what hasn't gone out yet, or everything when it all has; then marks it sent.
@@ -930,6 +1107,7 @@ useEventListener(
 
 // A note on another page needs its route first, then a moment for the page to render. Its element's box, or null.
 async function reveal(n: Note, smooth: boolean): Promise<Rect | null> {
+	await leaveCanvas()
 	await goTo(n.route)
 	for (let i = 0; i < 30 && !unmounted; i++) {
 		if (await resolveRect(n.selector)) {
@@ -943,7 +1121,7 @@ async function reveal(n: Note, smooth: boolean): Promise<Rect | null> {
 }
 
 async function jump(n: Note) {
-	if (n.tile) return
+	if (n.tile) return openNoteFromList(n)
 	if (!(await reveal(n, true))) return
 	flash.value = { sel: n.selector, ref: noteRefs.get(n.id)?.[0] }
 	clearTimeout(flashTimer)
@@ -952,7 +1130,7 @@ async function jump(n: Note) {
 
 async function edit(n: Note) {
 	listOpen.value = false
-	if (n.tile) return
+	if (n.tile) return openNoteFromList(n)
 	const r = await reveal(n, false)
 	const p = r ? { x: r.x + n.offset.x * r.w, y: r.y + n.offset.y * r.h } : { x: n.rect.x + n.offset.x * n.rect.w, y: n.rect.y + n.offset.y * n.rect.h }
 	openEdit(n, p.x, p.y)
@@ -972,318 +1150,316 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 
 <template>
 	<div ref="portalHost" />
-	<template v-if="!canvasOpen">
-		<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
-		<Tooltip v-if="!guest" :text="noter ? 'Annotate (N)' : 'Comment (C)'">
-			<button
-				type="button"
-				data-annotate-ui
-				:aria-label="noter ? 'Annotate' : 'Comment'"
-				:aria-hidden="enabled"
-				:tabindex="enabled ? -1 : 0"
-				:style="triggerStyle"
-				class="fixed z-[2147482995] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
-				:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', unread ? 'opacity-60' : 'opacity-20']"
-				@mousedown="keepFocus"
-				@click="openFromTrigger"
-			>
-				<span :class="noter ? 'lucide-mouse-pointer-click' : 'lucide-message-circle'" class="size-4" aria-hidden="true" />
-				<!-- Unread comments: the dot on the door to them. -->
-				<span v-if="unread" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-blue-6 ring-2 ring-surface-base" role="img" aria-label="Unread comments" />
-			</button>
-		</Tooltip>
+	<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
+	<Tooltip v-if="!guest && !canvasOpen" :text="noter ? 'Annotate (N)' : 'Comment (C)'">
+		<button
+			type="button"
+			data-annotate-ui
+			:aria-label="noter ? 'Annotate' : 'Comment'"
+			:aria-hidden="enabled"
+			:tabindex="enabled ? -1 : 0"
+			:style="triggerStyle"
+			class="fixed z-[2147482995] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
+			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', unread ? 'opacity-60' : 'opacity-20']"
+			@mousedown="keepFocus"
+			@click="openFromTrigger"
+		>
+			<span :class="noter ? 'lucide-mouse-pointer-click' : 'lucide-message-circle'" class="size-4" aria-hidden="true" />
+			<!-- Unread comments: the dot on the door to them. -->
+			<span v-if="unread" class="absolute -right-1 -top-1 size-2.5 rounded-full bg-surface-blue-6 ring-2 ring-surface-base" role="img" aria-label="Unread comments" />
+		</button>
+	</Tooltip>
 
-		<template v-if="enabled">
-			<NotePins v-if="mode === 'note'" :route="key" :selected="noteSelected" :refs="noteRefs" @open="(n, x, y) => openEdit(n, x, y)" />
-			<CommentPins v-if="active && mode === 'comment' && !guest && !(phone && sheetOpen)" :route="key" @open="openThreadAt" @draft="reopenDraft" />
+	<template v-if="enabled">
+		<NotePins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="noteSelected" :refs="noteRefs" @open="(n, x, y) => openEdit(n, x, y)" />
+		<CommentPins v-if="active && mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" @draft="reopenDraft" />
 
-			<!-- The hover outline: one element that glides, fades out when picking ends. -->
+		<!-- The hover outline: one element that glides, fades out when picking ends. -->
+		<div
+			data-annotate-ui
+			class="pointer-events-none fixed left-0 top-0 z-[2147482995] rounded-[4px] border-[1.5px] border-outline-blue-6"
+			:class="[hoverOn ? 'opacity-100' : 'opacity-0', glide && !scrolling ? 'transition-[transform,width,height,opacity] duration-[90ms] ease-out motion-reduce:transition-opacity' : 'transition-opacity duration-100']"
+			:style="hoverBox ? { transform: `translate(${hoverBox.x}px, ${hoverBox.y}px)`, width: `${hoverBox.w}px`, height: `${hoverBox.h}px` } : { display: 'none' }"
+			aria-hidden="true"
+		>
+			<!-- Own layer so the tint can be faint while the border stays solid. -->
+			<span class="absolute inset-0 bg-surface-blue-7 opacity-[0.06]" />
+			<span
+				v-if="hoverLabel"
+				class="absolute left-0 max-w-xs truncate whitespace-pre rounded-[4px] bg-surface-blue-7 px-1.5 py-0.5 text-xs font-medium text-white"
+				:class="hoverBox && hoverBox.y < 30 ? 'top-full mt-1' : 'bottom-full mb-1'"
+			>{{ hoverLabel }}</span>
+		</div>
+
+		<!-- Selected elements, the box of a note, the flash after a jump. Never catch the pointer. -->
+		<div
+			v-for="o in outs"
+			:key="o.key"
+			data-annotate-ui
+			class="pointer-events-none fixed z-[2147482995] border-[1.5px] border-outline-blue-6"
+			:class="o.dashed ? 'rounded-5 border-dashed' : 'rounded-[4px]'"
+			:style="{ left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px` }"
+			aria-hidden="true"
+		>
+			<span class="absolute inset-0 bg-surface-blue-7" :class="o.dashed ? 'rounded-5 opacity-[0.08]' : 'opacity-[0.06]'" />
+		</div>
+
+		<!-- The box while it is being dragged, with its size. -->
+		<Transition enter-from-class="opacity-0" enter-active-class="transition-opacity duration-100">
 			<div
+				v-if="dragRect"
 				data-annotate-ui
-				class="pointer-events-none fixed left-0 top-0 z-[2147482995] rounded-[4px] border-[1.5px] border-outline-blue-6"
-				:class="[hoverOn ? 'opacity-100' : 'opacity-0', glide && !scrolling ? 'transition-[transform,width,height,opacity] duration-[90ms] ease-out motion-reduce:transition-opacity' : 'transition-opacity duration-100']"
-				:style="hoverBox ? { transform: `translate(${hoverBox.x}px, ${hoverBox.y}px)`, width: `${hoverBox.w}px`, height: `${hoverBox.h}px` } : { display: 'none' }"
+				class="pointer-events-none fixed z-[2147482995] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
+				:style="{ left: `${dragRect.x}px`, top: `${dragRect.y}px`, width: `${dragRect.w}px`, height: `${dragRect.h}px` }"
 				aria-hidden="true"
 			>
-				<!-- Own layer so the tint can be faint while the border stays solid. -->
-				<span class="absolute inset-0 bg-surface-blue-7 opacity-[0.06]" />
+				<span class="absolute inset-0 rounded-5 bg-surface-blue-7 opacity-[0.08]" />
 				<span
-					v-if="hoverLabel"
-					class="absolute left-0 max-w-xs truncate whitespace-pre rounded-[4px] bg-surface-blue-7 px-1.5 py-0.5 text-xs font-medium text-white"
-					:class="hoverBox && hoverBox.y < 30 ? 'top-full mt-1' : 'bottom-full mb-1'"
-				>{{ hoverLabel }}</span>
+					class="absolute right-0 whitespace-nowrap rounded-[4px] bg-surface-blue-7 px-1 text-xs tabular-nums text-white"
+					:class="dragRect.y + dragRect.h > vh - 28 ? 'bottom-1 right-1' : 'top-full mt-1'"
+				>{{ Math.round(dragRect.w) }} × {{ Math.round(dragRect.h) }}</span>
 			</div>
+		</Transition>
 
-			<!-- Selected elements, the box of a note, the flash after a jump. Never catch the pointer. -->
+		<!-- Hold Alt: distances in px. -->
+		<template v-for="(l, i) in lines" :key="`l${i}`">
 			<div
-				v-for="o in outs"
-				:key="o.key"
 				data-annotate-ui
-				class="pointer-events-none fixed z-[2147482995] border-[1.5px] border-outline-blue-6"
-				:class="o.dashed ? 'rounded-5 border-dashed' : 'rounded-[4px]'"
-				:style="{ left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px` }"
+				class="pointer-events-none fixed z-[2147482995] bg-surface-red-7"
+				:style="{ left: `${l.x}px`, top: `${l.y}px`, width: `${l.w}px`, height: `${l.h}px` }"
 				aria-hidden="true"
-			>
-				<span class="absolute inset-0 bg-surface-blue-7" :class="o.dashed ? 'rounded-5 opacity-[0.08]' : 'opacity-[0.06]'" />
+			/>
+			<div
+				data-annotate-ui
+				class="pointer-events-none fixed z-[2147482995] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
+				:style="{ left: `${l.lx}px`, top: `${l.ly}px` }"
+				aria-hidden="true"
+			>{{ l.label }}</div>
+		</template>
+
+		<Transition
+			enter-from-class="opacity-0 scale-[0.96] motion-reduce:scale-100"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition duration-100 ease-in"
+			leave-to-class="opacity-0"
+		>
+			<NotePopover
+				v-if="draft && mode === 'note'"
+				:key="draftKey"
+				:class="shiftPick && 'invisible'"
+				v-model="text"
+				:x="draft.x"
+				:y="draft.y"
+				:component="draft.component"
+				:extra="draft.extra"
+				:editing="!!draft.editing"
+				:avoid="ready ? barBox : null"
+				@save="save"
+				@cancel="close"
+				@delete="remove"
+			/>
+		</Transition>
+
+		<Transition
+			enter-from-class="opacity-0 scale-[0.96] motion-reduce:scale-100"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition duration-100 ease-in"
+			leave-to-class="opacity-0"
+		>
+			<CommentPopover
+				v-if="draft && mode === 'comment' && !guest"
+				:key="draftKey"
+				:class="shiftPick && 'invisible'"
+				v-model="text"
+				:x="at?.x ?? draft.x"
+				:y="at?.y ?? draft.y"
+				:extra="draft.extra"
+				:anchor="newAnchor"
+				:thread="thread"
+				:avoid="ready ? barBox : null"
+				:panel="panelRect"
+				@created="onCreated"
+				@gone="close"
+				:menu-host="menuHost"
+				@noted="onNoteDraft"
+				@close="close"
+			/>
+		</Transition>
+
+		<!-- The comments list: a floating card on the right, or a bottom sheet on a phone. It floats; the page never moves for it. -->
+		<Transition
+			enter-from-class="opacity-0 translate-x-2 motion-reduce:translate-x-0"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition-opacity duration-100"
+			leave-to-class="opacity-0"
+		>
+			<div v-if="showPanel && !sheetMode && !canvasOpen && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[2147482995]" :style="panelBox">
+				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
 			</div>
+		</Transition>
+		<BottomSheet v-if="showPanel && sheetMode" v-model:open="sheetOpen" title="Comments">
+			<CommentsPanel embedded :route="key" @choose="openFromList" />
+		</BottomSheet>
 
-			<!-- The box while it is being dragged, with its size. -->
-			<Transition enter-from-class="opacity-0" enter-active-class="transition-opacity duration-100">
-				<div
-					v-if="dragRect"
-					data-annotate-ui
-					class="pointer-events-none fixed z-[2147482995] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
-					:style="{ left: `${dragRect.x}px`, top: `${dragRect.y}px`, width: `${dragRect.w}px`, height: `${dragRect.h}px` }"
-					aria-hidden="true"
-				>
-					<span class="absolute inset-0 rounded-5 bg-surface-blue-7 opacity-[0.08]" />
-					<span
-						class="absolute right-0 whitespace-nowrap rounded-[4px] bg-surface-blue-7 px-1 text-xs tabular-nums text-white"
-						:class="dragRect.y + dragRect.h > vh - 28 ? 'bottom-1 right-1' : 'top-full mt-1'"
-					>{{ Math.round(dragRect.w) }} × {{ Math.round(dragRect.h) }}</span>
-				</div>
-			</Transition>
-
-			<!-- Hold Alt: distances in px. -->
-			<template v-for="(l, i) in lines" :key="`l${i}`">
-				<div
-					data-annotate-ui
-					class="pointer-events-none fixed z-[2147482995] bg-surface-red-7"
-					:style="{ left: `${l.x}px`, top: `${l.y}px`, width: `${l.w}px`, height: `${l.h}px` }"
-					aria-hidden="true"
-				/>
-				<div
-					data-annotate-ui
-					class="pointer-events-none fixed z-[2147482995] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
-					:style="{ left: `${l.lx}px`, top: `${l.ly}px` }"
-					aria-hidden="true"
-				>{{ l.label }}</div>
-			</template>
-
-			<Transition
-				enter-from-class="opacity-0 scale-[0.96] motion-reduce:scale-100"
-				enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
-				leave-active-class="transition duration-100 ease-in"
-				leave-to-class="opacity-0"
+		<Transition
+			:enter-from-class="panelBelow ? 'opacity-0 -translate-y-1' : 'opacity-0 translate-y-1'"
+			enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
+			leave-active-class="transition-opacity duration-100"
+			leave-to-class="opacity-0"
+		>
+			<div
+				v-if="listOpen"
+				data-annotate-ui
+				data-notes-panel
+				class="pointer-events-auto fixed z-[2147482995] flex max-h-96 w-80 flex-col rounded-5 bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2"
+				:style="panelStyle"
 			>
-				<NotePopover
-					v-if="draft && mode === 'note'"
-					:key="draftKey"
-					:class="shiftPick && 'invisible'"
-					v-model="text"
-					:x="draft.x"
-					:y="draft.y"
-					:component="draft.component"
-					:extra="draft.extra"
-					:editing="!!draft.editing"
-					:avoid="ready ? barBox : null"
-					@save="save"
-					@cancel="close"
-					@delete="remove"
-				/>
-			</Transition>
-
-			<Transition
-				enter-from-class="opacity-0 scale-[0.96] motion-reduce:scale-100"
-				enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
-				leave-active-class="transition duration-100 ease-in"
-				leave-to-class="opacity-0"
-			>
-				<CommentPopover
-					v-if="draft && mode === 'comment' && !guest"
-					:key="draftKey"
-					:class="shiftPick && 'invisible'"
-					v-model="text"
-					:x="at?.x ?? draft.x"
-					:y="at?.y ?? draft.y"
-					:extra="draft.extra"
-					:anchor="newAnchor"
-					:thread="thread"
-					:avoid="ready ? barBox : null"
-					:panel="panelRect"
-					@created="onCreated"
-					@gone="close"
-					:menu-host="menuHost"
-					@noted="onNoteDraft"
-					@close="close"
-				/>
-			</Transition>
-
-			<!-- The comments list: a floating card on the right, or a bottom sheet on a phone. It floats; the page never moves for it. -->
-			<Transition
-				enter-from-class="opacity-0 translate-x-2 motion-reduce:translate-x-0"
-				enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
-				leave-active-class="transition-opacity duration-100"
-				leave-to-class="opacity-0"
-			>
-				<div v-if="showPanel && !sheetMode && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[2147482995]" :style="panelBox">
-					<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
-				</div>
-			</Transition>
-			<BottomSheet v-if="showPanel && sheetMode" v-model:open="sheetOpen" title="Comments">
-				<CommentsPanel embedded :route="key" @choose="openFromList" />
-			</BottomSheet>
-
-			<Transition
-				:enter-from-class="panelBelow ? 'opacity-0 -translate-y-1' : 'opacity-0 translate-y-1'"
-				enter-active-class="transition duration-[140ms] ease-out motion-reduce:transition-opacity"
-				leave-active-class="transition-opacity duration-100"
-				leave-to-class="opacity-0"
-			>
-				<div
-					v-if="listOpen"
-					data-annotate-ui
-					data-notes-panel
-					class="pointer-events-auto fixed z-[2147482995] flex max-h-96 w-80 flex-col rounded-5 bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2"
-					:style="panelStyle"
-				>
-					<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
-						<template v-for="[r, list] in groups" :key="r">
-							<p v-if="groups.length > 1" class="px-2 pt-2 pb-1 text-sm text-ink-gray-5">{{ r }}</p>
-							<div
-								v-for="n in list"
-								:key="n.id"
-								data-annotate-ui
-								role="button"
-								tabindex="0"
-								class="group flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 transition-colors duration-100 hover:bg-surface-gray-2"
-								:class="n.sent && 'opacity-60'"
-								@click="jump(n)"
-								@keydown.enter.self="jump(n)"
-							>
-								<span
-									class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
-									:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
-								>{{ noteNumber(n) }}</span>
-								<div class="min-w-0 flex-1">
-									<p class="flex items-baseline gap-2">
-										<span class="truncate text-base font-medium text-ink-gray-8">{{ n.component || n.element.split(/[.\s]/)[0] }}</span>
-										<span v-if="n.sent" class="shrink-0 text-sm text-ink-gray-5">Sent</span>
-									</p>
-									<p class="line-clamp-2 text-base text-ink-gray-6">{{ n.note }}</p>
-								</div>
-								<span class="hidden shrink-0 items-start group-hover:flex group-focus-within:flex">
-									<Button variant="ghost" icon="lucide-pencil" aria-label="Edit note" @click.stop="edit(n)" />
-									<Button variant="ghost" icon="lucide-trash-2" aria-label="Delete note" @click.stop="removeNote(n.id)" />
-								</span>
-							</div>
-						</template>
-					</div>
-
-					<div class="flex items-center gap-1.5 border-t border-outline-gray-1 p-1.5">
-						<!-- Where this list stands on the server. A failed save is retried on the next change. -->
-						<span
-							class="flex items-center gap-1 px-1 text-p-sm"
-							:class="saveState === 'error' ? 'text-ink-red-7' : 'text-ink-gray-5'"
-							role="status"
+				<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
+					<template v-for="[r, list] in groups" :key="r">
+						<p v-if="groups.length > 1" class="px-2 pt-2 pb-1 text-sm text-ink-gray-5">{{ r }}</p>
+						<div
+							v-for="n in list"
+							:key="n.id"
+							data-annotate-ui
+							role="button"
+							tabindex="0"
+							class="group flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 transition-colors duration-100 hover:bg-surface-gray-2"
+							:class="n.sent && 'opacity-60'"
+							@click="jump(n)"
+							@keydown.enter.self="jump(n)"
 						>
 							<span
-								class="size-3.5 shrink-0"
-								:class="saveState === 'saved' ? 'lucide-check' : saveState === 'error' ? 'lucide-triangle-alert' : 'lucide-loader-circle animate-spin motion-reduce:animate-none'"
-								aria-hidden="true"
-							/>
-							{{ saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Not saved' : 'Saving…' }}
-						</span>
-						<Button v-if="hasSent" variant="ghost" label="Clear sent" @click="clearSent" />
-						<Button
-							class="ml-auto"
-							:variant="confirming ? 'subtle' : 'ghost'"
-							:theme="confirming ? 'red' : 'gray'"
-							:label="confirming ? `Clear ${plural(count, 'note')}` : 'Clear all'"
-							@click="clear"
-						/>
-					</div>
-				</div>
-			</Transition>
-
-			<!-- Above the comment box: the box's menus open here. -->
-			<div ref="menuHost" data-annotate-ui data-annotate-menus class="fixed left-0 top-0 z-[2147482999] size-0" />
-
-			<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured.
-				The count is measured at two digits, so the tabs hold still when it passes 9. -->
-			<div v-if="noter" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
-				<TabButtons :options="tabOptions" model-value="note">
-					<template #suffix="{ button }">
-						<template v-if="button.value === 'comment'">
-							<template v-if="shownOpen">
-								<span v-if="button.name" class="sr-only">{{ button.name }}</span>
-								<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ Math.max(shownOpen, 10) }}</span>
-							</template>
-							<span v-if="unread" class="size-1.5 shrink-0 rounded-full" :class="phone && !openCount ? '' : 'ml-1.5'" />
-						</template>
-					</template>
-				</TabButtons>
-				<Button variant="ghost" label="12 notes" />
-				<Button v-if="phone" variant="ghost" icon="lucide-copy" aria-label="Copy prompt" />
-				<Button v-else variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
-				<Button variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
-			</div>
-
-			<Transition
-				appear
-				enter-from-class="opacity-0 translate-y-2 motion-reduce:translate-y-0"
-				enter-active-class="transition duration-[180ms] ease-out motion-reduce:transition-opacity"
-			>
-				<div
-					ref="bar"
-					data-annotate-ui
-					role="toolbar"
-					aria-label="Annotate"
-					class="pointer-events-auto fixed z-[2147482995] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
-					:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
-					:style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
-					@mousedown="keepFocus"
-					@pointerdown="barDown"
-					@pointermove="barMove"
-					@pointerup="barUp"
-					@pointercancel="barUp"
-					@click.capture="barClick"
-				>
-					<!-- Tool switch. The current tab stays lit while its tool is on; Escape or close is the way off, and then no tab is lit. -->
-					<Button v-if="guest" variant="subtle" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
-					<Tooltip v-else :text="noter ? tabTip : active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
-						<div class="inline-flex" @pointerover="onTabHover">
-							<TabButtons :options="tabOptions" :model-value="active ? mode : undefined">
-								<template #suffix="{ button }">
-									<template v-if="button.value === 'comment'">
-										<template v-if="shownOpen">
-											<span v-if="button.name" class="sr-only">{{ button.name }}</span>
-											<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ shownOpen }}</span>
-										</template>
-										<span v-if="unreadDot" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" :class="phone && !openCount ? '' : 'ml-1.5'" role="img" aria-label="Unread comments" />
-									</template>
-								</template>
-							</TabButtons>
-						</div>
-					</Tooltip>
-
-					<Tooltip v-if="mode === 'comment' && !guest" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600" :disabled="phone">
-						<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
-					</Tooltip>
-
-					<span v-if="noter && count" data-notes-trigger>
-						<Tooltip text="Show notes" :hover-delay="600">
-							<Button :variant="listOpen ? 'subtle' : 'ghost'" :label="countLabel" @click="listOpen = !listOpen" />
-						</Tooltip>
-					</span>
-
-					<!-- The prompt is the owner's, and never holds a comment. -->
-					<template v-if="noter && mode !== 'comment'">
-						<Tooltip v-if="!count" :text="`No ${noun}s yet`" :hover-delay="600">
-							<span class="inline-flex" tabindex="0">
-								<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" disabled />
+								class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
+								:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
+							>{{ noteNumber(n) }}</span>
+							<div class="min-w-0 flex-1">
+								<p class="flex items-baseline gap-2">
+									<span class="truncate text-base font-medium text-ink-gray-8">{{ n.component || n.element.split(/[.\s]/)[0] }}</span>
+									<span v-if="n.sent" class="shrink-0 text-sm text-ink-gray-5">Sent</span>
+								</p>
+								<p class="line-clamp-2 text-base text-ink-gray-6">{{ n.note }}</p>
+							</div>
+							<span class="hidden shrink-0 items-start group-hover:flex group-focus-within:flex">
+								<Button variant="ghost" icon="lucide-pencil" aria-label="Edit note" @click.stop="edit(n)" />
+								<Button variant="ghost" icon="lucide-trash-2" aria-label="Delete note" @click.stop="removeNote(n.id)" />
 							</span>
-						</Tooltip>
-						<Tooltip v-else text="Copy prompt for Claude" :hover-delay="600">
-							<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" @click="copy" />
-						</Tooltip>
+						</div>
 					</template>
-
-					<Tooltip v-if="!guest" text="Hide toolbar" :hover-delay="600">
-						<Button class="ml-auto" variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
-					</Tooltip>
 				</div>
-			</Transition>
-		</template>
+
+				<div class="flex items-center gap-1.5 border-t border-outline-gray-1 p-1.5">
+					<!-- Where this list stands on the server. A failed save is retried on the next change. -->
+					<span
+						class="flex items-center gap-1 px-1 text-p-sm"
+						:class="saveState === 'error' ? 'text-ink-red-7' : 'text-ink-gray-5'"
+						role="status"
+					>
+						<span
+							class="size-3.5 shrink-0"
+							:class="saveState === 'saved' ? 'lucide-check' : saveState === 'error' ? 'lucide-triangle-alert' : 'lucide-loader-circle animate-spin motion-reduce:animate-none'"
+							aria-hidden="true"
+						/>
+						{{ saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Not saved' : 'Saving…' }}
+					</span>
+					<Button v-if="hasSent" variant="ghost" label="Clear sent" @click="clearSent" />
+					<Button
+						class="ml-auto"
+						:variant="confirming ? 'subtle' : 'ghost'"
+						:theme="confirming ? 'red' : 'gray'"
+						:label="confirming ? `Clear ${plural(count, 'note')}` : 'Clear all'"
+						@click="clear"
+					/>
+				</div>
+			</div>
+		</Transition>
+
+		<!-- Above the comment box: the box's menus open here. -->
+		<div ref="menuHost" data-annotate-ui data-annotate-menus class="fixed left-0 top-0 z-[2147482999] size-0" />
+
+		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured.
+			The count is measured at two digits, so the tabs hold still when it passes 9. -->
+		<div v-if="noter" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
+			<TabButtons :options="tabOptions" model-value="note">
+				<template #suffix="{ button }">
+					<template v-if="button.value === 'comment'">
+						<template v-if="shownOpen">
+							<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+							<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ Math.max(shownOpen, 10) }}</span>
+						</template>
+						<span v-if="unread" class="size-1.5 shrink-0 rounded-full" :class="phone && !openCount ? '' : 'ml-1.5'" />
+					</template>
+				</template>
+			</TabButtons>
+			<Button v-if="!canvasOpen" variant="ghost" label="12 notes" />
+			<Button v-if="phone" variant="ghost" icon="lucide-copy" aria-label="Copy prompt" />
+			<Button v-else variant="ghost" icon-left="lucide-copy" label="Copy prompt" />
+			<Button v-if="!canvasOpen" variant="ghost" icon="lucide-x" aria-label="Close toolbar" />
+		</div>
+
+		<Transition
+			appear
+			enter-from-class="opacity-0 translate-y-2 motion-reduce:translate-y-0"
+			enter-active-class="transition duration-[180ms] ease-out motion-reduce:transition-opacity"
+		>
+			<div
+				ref="bar"
+				data-annotate-ui
+				role="toolbar"
+				aria-label="Annotate"
+				class="pointer-events-auto fixed z-[2147482995] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
+				:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
+				:style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
+				@mousedown="keepFocus"
+				@pointerdown="barDown"
+				@pointermove="barMove"
+				@pointerup="barUp"
+				@pointercancel="barUp"
+				@click.capture="barClick"
+			>
+				<!-- Tool switch. The current tab stays lit while its tool is on; Escape or close is the way off, and then no tab is lit. -->
+				<Button v-if="guest" variant="subtle" icon-left="lucide-log-in" label="Sign in to comment" @click="signIn" />
+				<Tooltip v-else :text="noter ? tabTip : active ? 'Stop commenting (C)' : TIPS.comment" :hover-delay="600">
+					<div class="inline-flex" @pointerover="onTabHover">
+						<TabButtons :options="tabOptions" :model-value="active ? mode : undefined">
+							<template #suffix="{ button }">
+								<template v-if="button.value === 'comment'">
+									<template v-if="shownOpen">
+										<span v-if="button.name" class="sr-only">{{ button.name }}</span>
+										<span class="tabular-nums text-ink-gray-5" :aria-hidden="button.name ? 'true' : undefined">{{ shownOpen }}</span>
+									</template>
+									<span v-if="unreadDot" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" :class="phone && !openCount ? '' : 'ml-1.5'" role="img" aria-label="Unread comments" />
+								</template>
+							</template>
+						</TabButtons>
+					</div>
+				</Tooltip>
+
+				<Tooltip v-if="mode === 'comment' && !guest && (!canvasOpen || bridge.phone)" :text="panelShown ? 'Hide comments' : 'Show comments'" :hover-delay="600" :disabled="phone">
+					<Button :variant="panelShown ? 'subtle' : 'ghost'" icon="lucide-panel-right" :aria-label="panelShown ? 'Hide comments' : 'Show comments'" :aria-pressed="panelShown" @click="togglePanel" />
+				</Tooltip>
+
+				<span v-if="noter && count && !canvasOpen" data-notes-trigger>
+					<Tooltip text="Show notes" :hover-delay="600">
+						<Button :variant="listOpen ? 'subtle' : 'ghost'" :label="countLabel" @click="listOpen = !listOpen" />
+					</Tooltip>
+				</span>
+
+				<!-- The prompt is the owner's, and never holds a comment. -->
+				<template v-if="noter && mode !== 'comment'">
+					<Tooltip v-if="!count" :text="`No ${noun}s yet`" :hover-delay="600">
+						<span class="inline-flex" tabindex="0">
+							<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" disabled />
+						</span>
+					</Tooltip>
+					<Tooltip v-else text="Copy prompt for Claude" :hover-delay="600">
+						<Button variant="ghost" :icon-left="phone ? undefined : 'lucide-copy'" :icon="phone ? 'lucide-copy' : undefined" :label="phone ? undefined : 'Copy prompt'" aria-label="Copy prompt" @click="copy" />
+					</Tooltip>
+				</template>
+
+				<Tooltip v-if="!guest && !canvasOpen" text="Hide toolbar" :hover-delay="600">
+					<Button class="ml-auto" variant="ghost" icon="lucide-x" aria-label="Close toolbar" @click="setEnabled(false)" />
+				</Tooltip>
+			</div>
+		</Transition>
 	</template>
 </template>
