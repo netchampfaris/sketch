@@ -164,9 +164,9 @@ export function writeAnchor(a: Anchor) {
 
 // ---- Our own UI is never a target ------------------------------------------------------
 export const UI_ATTR = 'data-annotate-ui'
-// Tooltips, menus and toasts (an Undo is pressed while picking) from the component library are portalled out of our
-// markup; treat them as ours too.
-const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"],[role="menu"],[data-sonner-toaster]`
+// Tooltips and toasts (an Undo is pressed while picking) from the component library are portalled out of our markup;
+// treat them as ours too. Menus are not: the page's own are commented on, and Sketch's open in hosts of ours.
+const OURS = `[${UI_ATTR}],[data-sketch-ui],[data-slot^="tooltip"],[role="tooltip"],[data-sonner-toaster]`
 export const isOurs = (el: Node | null | undefined) => {
   const e = el instanceof Element ? el : el?.parentElement
   return !!e?.closest(OURS)
@@ -175,6 +175,9 @@ export const isOurs = (el: Node | null | undefined) => {
 // Escape first. Tooltips come and go with the pointer, so they never hold Escape back.
 export const pageLayerOpen = () =>
   [...document.querySelectorAll('[data-dismissable-layer]')].some((l) => !isOurs(l) && !l.querySelector('[role="tooltip"]'))
+// One of our own menus or dialogs is open, such as a comment's ⋯ menu.
+export const ownLayerOpen = () =>
+  [...document.querySelectorAll('[data-dismissable-layer]')].some((l) => isOurs(l) && !l.querySelector('[role="tooltip"]'))
 // The page element an event is aimed at; never one of ours.
 export const targetOf = (e: Event) => {
   const t = e.target

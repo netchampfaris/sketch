@@ -92,8 +92,8 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 			data-comment-pin
 			type="button"
 			:aria-label="label(t)"
-			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[62] hover:scale-110 focus-visible:z-[62] motion-reduce:transition-none motion-reduce:hover:scale-100"
-			:class="[openThread === t.id ? 'z-[62]' : 'z-[60]', (pos[t.id]?.found === false || !picksShown(t.anchor.picks)) && 'opacity-50', t.resolved && 'opacity-60']"
+			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[2147482997] hover:scale-110 focus-visible:z-[2147482997] motion-reduce:transition-none motion-reduce:hover:scale-100"
+			:class="[openThread === t.id ? 'z-[2147482997]' : 'z-[2147482995]', (pos[t.id]?.found === false || !picksShown(t.anchor.picks)) && 'opacity-50', t.resolved && 'opacity-60']"
 			:style="{ left: `${pos[t.id].x}px`, top: `${pos[t.id].y}px` }"
 			@mouseenter="enter(t)"
 			@mouseleave="clearHover"
@@ -121,7 +121,7 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 			data-held-draft
 			type="button"
 			:aria-label="`Draft comment: ${h.text.slice(0, 80)}`"
-			class="pointer-events-auto fixed z-[60] flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[62] hover:scale-110 focus-visible:z-[62] motion-reduce:transition-none motion-reduce:hover:scale-100"
+			class="pointer-events-auto fixed z-[2147482995] flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[2147482997] hover:scale-110 focus-visible:z-[2147482997] motion-reduce:transition-none motion-reduce:hover:scale-100"
 			:style="{ left: `${heldPos[h.id].x}px`, top: `${heldPos[h.id].y}px` }"
 			@click.stop="reopen(h)"
 		>

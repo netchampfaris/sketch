@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dropdown } from 'frappe-ui'
-import { menuBind } from './menus'
+import { menuBind, menuHost } from './menus'
 import { idOf, mirrorStates, stateOf, stateValues } from './state'
 import type { DState } from './state'
 
@@ -23,7 +23,7 @@ const options = computed(() =>
 </script>
 
 <template>
-  <Dropdown v-bind="menuBind(`lens:${state.label}`)" :options="options">
+  <Dropdown v-bind="menuBind(`lens:${state.label}`)" :portal-to="menuHost()" :options="options">
     <Button variant="ghost" :aria-label="`${state.label}: ${current}`">
       <span class="flex items-center gap-1.5">
         <span v-if="showName" class="text-p-sm text-ink-gray-5">{{ state.label }}</span>

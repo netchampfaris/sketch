@@ -10,7 +10,7 @@ import { bridge } from './bridge'
 import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import { canDelete, deleteFailure, deleteVariant } from './edit'
 import { isNew } from './badges'
-import { menuBind } from './menus'
+import { menuBind, menuHost } from './menus'
 import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
@@ -132,7 +132,7 @@ watch(
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :options="menu" placement="bottom-end">
+        <Dropdown v-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :portal-to="menuHost()" :options="menu" placement="bottom-end">
           <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
         </Dropdown>
       </div>

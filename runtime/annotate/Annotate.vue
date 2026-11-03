@@ -50,6 +50,7 @@ import {
 	mode,
 	noteNumber,
 	notes,
+	pageLayerOpen,
 	parentOf,
 	pinPoint,
 	readAnchor,
@@ -94,10 +95,13 @@ const sheetOpen = ref(false)
 const canvasOpen = computed(() => bridge.open)
 const sheetMode = computed(() => (canvasOpen.value ? bridge.phone : vw.value < 640))
 // The canvas covers the page at z-[60], and a sheet is z-50 wherever it lands. Over the canvas the sheet is drawn into a
-// layer of its own at the canvas's level, below the toolbar (which comes after it), so it is seen and taps reach it.
+// layer of its own above the canvas, below the toolbar (which comes after it), so it is seen and taps reach it.
+// Off the canvas our tooltips and sheet open in a plain host inside ours: they keep their own z-index, and a press on
+// them stays ours, so the page's popovers stay open.
 const sheetHost = ref<HTMLElement | null>(null)
 const menuHost = ref<HTMLElement | null>(null)
-providePortalTarget(() => (canvasOpen.value ? (sheetHost.value ?? undefined) : undefined))
+const portalHost = ref<HTMLElement | null>(null)
+providePortalTarget(() => (canvasOpen.value ? sheetHost.value : portalHost.value) ?? undefined)
 
 // Picking machinery (hover, box, measuring) runs for the two tools that pin things to the page.
 // A phone's comments sheet covers the page, so nothing is picked while it is open. Over the canvas a click picks a
@@ -845,7 +849,8 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 		// The tweak layer takes its own Escape first and says so.
 		if (!enabled.value || e.defaultPrevented) return
 		// Let an open frappe-ui dialog or menu take its own Escape: a menu closes first, then the box, then the tool.
-		if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return
+		// Commenting, an open page popover or list closes first too; the other tools step aside for dialogs and menus only.
+		if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]') || (mode.value === 'comment' && pageLayerOpen())) return
 		if (dragging) resetDrag()
 		else if (draft.value) close()
 		// The last Escape leaves the tool altogether: the tool goes off and its panel closes with it (on the canvas the
@@ -1260,6 +1265,7 @@ function revealTweak(id: string) {
 </script>
 
 <template>
+	<div ref="portalHost" />
 	<!-- The faint way in. Stays mounted so it can fade out as the toolbar fades in at the same spot. -->
 	<Tooltip v-if="!guest && !canvasOpen" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : noter ? 'Annotate (N)' : 'Comment (C)'">
 		<button
@@ -1269,7 +1275,7 @@ function revealTweak(id: string) {
 			:aria-hidden="enabled"
 			:tabindex="enabled ? -1 : 0"
 			:style="triggerStyle"
-			class="fixed z-[60] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
+			class="fixed z-[2147482995] flex size-8 items-center justify-center rounded-[10px] bg-black-overlay-800 text-white shadow-sm ring-1 ring-white-overlay-100 transition-opacity duration-150"
 			:class="enabled ? 'pointer-events-none opacity-0' : ['pointer-events-auto hover:opacity-100 focus-visible:opacity-100', tweakCount || unread ? 'opacity-60' : 'opacity-20']"
 			@click="openFromTrigger"
 		>
@@ -1291,7 +1297,7 @@ function revealTweak(id: string) {
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
 			data-annotate-ui
-			class="pointer-events-none fixed left-0 top-0 z-[60] rounded-[4px] border-[1.5px] border-outline-blue-6"
+			class="pointer-events-none fixed left-0 top-0 z-[2147482995] rounded-[4px] border-[1.5px] border-outline-blue-6"
 			:class="[hoverOn ? 'opacity-100' : 'opacity-0', glide && !scrolling ? 'transition-[transform,width,height,opacity] duration-[90ms] ease-out motion-reduce:transition-opacity' : 'transition-opacity duration-100']"
 			:style="hoverBox ? { transform: `translate(${hoverBox.x}px, ${hoverBox.y}px)`, width: `${hoverBox.w}px`, height: `${hoverBox.h}px` } : { display: 'none' }"
 			aria-hidden="true"
@@ -1310,7 +1316,7 @@ function revealTweak(id: string) {
 			v-for="o in outs"
 			:key="o.key"
 			data-annotate-ui
-			class="pointer-events-none fixed z-[60] border-[1.5px] border-outline-blue-6"
+			class="pointer-events-none fixed z-[2147482995] border-[1.5px] border-outline-blue-6"
 			:class="o.dashed ? 'rounded-5 border-dashed' : 'rounded-[4px]'"
 			:style="{ left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px` }"
 			aria-hidden="true"
@@ -1323,7 +1329,7 @@ function revealTweak(id: string) {
 			<div
 				v-if="dragRect"
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
+				class="pointer-events-none fixed z-[2147482995] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
 				:style="{ left: `${dragRect.x}px`, top: `${dragRect.y}px`, width: `${dragRect.w}px`, height: `${dragRect.h}px` }"
 				aria-hidden="true"
 			>
@@ -1339,13 +1345,13 @@ function revealTweak(id: string) {
 		<template v-for="(l, i) in lines" :key="`l${i}`">
 			<div
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] bg-surface-red-7"
+				class="pointer-events-none fixed z-[2147482995] bg-surface-red-7"
 				:style="{ left: `${l.x}px`, top: `${l.y}px`, width: `${l.w}px`, height: `${l.h}px` }"
 				aria-hidden="true"
 			/>
 			<div
 				data-annotate-ui
-				class="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
+				class="pointer-events-none fixed z-[2147482995] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
 				:style="{ left: `${l.lx}px`, top: `${l.ly}px` }"
 				aria-hidden="true"
 			>{{ l.label }}</div>
@@ -1407,7 +1413,7 @@ function revealTweak(id: string) {
 			leave-active-class="transition-opacity duration-100"
 			leave-to-class="opacity-0"
 		>
-			<div v-if="showPanel && !sheetMode && !canvasOpen && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[60]" :style="panelBox">
+			<div v-if="showPanel && !sheetMode && !canvasOpen && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[2147482995]" :style="panelBox">
 				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
 			</div>
 		</Transition>
@@ -1425,7 +1431,7 @@ function revealTweak(id: string) {
 				v-if="listOpen"
 				data-annotate-ui
 				data-notes-panel
-				class="pointer-events-auto fixed z-[60] flex max-h-96 w-80 flex-col rounded-5 bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2"
+				class="pointer-events-auto fixed z-[2147482995] flex max-h-96 w-80 flex-col rounded-5 bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2"
 				:style="panelStyle"
 			>
 				<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -1533,9 +1539,9 @@ function revealTweak(id: string) {
 			</div>
 		</Transition>
 
-		<div ref="sheetHost" class="fixed left-0 top-0 z-[60] size-0" />
-		<!-- Above the comment box (z-63), which the canvas's own layer is not: the box's menus open here. -->
-		<div ref="menuHost" data-annotate-ui data-annotate-menus class="fixed left-0 top-0 z-[64] size-0" />
+		<div ref="sheetHost" class="fixed left-0 top-0 z-[2147482995] size-0" />
+		<!-- Above the comment box, which the sheet's layer is not: the box's menus open here. -->
+		<div ref="menuHost" data-annotate-ui data-annotate-menus class="fixed left-0 top-0 z-[2147482999] size-0" />
 
 		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured. The canvas has no count button and no Close.
 			The count is measured at two digits, so the tabs hold still when it passes 9. -->
@@ -1567,7 +1573,7 @@ function revealTweak(id: string) {
 				data-annotate-ui
 				role="toolbar"
 				aria-label="Annotate"
-				class="pointer-events-auto fixed z-[60] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
+				class="pointer-events-auto fixed z-[2147482995] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
 				:class="[barDragging ? 'cursor-grabbing' : 'cursor-grab', ready ? '' : 'opacity-0', snapping && 'transition-[left,top] duration-150 ease-out motion-reduce:transition-none']"
 				:style="{ left: `${pos.left}px`, top: `${pos.top}px` }"
 				@pointerdown="barDown"

@@ -265,7 +265,7 @@ function onKey(e: KeyboardEvent) {
 		data-comment-popover
 		role="dialog"
 		aria-label="Comment"
-		class="pointer-events-auto fixed z-[63] flex max-h-[calc(100dvh-1.5rem)] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
+		class="pointer-events-auto fixed z-[2147482998] flex max-h-[calc(100dvh-1.5rem)] flex-col rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"
 		:style="pos"
 		@keydown="onKey"
 	>

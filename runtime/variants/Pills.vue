@@ -7,7 +7,7 @@ import { createReusableTemplate, onClickOutside, useElementSize, useEventListene
 import { Button, Dropdown, toast } from 'frappe-ui'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { bridge } from './bridge'
-import { menuBind } from './menus'
+import { menuBind, menuHost } from './menus'
 import { canKeepOnly, canMakeDefault, credential, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
 import LensMenu from './LensMenu.vue'
 import { hasItems } from './picker'
@@ -200,7 +200,7 @@ const role = (s: VSet | DState) => isState(s) && s.path === ''
       </span>
       <div v-if="isState(s)" class="justify-self-start"><LensMenu :state="s" :show-name="false" /></div>
       <div v-else class="min-w-0 justify-self-start">
-        <Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt(optionsOf(s as VSet)))" :options="menuOf(s as VSet)">
+        <Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt(optionsOf(s as VSet)))" :portal-to="menuHost()" :options="menuOf(s as VSet)">
           <Button variant="ghost" :aria-label="`${s.label}: ${labelOf(s as VSet)}`">
             <span class="flex items-center gap-1.5">
               <span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as VSet)">{{ labelOf(s as VSet) }}</span>
