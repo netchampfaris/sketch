@@ -96,6 +96,7 @@ export function receive<K extends keyof FromFrame>(type: K, data: FromFrame[K]) 
 	switch (type) {
 		case 'ready':
 			Object.assign(page, { ready: true, status: d.status, routes: d.routes, pages: d.pages })
+			forgetRefs()
 			retrack()
 			break
 		case 'route':
@@ -126,5 +127,15 @@ export const onGone = (fn: () => void) => (gone.add(fn), () => gone.delete(fn))
 export function frameGone() {
 	page.ready = false
 	for (const k of Object.keys(rects)) delete rects[k]
+	forgetRefs()
 	gone.forEach((fn) => fn())
+}
+
+// The element refs a frame handed out (runtime/agent/refs.ts) name elements of that load only. Whatever the shell keeps
+// them in drops them when the frame goes or a new one says it is ready (it may have reloaded itself), and falls back to
+// its selectors.
+const refHolders = new Set<() => void>()
+export const onRefsGone = (fn: () => void) => (refHolders.add(fn), () => refHolders.delete(fn))
+function forgetRefs() {
+	refHolders.forEach((fn) => fn())
 }

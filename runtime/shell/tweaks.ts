@@ -22,13 +22,15 @@ import {
 import type { ClassEdit, PropEdit, PropValue, Rect, TweakFacts, TweakSync } from '../shared/protocol'
 import { newId } from './annotate'
 import { pageNameOf, subject } from './host'
-import { onFrame, page, post } from './frame'
+import { onFrame, onRefsGone, page, post } from './frame'
 
 // ---- The tweaks -------------------------------------------------------------------------------
 export const tweaks = ref<Tweak[]>([])
 export const restoreTweakRows = (rows: unknown) => (tweaks.value = restoreTweaks(rows))
-// The ref of the element each tweak made this visit was made on, for the frame to find it by.
+// The ref of the element each tweak made this visit was made on, for the frame to find it by. A new frame finds them
+// by their selectors instead.
 const madeOn = new Map<string, string>()
+onRefsGone(() => madeOn.clear())
 
 // What the frame last said: the selected elements, their alike count, the tokens, each stack's size, the outlines.
 export const facts = shallowRef<TweakFacts[]>([])

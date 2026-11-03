@@ -56,7 +56,7 @@ import CommentPins from './CommentPins.vue'
 import NotePins from './NotePins.vue'
 import TweakLayer from './TweakLayer.vue'
 import { buildTweakPrompt, findRow, highlight, inspect, removeTweak, resetAll, routeOfRow, tweakCount, tweakItems } from './tweaks'
-import { labels, onFrame, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
+import { labels, onFrame, onRefsGone, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
 import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
@@ -545,6 +545,16 @@ const shift = computed(() => frameHover.value.shift || keys.value.shift)
 const shiftPick = computed(() => frameHover.value.shift && !!draft.value && !draft.value.editing && !draft.value.box)
 // Outlined for a second after a jump from the notes list.
 const flash = shallowRef<Target | null>(null)
+// A new frame knows none of the refs the box, its pin, the flash and this visit's notes hold: they go by selector.
+onBeforeUnmount(
+	onRefsGone(() => {
+		noteRefs.clear()
+		const d = draft.value
+		if (d?.els.some((e) => e.ref)) draft.value = { ...d, els: d.els.map((e) => ({ sel: e.sel, info: e.info })) }
+		if (follow.value?.ref) follow.value = { ...follow.value, ref: undefined }
+		if (flash.value?.ref) flash.value = { ...flash.value, ref: undefined }
+	}),
+)
 
 const fracOf = (c: Rect, f: BoxInfo): Rect => ({ x: c.x + f.fx * c.w, y: c.y + f.fy * c.h, w: f.fw * c.w, h: f.fh * c.h })
 // The hover outline is one element that glides; it keeps its last box while it fades out.
