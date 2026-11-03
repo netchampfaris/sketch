@@ -74,9 +74,11 @@ async function makeIt() {
 const deletable = computed(() => !!props.tile.author && !!props.tile.option && canDelete(props.tile.option))
 async function deleteIt() {
   if (!deletable.value || saving.value) return
+  saving.value = true
   try {
     await deleteVariant(props.tile.option!, props.tile.opt ?? props.tile.caption)
   } catch (e) {
+    saving.value = false
     toast.error(deleteFailure(e as Error))
   }
 }
