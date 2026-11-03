@@ -148,6 +148,23 @@ def commit(
 	return version
 
 
+def commit_before(doc, prompt: str, paths, by: str | None = None) -> None:
+	"""File what is pending before an action on `paths`, so the action's version holds the action only.
+
+	The actor's own pending changes go first, under their name. So do anybody
+	else's when one of `paths` is among them: the action's note would otherwise
+	fold into that person's row, or drop it for a file added then deleted, and
+	the action's version would not hold the file for Undo to bring back.
+	"""
+	lock(doc.name)
+	commit(doc, prompt, source="App", by=by)
+	touched = set(paths)
+	others = dict.fromkeys(r.get("by") for r in pending(doc.name, everyone=True) if r.get("path") in touched)
+	for other in others:
+		if other != by:
+			commit(doc, prompt, source="App", by=other)
+
+
 def record(
 	doc,
 	kind: str,

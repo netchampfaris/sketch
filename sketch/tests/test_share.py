@@ -19,7 +19,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, versions
+from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, variant_default, versions
 from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.viewer import SketchViewerRenderer, sharing_subject
@@ -1078,6 +1078,27 @@ class TestKeepOnly(ShareCase):
 
 		self.assertEqual(self.tree(), before)
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cCompact\u201d in KPI strip")
+
+	def test_undo_keep_brings_back_an_option_the_editor_had_not_committed(self):
+		"""The editor's pending file goes in a version of theirs first, so the owner's version records its delete."""
+		self.add_variant(commit=False)
+		before = self.tree()
+		done = self.keep_as_page("tall")
+		self.assertNotIn(self.folder + "compact.vue", self.tree())
+		self.assertEqual(versions.pending(self.doc.name, "d2tshed"), [])
+		self.assertEqual(versions.history(self.doc.name)[1]["author"], "d2tshed")
+		with set_user(self.owner):
+			variant_default.undo_keep(self.doc, "src/pages/Home.vue", done["sequence"], "KPI strip", "tall")
+
+		self.assertEqual(self.tree(), before)
+
+	def test_undo_delete_brings_back_an_editors_uncommitted_change(self):
+		self.add_variant()
+		self.ok(self.agent(self.ed, "edit_file", path=self.folder + "compact.vue", old_string="Compact</p>", new_string="Newer</p>"))
+		changed = self.tree()[self.folder + "compact.vue"]
+		done = self.delete_as(self.owner, "@d2tshed/compact")
+		self.undo_delete_as(self.owner, "@d2tshed/compact", done["sequence"])
+		self.assertEqual(self.tree()[self.folder + "compact.vue"], changed)
 
 	def test_undo_is_refused_when_the_page_changed_since_and_to_anyone_but_the_owner(self):
 		self.add_variant()

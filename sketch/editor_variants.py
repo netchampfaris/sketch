@@ -247,9 +247,7 @@ def replacement(doc, host_file: str, set_name: str, option: str) -> dict:
 def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	"""Make an editor's variant the default of its set, as the owner's own file."""
 	found = adoptable(doc, host_file, set_name, option)
-	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the default was changed", source="App")
-
+	versions.commit_before(doc, "Changes before the default was changed", [found["path"]])
 	destination = move_in(doc, host_file, set_name, found)
 	version = versions.commit(
 		doc,
@@ -308,8 +306,7 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 
 	meta = sharing.variant_meta(source) if _quiet(source) else None
 	label = (meta or {}).get("name") or option.rsplit("/", 1)[-1]
-	if versions.pending(doc.name, by):
-		versions.commit(doc, "Changes before a variant was deleted", source="App", by=by)
+	versions.commit_before(doc, "Changes before a variant was deleted", [path], by)
 
 	prototype_files.delete_file(doc.name, path)
 	versions.note(doc.name, path, versions.DELETED, by)
@@ -375,8 +372,7 @@ def restore_files(doc, sequence: int, prompt: str, by: str | None = None) -> dic
 		if current.get(path) != after.get(path):
 			frappe.throw(changed_since, frappe.ValidationError)
 
-	if versions.pending(doc.name, by):
-		versions.commit(doc, "Changes before an undo", source="App", by=by)
+	versions.commit_before(doc, "Changes before an undo", paths, by)
 
 	for path in paths:
 		if path in before:

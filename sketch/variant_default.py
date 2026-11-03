@@ -444,8 +444,7 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 	if changed == source and not others and not found and not leads and not replaced:
 		frappe.throw(frappe._("{0} is already the only option.").format(label), frappe.ValidationError)
 
-	if versions.pending(doc.name):
-		versions.commit(doc, "Changes before the other options were removed", source="App")
+	versions.commit_before(doc, "Changes before the other options were removed", [file, *extras])
 
 	if changed != source:
 		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
