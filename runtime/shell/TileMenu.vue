@@ -5,7 +5,8 @@
 //
 // The frame may post `tile:menu` whenever it likes, so the menu could open under a pointer that was aiming at the page.
 // An item acts only on a press that began on it, at least 300 ms after the menu opened, so a press already on its way
-// (or one dragged in from the page) does nothing.
+// (or one dragged in from the page) does nothing. The menu takes the focus as it opens, so keys meant for the page
+// (an arrow, a letter, Enter) would land in it: Enter or Space acts only when the focus was already in the shell.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Dropdown, toast } from 'frappe-ui'
@@ -28,6 +29,7 @@ const open = computed({
 })
 
 let openedAt = 0
+let keysOk = false
 let armed: { label: string; t: number } | null = null
 onBeforeUnmount(
 	onFrame('tile:menu', (d) => {
@@ -35,6 +37,8 @@ onBeforeUnmount(
 		if (!bridge.open || !bridge.tiles.some((t) => t.id === d.tileId)) return
 		at.value = d
 		openedAt = performance.now()
+		// With the focus in the frame the shell's document reports focus too, and the frame as its active element.
+		keysOk = document.hasFocus() && !(document.activeElement instanceof HTMLIFrameElement)
 		armed = null
 		bind.value['onUpdate:open'](true)
 	}),
@@ -48,7 +52,7 @@ watch(() => bridge.open, (o) => !o && (open.value = false))
 const itemOf = (t: EventTarget | null) => (t instanceof Element ? t.closest('[role="menuitem"]')?.textContent?.trim() ?? '' : '')
 useEventListener(document, 'pointerdown', (e: PointerEvent) => (armed = open.value ? { label: itemOf(e.target), t: performance.now() } : null), { capture: true })
 useEventListener(document, 'keydown', (e: KeyboardEvent) => {
-	if (open.value && (e.key === 'Enter' || e.key === ' ')) armed = { label: itemOf(e.target), t: performance.now() }
+	if (open.value && (e.key === 'Enter' || e.key === ' ')) armed = keysOk ? { label: itemOf(e.target), t: performance.now() } : null
 }, { capture: true })
 // A refused activation keeps the menu open (reka closes it unless the select is prevented).
 function guarded(label: string, run: () => void) {
