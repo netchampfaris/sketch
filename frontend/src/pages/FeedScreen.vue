@@ -131,7 +131,7 @@ onMounted(() => {
       Sketch renders frappe-ui prototypes that your own agent writes over MCP.
     </p>
     <div class="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-      <Button size="md" theme="gray" variant="solid" @click="continueWithProvider">
+      <Button theme="gray" variant="solid" @click="continueWithProvider">
         <template #prefix>
           <svg aria-hidden="true" class="size-4" fill="currentColor" viewBox="0 0 16 16">
             <path
@@ -141,7 +141,7 @@ onMounted(() => {
         </template>
         Continue with GitHub
       </Button>
-      <Button label="See what's new" size="md" theme="gray" variant="outline" @click="openWhatsNew" />
+      <Button label="See what's new" theme="gray" variant="outline" @click="openWhatsNew" />
     </div>
   </section>
 
