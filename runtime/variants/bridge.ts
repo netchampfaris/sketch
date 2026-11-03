@@ -8,7 +8,7 @@ import type { PickItem } from './picker'
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
 import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/tiles'
-import type { CanvasPage } from '../shared/protocol'
+import type { CanvasPage, CanvasTile, FromFrame, PickItem as ShownItem } from '../shared/protocol'
 
 export { sameTile, tileLabel, whereOf } from '../shared/tiles'
 export type { TileHit, TileRef, TileSpot }
@@ -73,6 +73,43 @@ export function findTile(tiles: TileBox[], spot: TileSpot, view: string): TileBo
     const s = spotOf(t, view)
     return !!s && sameTile(s, spot)
   })
+}
+
+// ---- The canvas in the protocol's words: what the frame agent (runtime/agent) sends the shell as `canvas`
+
+// The tiles in the canvas's own coordinates, each with the spot it is; a gap is no tile.
+export function tilesOf(tiles: TileBox[], view: string): CanvasTile[] {
+  return tiles.flatMap((t) => {
+    const spot = spotOf(t, view)
+    if (!spot) return []
+    const set = t.kind === 'set'
+    return [
+      {
+        id: t.id,
+        route: spot.route,
+        rect: { x: t.x, y: t.y, w: t.w, h: t.h },
+        tile: spot.tile,
+        label: t.opt ?? t.caption ?? '',
+        isDefault: !!t.isDefault,
+        author: t.author ?? '',
+        setName: set ? (t.setName ?? '') : '',
+        setFile: set ? (t.setFile ?? '') : '',
+        setCount: set ? (t.setOptions?.length ?? 0) : 0,
+      },
+    ]
+  })
+}
+
+// The Show list's rows.
+export const itemsOf = (items: PickItem[]): ShownItem[] =>
+  items.map((i) => ({ value: i.value, label: i.label, sub: i.sub ?? '', short: i.short, complete: i.complete ?? true, group: i.group, options: i.options ?? [] }))
+
+// What the canvas shows now, whole. The pages are left out until the canvas has looked: none is not an empty list.
+export function canvasReport(): FromFrame['canvas'] {
+  const at = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner }
+  if (!bridge.open) return at
+  const pages = pagesOf(bridge.model)
+  return { ...at, tiles: tilesOf(bridge.tiles, bridge.view), items: itemsOf(bridge.items), ...(pages ? { pages } : {}) }
 }
 
 // What the canvas found on its pages, in the protocol's words (sets by key with their option values, states by key with

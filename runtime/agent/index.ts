@@ -7,6 +7,10 @@ import { envelope, read, toFrame, type FromFrame, type Theme, type ToFrame } fro
 import { isOurs, pageLayerOpen, routeKey, setSourceFiles, typing } from './dom'
 import { startPicking } from './pick'
 import { startTweak } from './tweakPick'
+// `sketch:variants` as the Prototype's page loaded it (its types only: the module is the page's, imported at run time).
+import type * as VariantsModule from '../variants/index'
+
+type Variants = typeof VariantsModule
 
 type Router = {
 	afterEach: (fn: () => void) => void
@@ -96,52 +100,35 @@ function postLayout() {
 // The canvas draws its tiles here; the shell draws its panel, its toolbar and the pins on the tiles. A tile clicked with
 // a tool in hand is a `tile:pick` (Canvas.vue `activate`), a click off the tiles a `canvas:click`. What the canvas shows
 // goes up at most once a frame: the pan and zoom every time, the tiles, pages and Show rows only when they changed.
-function startCanvas(variants: any) {
-	const { bridge, spotOf } = variants
-	bridge.pick = (hit: any) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
+function startCanvas({ bridge, canvasReport }: Variants) {
+	bridge.pick = (hit) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
 	bridge.onEmptyClick = () => post('canvas:click', {})
 	// The live tile's ⋯: the shell opens its menu at the button (runtime/shell/TileMenu.vue).
-	bridge.tileMenu = (tileId: string, rect: FromFrame['tile:menu']['rect']) => post('tile:menu', { tileId, rect })
+	bridge.tileMenu = (tileId, rect) => post('tile:menu', { tileId, rect })
 	// The phone's title pill: the shell opens its Show list under the name (runtime/shell/CanvasLayer.vue).
-	bridge.showMenu = (rect: FromFrame['canvas:show']['rect'], open: boolean) => post('canvas:show', { rect, open })
+	bridge.showMenu = (rect, open) => post('canvas:show', { rect, open })
 
-	const tilesOf = (): FromFrame['canvas']['tiles'] =>
-		(bridge.tiles as any[]).flatMap((t) => {
-			const spot = spotOf(t, bridge.view)
-			if (!spot) return []
-			const set = t.kind === 'set' ? { setName: t.setName ?? '', setFile: t.setFile ?? '', setCount: t.setOptions?.length ?? 0 } : {}
-			return [{ id: t.id, route: spot.route, rect: { x: t.x, y: t.y, w: t.w, h: t.h }, tile: spot.tile, label: t.opt ?? t.caption ?? '', isDefault: !!t.isDefault, author: t.author ?? '', ...set }]
-		})
-	const pagesOf = (): FromFrame['canvas']['pages'] =>
-		((bridge.model ?? []) as any[]).map((p) => ({
-			path: p.path,
-			title: p.title,
-			sets: p.sets.map((s: any) => ({ key: s.key, options: s.options.map((o: any) => o.value) })),
-			states: p.states.map((s: any) => ({ key: s.key, options: s.options })),
-		}))
-	const itemsOf = (): FromFrame['canvas']['items'] =>
-		(bridge.items as any[]).map((i) => ({ value: i.value, label: i.label, sub: i.sub ?? '', short: i.short, complete: i.complete ?? true, group: i.group, options: i.options ?? [] }))
-
+	const PARTS = ['tiles', 'pages', 'items'] as const
 	let sent = { tiles: '', pages: '', items: '' }
 	let queued = false
 	const send = () => {
 		queued = false
-		const msg: FromFrame['canvas'] = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner }
+		const { tiles, pages, items, ...msg }: FromFrame['canvas'] = canvasReport()
 		// Closed, it has nothing to show, and opened again it says everything again.
-		if (!bridge.open) {
+		if (!msg.open) {
 			sent = { tiles: '', pages: '', items: '' }
 			return post('canvas', msg)
 		}
-		const parts = { tiles: tilesOf(), pages: pagesOf(), items: itemsOf() }
-		for (const k of ['tiles', 'pages', 'items'] as const) {
-			// The pages are unknown until the canvas has looked: none is not the same as an empty list.
-			if (k === 'pages' && !bridge.model) continue
+		const parts = { tiles, pages, items }
+		const changed: Pick<FromFrame['canvas'], (typeof PARTS)[number]> = {}
+		for (const k of PARTS) {
+			if (parts[k] === undefined) continue
 			const json = JSON.stringify(parts[k])
 			if (json === sent[k]) continue
 			sent[k] = json
-			;(msg as any)[k] = parts[k]
+			Object.assign(changed, { [k]: parts[k] })
 		}
-		post('canvas', msg)
+		post('canvas', { ...msg, ...changed })
 	}
 	watch(
 		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.tiles, bridge.model, bridge.items],
@@ -160,7 +147,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	setSourceFiles(files)
 	// The Demo's module, which the page shares (same URL, same instance). Only a page that mounted has one to
 	// read; a status screen goes without, and so does a Runtime whose module failed to load.
-	const variants = router ? await import('sketch:variants').catch(() => null) : null
+	const variants: Variants | null = router ? await import('sketch:variants').catch(() => null) : null
 
 	let theme = themeNow()
 	const picker = startPicking(post, () => (variants && router ? variants.currentPicks(router.currentRoute.value) : []))
@@ -184,7 +171,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		resolve: picker.resolve,
 		scrollTo: picker.scrollTo,
 		escape: escapeInPage,
-		'picks:apply': ({ picks }) => router && variants?.applyPicks(picks as any, router),
+		'picks:apply': ({ picks }) => router && variants?.applyPicks(picks, router),
 		// The shell's Demo pill: an option or a state picked in it, and a fresh look at where the rows sit.
 		'state:set': ({ id, value }) => router && variants?.setDemo(id, value, router),
 		'model:measure': () => router && variants?.measureDemo(router.currentRoute.value),

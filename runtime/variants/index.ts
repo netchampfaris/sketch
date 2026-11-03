@@ -12,7 +12,7 @@ export { Variants }
 export { default as Chrome } from './Chrome.vue'
 export { registerExtras } from './extras'
 export { badges } from './badges'
-export { bridge, landed, spotOf } from './bridge'
+export { bridge, canvasReport, landed } from './bridge'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'
 export { applyPicks, currentPicks, demoEntries } from './picks'
 export { demoModel, measureDemo, setDemo } from './model'

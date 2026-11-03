@@ -24,15 +24,18 @@ export function currentPicks(route: any): DemoPick[] {
   return out
 }
 
-const setOf = (p: DemoPick) => sets.find((s) => s.path === p.path && s.key === p.key)
-const stateOfPick = (p: DemoPick) => states[idOf(p.path, p.key)]
+// What a pick needs to be put back: which set or state, and the option (the shell's `picks:apply` sends no more).
+type PickRef = Pick<DemoPick, 'kind' | 'path' | 'key' | 'option'>
+
+const setOf = (p: PickRef) => sets.find((s) => s.path === p.path && s.key === p.key)
+const stateOfPick = (p: PickRef) => states[idOf(p.path, p.key)]
 
 // Whether the pick's set or state is on the page now, with that option to choose.
-const reachable = (p: DemoPick) =>
+const reachable = (p: PickRef) =>
   p.kind === 'set' ? !!setOf(p)?.options().some((o) => o.value === p.option) : !!stateOfPick(p)?.options.includes(p.option)
 
 // Put the Demo on these picks. The URL follows.
-export function applyPicks(picks: DemoPick[] | undefined, router: any) {
+export function applyPicks(picks: PickRef[] | undefined, router: any) {
   for (const p of picks ?? []) {
     if (!reachable(p)) continue
     const id = idOf(p.path, p.key)
