@@ -117,17 +117,12 @@ class Actor:
 # --------------------------------------------------------------------- access
 
 
-def subject(name: str, username: str) -> str:
-	"""What a pass covers: this Prototype, for this one person."""
-	return f"{name}|{username}"
-
-
 def mint_ticket(name: str, username: str) -> dict:
 	"""What the page payload carries for a commenter: the right to ask for a pass.
 
 	It opens `mint_pass` and nothing else, so it cannot read or write a comment.
 	"""
-	return signature.mint(subject(name, username), TICKET_TTL_SECONDS, signature.COMMENT_MINT)
+	return signature.mint(signature.subject(name, username), TICKET_TTL_SECONDS, signature.COMMENT_MINT)
 
 
 def mint_pass(name: str, username: str, exp, sig) -> dict:
@@ -137,11 +132,8 @@ def mint_pass(name: str, username: str, exp, sig) -> dict:
 	the pass runs out. The Prototype's visibility is read now, so a Prototype
 	made private stops handing out passes at once. Any refusal is a 404.
 	"""
-	if not username or not signature.verify(subject(name, username), exp, sig, signature.COMMENT_MINT):
-		raise frappe.DoesNotExistError
-
-	actor = _actor(name, username)
-	stamp = signature.mint(subject(name, actor.username), PASS_TTL_SECONDS, signature.COMMENT)
+	actor = _actor(name, username, signature.signed_user(name, username, exp, sig, signature.COMMENT_MINT))
+	stamp = signature.mint(signature.subject(name, actor.username), PASS_TTL_SECONDS, signature.COMMENT)
 	return {"exp": stamp["exp"], "sig": stamp["sig"], "ttl": PASS_TTL_SECONDS}
 
 
@@ -151,16 +143,12 @@ def actor_for(name: str, username: str, exp, sig) -> Actor:
 	The Prototype is read again each time: an owner who makes it private closes
 	the door at once, not when the pass runs out.
 	"""
-	if not username or not signature.verify(subject(name, username), exp, sig, signature.COMMENT):
-		raise frappe.DoesNotExistError
-
-	return _actor(name, username)
+	return _actor(name, username, signature.signed_user(name, username, exp, sig, signature.COMMENT))
 
 
-def _actor(name: str, username: str) -> Actor:
-	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+def _actor(name: str, username: str, user: str) -> Actor:
 	owner = frappe.db.get_value(PROTOTYPE, name, "owner")
-	if not user or not owner or not sharing.can_view(name, user):
+	if not owner or not sharing.can_view(name, user):
 		raise frappe.DoesNotExistError
 
 	return Actor(username, user, owner == user)

@@ -417,7 +417,7 @@ class SketchViewerRenderer(BaseRenderer):
 		# that writes those and nothing else. The owner's notes never reach their page, nor theirs the owner's.
 		noting = commenter if commenter and self.role() == "editor" else ""
 		if noting:
-			mark = signature.mint(annotations.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
+			mark = signature.mint(signature.subject(self.doc.name, noting), LIVE_TTL_SECONDS, signature.ANNOTATE)
 		# Make default writes the source, so it has a scope of its own: neither
 		# the poll nor the toolbar signature can reorder a slot.
 		variant = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.VARIANT_DEFAULT) if live else {}
@@ -427,13 +427,13 @@ class SketchViewerRenderer(BaseRenderer):
 		role = self.role()
 		editing = self.variant_editor() if role in ("owner", "editor") else ""
 		delete = (
-			signature.mint(sharing_subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
+			signature.mint(signature.subject(self.doc.name, editing), LIVE_TTL_SECONDS, signature.VARIANT_EDIT)
 			if editing
 			else {}
 		)
 		# What is new for this person, and the right to say they have looked
 		# (`sketch.badges`, `sketch.api.seen_mark`). Nobody else gets either.
-		seen = signature.mint(comments.subject(self.doc.name, commenter), LIVE_TTL_SECONDS, signature.SEEN) if commenter else {}
+		seen = signature.mint(signature.subject(self.doc.name, commenter), LIVE_TTL_SECONDS, signature.SEEN) if commenter else {}
 		fresh = badges.page(self.doc.name, frappe.session.user) if commenter else None
 		tree = prototype_files.read_tree(self.doc.name)
 		adopted = sharing.read_adopted(tree)
@@ -478,11 +478,6 @@ class SketchViewerRenderer(BaseRenderer):
 			"variant_sig": variant.get("sig", ""),
 			"theme": url_theme(),
 		}
-
-
-def sharing_subject(name: str, username: str) -> str:
-	"""What a variant credential covers: this Prototype, for this one person."""
-	return f"{name}|{username}"
 
 
 def meta_tag(attribute: str, key: str, content: str) -> str:

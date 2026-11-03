@@ -114,7 +114,7 @@ class TestPass(CommentCase):
 	def test_other_scopes_are_not_a_pass(self):
 		for scope in (signature.ANNOTATE, signature.REVISION, signature.VIEW):
 			with self.subTest(scope=scope):
-				mark = signature.mint(comments.subject(self.doc.name, self.reader_name), 600, scope)
+				mark = signature.mint(signature.subject(self.doc.name, self.reader_name), 600, scope)
 				with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
 					api.comments_list(self.doc.name, self.reader_name, str(mark["exp"]), mark["sig"])
 
@@ -138,7 +138,7 @@ class TestPayload(CommentCase):
 		self.assertEqual(payload["comments_open"], 1)
 		self.assertIsNone(payload["annotations"], "no notes for a reader")
 		self.assertEqual(payload["annotate_sig"], "")
-		subject = comments.subject(self.doc.name, self.reader_name)
+		subject = signature.subject(self.doc.name, self.reader_name)
 		args = (subject, payload["comment_exp"], payload["comment_sig"])
 		self.assertTrue(signature.verify(*args, signature.COMMENT_MINT))
 		self.assertFalse(signature.verify(*args, signature.COMMENT), "the payload holds no pass")

@@ -550,7 +550,7 @@ class TestMentions(BadgeCase):
 
 class TestTheSeenCredential(BadgeCase):
 	def credential(self, user, name=None):
-		stamp = signature.mint(comments.subject(name or self.name, self.username(user)), 600, signature.SEEN)
+		stamp = signature.mint(signature.subject(name or self.name, self.username(user)), 600, signature.SEEN)
 		return {"username": self.username(user), "exp": str(stamp["exp"]), "sig": stamp["sig"]}
 
 	def mark(self, user, **fields):
@@ -577,7 +577,7 @@ class TestTheSeenCredential(BadgeCase):
 		self.assertEqual(len(self.page(self.owner)["threads"]), 1)
 
 	def test_a_comment_pass_does_not_open_it(self):
-		stamp = signature.mint(comments.subject(self.name, self.username(self.owner)), 600, signature.COMMENT)
+		stamp = signature.mint(signature.subject(self.name, self.username(self.owner)), 600, signature.COMMENT)
 		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
 			api.seen_mark(self.name, username=self.username(self.owner), exp=str(stamp["exp"]), sig=stamp["sig"])
 

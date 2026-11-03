@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import time
 
+import frappe
 from frappe.utils.verified_command import get_secret
 
 DEFAULT_TTL = 60
@@ -46,7 +47,7 @@ DEFAULT_TTL = 60
 #:   the rows as requests to check, never as orders.
 #: - COMMENT writes and reads one signed-in person's comments on one Prototype
 #:   (`sketch.api.comment_*`). It is minted over the hash id and the username
-#:   together (`sketch.comments.subject`), so it speaks for that one person on
+#:   together (`subject`), so it speaks for that one person on
 #:   that one Prototype and nothing else. It lasts 15 minutes and is minted when
 #:   the person enters Comment mode, never into the page payload.
 #: - COMMENT_MINT is the one thing the payload carries for a commenter: it
@@ -120,3 +121,23 @@ def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
 		return hmac.compare_digest(given, _digest(prototype_name, expiry, scope))
 	except (TypeError, ValueError):
 		return False
+
+
+def subject(prototype_name: str, username: str) -> str:
+	"""What a signature for one person covers: this Prototype, for this one person."""
+	return f"{prototype_name}|{username}"
+
+
+def signed_user(prototype_name: str, username: str, exp, sig, scope: str) -> str:
+	"""The enabled user a signature for one person names. Every refusal is the same 404.
+
+	The caller still checks what that person may do here: this says only who they are.
+	"""
+	if not username or not verify(subject(prototype_name, username), exp, sig, scope):
+		raise frappe.DoesNotExistError
+
+	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	if not user:
+		raise frappe.DoesNotExistError
+
+	return user

@@ -744,11 +744,8 @@ def save_annotations(
 	if username:
 		# An invited editor's own notes: their signature covers the Prototype and their name together, and they
 		# must still be invited. The owner's notes are never reachable this way (decision 29).
-		if not signature.verify(annotations.subject(name, username), exp, sig, signature.ANNOTATE):
-			raise frappe.DoesNotExistError
-
-		user = frappe.db.get_value("User", {"username": username}, "name")
-		if not user or not sharing.is_editor(name, user):
+		user = signature.signed_user(name, username, exp, sig, signature.ANNOTATE)
+		if not sharing.is_editor(name, user):
 			raise frappe.DoesNotExistError
 
 		saved = annotations.save(name, data, frappe.utils.cint(epoch), editor=user)
@@ -884,13 +881,7 @@ def seen_mark(name: str, username: str = "", exp: str = "", sig: str = "", varia
 	Both lists are JSON arrays. A bad credential, or a person with no badges here, is a 404.
 	"""
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not username or not signature.verify(comments.subject(name, username), exp, sig, signature.SEEN):
-		raise frappe.DoesNotExistError
-
-	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
-	if not user:
-		raise frappe.DoesNotExistError
-
+	user = signature.signed_user(name, username, exp, sig, signature.SEEN)
 	return {"marked": badges.mark(name, user, _json_list(variants), _json_list(threads))}
 
 
@@ -1208,15 +1199,10 @@ def conversations() -> list[dict]:
 
 def _variant_person(name: str, username: str, exp: str, sig: str) -> tuple:
 	"""Who a variant credential speaks for, and whether they own the Prototype. Any refusal is a 404."""
-	from sketch.viewer import sharing_subject
-
 	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not username or not signature.verify(sharing_subject(name, username), exp, sig, signature.VARIANT_EDIT):
-		raise frappe.DoesNotExistError
-
-	user = frappe.db.get_value("User", {"username": username, "enabled": 1}, "name")
+	user = signature.signed_user(name, username, exp, sig, signature.VARIANT_EDIT)
 	owner = frappe.db.get_value("Sketch Prototype", name, "owner")
-	if not user or not owner or not (user == owner or sharing.is_editor(name, user)):
+	if not owner or not (user == owner or sharing.is_editor(name, user)):
 		raise frappe.DoesNotExistError
 
 	return frappe.get_doc("Sketch Prototype", name), user == owner
