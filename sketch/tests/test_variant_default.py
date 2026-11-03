@@ -11,19 +11,20 @@ of the file stays byte for byte. The traps:
 - Indentation and the whitespace between slots keep their place.
 - It refuses, with a message the owner can read, a set that is missing or
   repeated, an option that is not there, and an option already first.
-- Only the owner may do it, through the session door and the signed one.
+- Only the owner may do it, with their session: the Viewer's shell calls the same method.
 - The move is one version, with no agent prompt, and the version before it
   restores the old order.
 """
 
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 from frappe.utils import set_request
 from frappe.website.serve import get_response
 
-from sketch import api, prototype_files, signature, variant_default, versions
+from sketch import api, prototype_files, signature, variant_default, versions, viewer_api
 from sketch.tests import utils
 
 SLUG = "d2t-vardef-work"
@@ -233,29 +234,6 @@ class TestSetVariantDefault(IntegrationTestCase):
 
 		self.assertEqual(self.source(), SIMPLE)
 
-	def test_the_signed_door_needs_this_scope(self):
-		mint = lambda scope: signature.mint(self.doc.name, 60, scope)  # noqa: E731
-		frappe.set_user("Guest")
-		for scope in (signature.REVISION, signature.ANNOTATE, signature.VIEW):
-			stamp = mint(scope)
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.set_variant_default_signed(
-					self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
-				)
-
-		self.assertEqual(self.source(), SIMPLE)
-
-		stamp = mint(signature.VARIANT_DEFAULT)
-		api.set_variant_default_signed(
-			self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
-		)
-		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
-		frappe.set_user("Administrator")
-		self.assertEqual(
-			versions.history(self.doc.name)[0]["prompt"], "Made \u201cBudget bars\u201d the default for Spend summary"
-		)
-
-
 class TestUndoVariantDefault(IntegrationTestCase):
 	"""Undo puts the one file back exactly, and never over a later write."""
 
@@ -364,28 +342,12 @@ class TestUndoVariantDefault(IntegrationTestCase):
 
 		self.assertNotEqual(self.source(), NESTED)
 
-	def test_the_signed_undo_needs_this_scope(self):
-		sequence = self.make("bars")
-		frappe.set_user("Guest")
-		stamp = signature.mint(self.doc.name, 60, signature.ANNOTATE)
-		with self.assertRaises(frappe.DoesNotExistError):
-			api.undo_variant_default_signed(
-				self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", str(sequence), "Spend summary", "bars"
-			)
-
-		stamp = signature.mint(self.doc.name, 60, signature.VARIANT_DEFAULT)
-		api.undo_variant_default_signed(
-			self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", str(sequence), "Spend summary", "bars"
-		)
-		self.assertEqual(self.source(), NESTED)
-
-
 class TestMakeDefaultOnTheViewer(IntegrationTestCase):
-	"""The Viewer is where the canvas tile and the Demo card get their credential.
+	"""The canvas tile and the Demo card make a default from the Viewer's shell, with the owner's session.
 
-	Only the owner's own live page is minted one. A signed-in reader of a public
-	Prototype and a Guest see the canvas and the card, but nothing to change the
-	default with, and what they hold cannot reach the owner's files.
+	The shell tells the page who is reading; the frame, which runs the Prototype's code, holds no
+	credential for anyone. A signed-in reader of a public Prototype and a Guest see the canvas and
+	the card, but their session cannot reach the owner's files.
 	"""
 
 	@classmethod
@@ -412,73 +374,67 @@ class TestMakeDefaultOnTheViewer(IntegrationTestCase):
 		self.enterContext(patch.dict(frappe.local.response, from_cache=False))
 		self.enterContext(patch("sketch.thumbnails.request_refresh"))
 
-	def payload(self, user: str, form: dict | None = None) -> dict:
+	def page(self, user: str, form: dict | None = None):
 		frappe.local.no_cache = False
 		frappe.local.response.from_cache = False
 		frappe.local.response_headers = frappe._dict()
 		path = self.path
-		set_request(method="GET", path=path)
-		frappe.local.form_dict.update(form or {})
+		set_request(method="GET", path=path, query_string=urlencode(form or {}))
 		url = frappe.local.request.url
 		self.addCleanup(frappe.cache.hdel, "website_404", url)
 		with set_user(user):
+			# set_user starts an empty form_dict, so the query goes in after it.
+			frappe.local.form_dict.update(form or {})
 			response = get_response(path)
 		self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:300])
-		return utils.data_slot(response.get_data(as_text=True))
+		return response.get_data(as_text=True)
 
-	def test_the_owner_gets_a_credential_that_opens_this_prototype_only(self):
-		data = self.payload(self.owner)
+	def shell(self, user: str) -> dict:
+		return utils.shell_slot(self.page(user))
 
-		self.assertTrue(data["is_owner"])
-		self.assertTrue(data["variant_sig"])
-		self.assertTrue(signature.verify(self.doc.name, data["variant_exp"], data["variant_sig"], signature.VARIANT_DEFAULT))
-		self.assertFalse(
-			signature.verify(self.other.name, data["variant_exp"], data["variant_sig"], signature.VARIANT_DEFAULT),
-			"the owner's other prototype must not open with it",
+	def frame(self, user: str, form: dict | None = None) -> dict:
+		return utils.data_slot(self.page(user, form or {"frame": "1"}))
+
+	def make_default_as(self, user: str):
+		with set_user(user):
+			return api.set_variant_default(self.doc.slug, "src/App.vue", "Spend summary", "budget-bars")
+
+	def source(self) -> str:
+		return prototype_files.read_text(self.doc.name, "src/App.vue")["content"]
+
+	def test_the_owners_shell_holds_the_session_and_the_frame_holds_nothing(self):
+		shell = self.shell(self.owner)
+		self.assertEqual(shell["role"], "owner")
+		self.assertTrue(shell["csrf_token"], "the shell's writes send it")
+		self.assertEqual(utils.credential_keys(self.frame(self.owner)), [])
+
+		self.addCleanup(prototype_files.write_files, self.doc.name, [{"path": "src/App.vue", "content": SIMPLE}])
+		self.make_default_as(self.owner)
+		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
+		self.assertEqual(
+			prototype_files.read_text(self.other.name, "src/App.vue")["content"], SIMPLE, "the owner's other prototype is untouched"
 		)
-		# It moves a slot and nothing else: it is no poll, toolbar or view signature.
-		for scope in (signature.REVISION, signature.ANNOTATE, signature.VIEW):
-			self.assertFalse(signature.verify(self.doc.name, data["variant_exp"], data["variant_sig"], scope))
 
-	def test_a_signed_in_reader_of_a_public_prototype_gets_none(self):
-		data = self.payload(self.reader)
-
-		self.assertFalse(data["is_owner"])
-		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
-
-	def test_a_guest_gets_none(self):
-		data = self.payload("Guest")
-
-		self.assertFalse(data["is_owner"])
-		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
-
-	def test_a_check_request_gets_none(self):
-		stamp = signature.mint(self.doc.name, ttl_seconds=600)
-		data = self.payload("Guest", {"exp": stamp["exp"], "sig": stamp["sig"]})
-
-		self.assertEqual((data["variant_exp"], data["variant_sig"]), ("", ""))
-
-	def test_the_readers_own_signatures_cannot_move_the_owners_slot(self):
-		"""Whatever a reader's page carries, the signed door refuses it."""
-		data = self.payload(self.reader)
-		frappe.set_user("Guest")
-		for scope in (signature.VIEW, signature.REVISION, signature.ANNOTATE, signature.COMMENT, signature.COMMENT_MINT):
-			stamp = signature.mint(self.doc.name, 60, scope)
-			with self.subTest(scope=scope):
-				with self.assertRaises(frappe.DoesNotExistError):
-					api.set_variant_default_signed(
-						self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
-					)
-		self.assertEqual(data["variant_sig"], "")
-		frappe.set_user("Administrator")
-		self.assertEqual(prototype_files.read_text(self.doc.name, "src/App.vue")["content"], SIMPLE)
-
-	def test_a_stamp_for_another_prototype_does_not_open_this_one(self):
-		stamp = signature.mint(self.other.name, 60, signature.VARIANT_DEFAULT)
-		frappe.set_user("Guest")
+	def test_a_signed_in_reader_of_a_public_prototype_cannot_move_the_owners_slot(self):
+		shell = self.shell(self.reader)
+		self.assertEqual(shell["role"], "viewer")
+		self.assertEqual(utils.credential_keys(self.frame(self.reader)), [])
 		with self.assertRaises(frappe.DoesNotExistError):
-			api.set_variant_default_signed(
-				self.doc.name, str(stamp["exp"]), stamp["sig"], "src/App.vue", "Spend summary", "budget-bars"
-			)
-		frappe.set_user("Administrator")
-		self.assertEqual(prototype_files.read_text(self.doc.name, "src/App.vue")["content"], SIMPLE)
+			self.make_default_as(self.reader)
+		# Nor through the shell's session API, which has no default door at all.
+		self.assertFalse(hasattr(viewer_api, "set_variant_default"))
+		self.assertEqual(self.source(), SIMPLE)
+
+	def test_a_guest_cannot_move_it(self):
+		shell = self.shell("Guest")
+		self.assertEqual((shell["role"], shell["csrf_token"]), ("guest", ""))
+		self.assertEqual(utils.credential_keys(self.frame("Guest")), [])
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.make_default_as("Guest")
+		self.assertEqual(self.source(), SIMPLE)
+
+	def test_a_check_request_gets_no_credential(self):
+		stamp = signature.mint(self.doc.name, ttl_seconds=600)
+		data = self.frame("Guest", {"exp": stamp["exp"], "sig": stamp["sig"]})
+		self.assertEqual(data["chrome"], "off")
+		self.assertEqual(utils.credential_keys(data), [])

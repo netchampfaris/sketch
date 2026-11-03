@@ -89,8 +89,7 @@ class TestViewerEscaping(IntegrationTestCase):
 		self.assertEqual(payload["slug"], self.doc.slug)
 		self.assertEqual(payload["pin"], self.doc.pin)
 		self.assertEqual(payload["theme"], "light")
-		self.assertFalse(payload["is_public"])
-		self.assertFalse(payload["is_owner"])
+		self.assertEqual(payload["chrome"], "off")
 
 	def test_the_raw_closing_tag_never_reaches_the_slot(self):
 		"""The direct read of the trap: the file's `</script>` must be escaped."""

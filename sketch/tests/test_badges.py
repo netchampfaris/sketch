@@ -19,7 +19,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import api, badges, comments, editor_variants, signature
+from sketch import api, badges, comments, editor_variants, signature, viewer_api
 from sketch.mcp import tools
 from sketch.tests import utils
 from sketch.viewer import SketchViewerRenderer
@@ -237,10 +237,8 @@ class TestCommentsAreNew(BadgeCase):
 
 	def test_comments_carry_unread_and_mentioned_for_the_person_asking(self):
 		thread = self.say(self.reader)
-		with set_user("Guest"):
-			ticket = comments.mint_ticket(self.name, self.username(self.owner))
-			door = api.comment_pass(self.name, self.username(self.owner), str(ticket["exp"]), ticket["sig"])
-			listed = api.comments_list(self.name, self.username(self.owner), str(door["exp"]), door["sig"])
+		with set_user(self.owner):
+			listed = viewer_api.comments_list(self.name)
 		row = next(t for t in listed["threads"] if t["id"] == thread)
 		self.assertEqual((row["unread"], row["mentioned"]), (1, False))
 
@@ -529,10 +527,8 @@ class TestMentions(BadgeCase):
 		self.assertEqual(self.mentions_of(thread)[thread], ["d2tbgown"])
 
 	def test_the_menu_list_leaves_out_the_person_asking(self):
-		with set_user("Guest"):
-			ticket = comments.mint_ticket(self.name, "d2tbged")
-			door = api.comment_pass(self.name, "d2tbged", str(ticket["exp"]), ticket["sig"])
-			listed = api.comments_list(self.name, "d2tbged", str(door["exp"]), door["sig"])
+		with set_user(self.ed):
+			listed = viewer_api.comments_list(self.name)
 		self.assertEqual([p["username"] for p in listed["mentionable"]], ["d2tbgown"])
 
 	def test_a_mention_reads_as_a_name_in_a_note(self):
@@ -557,45 +553,49 @@ class TestMentions(BadgeCase):
 		self.assertEqual(comments.full_names(["d2tbged"]), {"d2tbged": "d2tbged"})
 
 
-class TestTheSeenCredential(BadgeCase):
-	def credential(self, user, name=None):
-		stamp = signature.mint(signature.subject(name or self.name, self.username(user)), 600, signature.SEEN)
-		return {"username": self.username(user), "exp": str(stamp["exp"]), "sig": stamp["sig"]}
+class TestTheSeenDoor(BadgeCase):
+	"""`viewer_api.seen_mark`: the shell marks what its reader looked at, as the session's person."""
 
 	def mark(self, user, **fields):
-		with set_user("Guest"):
-			return api.seen_mark(self.name, **self.credential(user), **fields)
+		with set_user(user):
+			return viewer_api.seen_mark(self.name, **fields)
 
-	def test_a_signed_mark_records_what_the_person_saw(self):
+	def test_a_mark_records_what_the_person_saw(self):
 		thread = self.say(self.reader)
 		done = self.mark(self.owner, threads=json.dumps([thread]), variants="[]")
 		self.assertEqual(done["marked"], 1)
 		self.assertEqual(self.page(self.owner)["threads"], [])
 
-	def test_the_credential_speaks_for_one_person_and_one_prototype(self):
+	def test_a_mark_speaks_for_the_session_and_nobody_else(self):
+		"""The page names no person, so a reader's mark clears only the reader's own badges."""
+		self.say(self.reader, "first")  # a reader has badges once they have commented
+		thread = self.say(self.ed)
+		self.assertEqual(self.mark(self.reader, threads=json.dumps([thread]))["marked"], 1)
+		self.assertIn(thread, [t["id"] for t in self.page(self.owner)["threads"]])
+
+	def test_a_guest_is_refused(self):
 		thread = self.say(self.reader)
-		stolen = self.credential(self.owner)
-		with set_user("Guest"):
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.seen_mark(self.name, **{**stolen, "username": self.username(self.reader)}, threads=json.dumps([thread]))
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.seen_mark(self.name, **{**stolen, "sig": "0" * 64}, threads=json.dumps([thread]))
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.seen_mark(self.name, username=self.username(self.owner), exp="", sig="")
+		with self.assertRaises(frappe.PermissionError):
+			self.mark("Guest", threads=json.dumps([thread]))
 
 		self.assertEqual(len(self.page(self.owner)["threads"]), 1)
 
-	def test_a_comment_pass_does_not_open_it(self):
-		stamp = signature.mint(signature.subject(self.name, self.username(self.owner)), 600, signature.COMMENT)
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.seen_mark(self.name, username=self.username(self.owner), exp=str(stamp["exp"]), sig=stamp["sig"])
+	def test_the_old_signed_door_is_gone(self):
+		self.assertFalse(hasattr(api, "seen_mark"))
+		self.assertFalse(hasattr(signature, "SEEN"))
 
 	def test_garbage_in_the_lists_marks_nothing_and_does_not_fail(self):
 		self.assertEqual(self.mark(self.owner, threads="not json", variants="{}")["marked"], 0)
 
-	def test_a_stranger_with_a_valid_credential_still_gets_a_404(self):
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.seen_mark(self.name, **self.credential(self.stranger), threads="[]")
+	def test_a_stranger_on_a_private_prototype_gets_a_404(self):
+		frappe.db.set_value("Sketch Prototype", self.name, "is_public", 0)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.mark(self.stranger, threads="[]")
+
+	def test_a_stranger_with_no_standing_marks_nothing(self):
+		"""A signed-in stranger on a public Prototype has no badges to clear (`badges.mark`)."""
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.mark(self.stranger, threads="[]")
 
 	def test_marking_the_same_thing_twice_is_one_row(self):
 		thread = self.say(self.reader)
@@ -605,29 +605,43 @@ class TestTheSeenCredential(BadgeCase):
 
 
 class TestThePage(BadgeCase):
-	def payload_for(self, user):
-		renderer = SketchViewerRenderer(path=f"u/{self.username(self.owner)}/{self.doc.slug}")
-		with set_user(user):
-			self.assertTrue(renderer.can_render())
-			return renderer.payload()
+	"""The badges reach the shell, behind the session, and never the frame."""
 
-	def test_the_payload_carries_what_is_new_and_the_right_to_mark_it(self):
+	def renderer(self, user, **params):
+		renderer = SketchViewerRenderer(path=f"u/{self.username(self.owner)}/{self.doc.slug}")
+		frappe.local.form_dict = frappe._dict(params)
+		self.assertTrue(renderer.can_render())
+		return renderer
+
+	def payload_for(self, user):
+		with set_user(user):
+			return self.renderer(user).shell_payload()
+
+	def test_the_shell_carries_what_is_new_and_marks_it_with_the_session(self):
 		self.invite(self.ed)
 		option = self.add_variant(self.ed)
 		thread = self.say(self.reader)
 		data = self.payload_for(self.owner)
 		self.assertEqual(data["badges"]["variants"], [option])
 		self.assertEqual([(t["id"], t["route"]) for t in data["badges"]["threads"]], [(thread, "/")])
-		self.assertTrue(data["seen_sig"])
-		stamp = {"username": self.username(self.owner), "exp": str(data["seen_exp"]), "sig": data["seen_sig"]}
-		with set_user("Guest"):
-			self.assertEqual(api.seen_mark(self.name, **stamp, threads=json.dumps([thread]))["marked"], 1)
+		self.assertTrue(data["csrf_token"])
+		with set_user(self.owner):
+			self.assertEqual(viewer_api.seen_mark(self.name, threads=json.dumps([thread]))["marked"], 1)
 
 	def test_a_guest_page_carries_nothing(self):
 		self.say(self.reader)
 		data = self.payload_for("Guest")
 		self.assertIsNone(data["badges"])
-		self.assertEqual((data["seen_exp"], data["seen_sig"]), ("", ""))
+		self.assertEqual(data["csrf_token"], "")
+
+	def test_the_frame_carries_no_badges_and_nothing_to_mark_with(self):
+		self.invite(self.ed)
+		self.add_variant(self.ed)
+		self.say(self.reader)
+		with set_user(self.owner):
+			data = self.renderer(self.owner, frame="1").frame_payload()
+		self.assertNotIn("badges", data)
+		self.assertEqual(utils.credential_keys(data), [])
 
 	def test_first_use_carries_empty_lists(self):
 		data = self.payload_for(self.owner)

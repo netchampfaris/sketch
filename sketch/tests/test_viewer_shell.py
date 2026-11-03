@@ -1,27 +1,24 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The Viewer split into a shell and a frame (site config `sketch_viewer_shell`).
+"""The Viewer is a shell with the Prototype in a sandboxed frame.
 
-With the flag on, /u/<username>/<slug> is Sketch's own page on Sketch's origin. It holds the
-reader's session and no Prototype source, and it frames the Prototype from the same URL with
-?frame=1. The frame is sandboxed as today and carries the tree and nothing that can act as
-anyone: no signature of any scope, for any reader. `check` keeps its signed URL and its document.
-
-With the flag off, every request gets today's document.
+/u/<username>/<slug> is Sketch's own page on Sketch's origin. It holds the reader's session and no
+Prototype source, and it frames the Prototype from the same URL with ?frame=1. The frame is
+sandboxed and carries the tree and nothing that can act as anyone: no signature, ticket or CSRF
+token, for any reader. `check` keeps its signed URL and gets the document with its chrome off.
 """
 
-import json
 import os
 from contextlib import contextmanager
-from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import api, signature
+from sketch import api, comments, signature
 from sketch.tests import utils
-from sketch.viewer import SHELL_FLAG, SHELL_HTML, SketchViewerRenderer
+from sketch.tests.utils import credential_keys, shell_slot
+from sketch.viewer import SHELL_HTML, SketchViewerRenderer
 
 FILES = {"src/App.vue": "<template><h1>hello</h1></template>\n"}
 
@@ -30,30 +27,32 @@ CSP = "Content-Security-Policy"
 #: Everything the frame may hold, and no more.
 FRAME_KEYS = {"files", "name", "title", "slug", "pin", "authors", "theme", "chrome"}
 
-
-def shell_slot(html: str) -> dict:
-	"""The shell's boot JSON, read the way a browser reads it: up to the first `</script`."""
-	opening = '<script id="sketch-shell" type="application/json">'
-	start = html.find(opening)
-	if start < 0:
-		raise AssertionError("the served page has no sketch-shell slot")
-
-	start += len(opening)
-	return json.loads(html[start : html.find("</script", start)])
-
-
-def credential_keys(value, path="") -> list[str]:
-	"""Every key, at any depth, that names a signature or its expiry."""
-	found = []
-	if isinstance(value, dict):
-		for key, item in value.items():
-			if key in ("exp", "sig") or key.endswith(("_sig", "_exp")):
-				found.append(f"{path}{key}")
-			found += credential_keys(item, f"{path}{key}.")
-	elif isinstance(value, list):
-		for index, item in enumerate(value):
-			found += credential_keys(item, f"{path}{index}.")
-	return found
+#: The doors the shell replaced. Each acted on a signature in the page, so none may come back.
+REMOVED = {
+	api: (
+		"set_variant_default_signed",
+		"undo_variant_default_signed",
+		"keep_variant_signed",
+		"undo_keep_variant_signed",
+		"delete_variant_signed",
+		"undo_delete_variant_signed",
+		"signed_revision",
+		"save_annotations",
+		"comment_pass",
+		"comments_list",
+		"comment_add",
+		"comment_reply",
+		"comment_edit",
+		"comment_delete",
+		"comment_restore",
+		"comments_delete_resolved",
+		"comment_resolve",
+		"seen_mark",
+		"comment_note_draft",
+	),
+	comments: ("mint_ticket", "mint_pass", "actor_for"),
+	signature: ("subject", "signed_user", "REVISION", "ANNOTATE", "COMMENT", "COMMENT_MINT", "VARIANT_DEFAULT", "VARIANT_EDIT", "SEEN"),
+}
 
 
 class ShellCase(IntegrationTestCase):
@@ -78,11 +77,6 @@ class ShellCase(IntegrationTestCase):
 		frappe.db.commit()
 
 	@contextmanager
-	def flag(self, on: bool):
-		with patch.dict(frappe.local.conf, {SHELL_FLAG: 1 if on else 0}):
-			yield
-
-	@contextmanager
 	def query(self, **params):
 		saved = frappe.local.form_dict
 		frappe.local.form_dict = frappe._dict(params)
@@ -91,14 +85,14 @@ class ShellCase(IntegrationTestCase):
 		finally:
 			frappe.local.form_dict = saved
 
-	def renderer(self, user, doc, on=True, **params):
+	def renderer(self, user, doc, **params):
 		"""A renderer that ran can_render as `user`, or None when the answer is 404."""
-		with self.flag(on), set_user(user), self.query(**params):
+		with set_user(user), self.query(**params):
 			renderer = SketchViewerRenderer(path=f"u/{self.username}/{doc.slug}")
 			return renderer if renderer.can_render() else None
 
-	def render(self, user, doc, on=True, **params):
-		with self.flag(on), set_user(user), self.query(**params):
+	def render(self, user, doc, **params):
+		with set_user(user), self.query(**params):
 			renderer = SketchViewerRenderer(path=f"u/{self.username}/{doc.slug}")
 			self.assertTrue(renderer.can_render(), user)
 			return renderer.render()
@@ -188,8 +182,8 @@ class TestAccessIsUnchanged(ShellCase):
 		self.assertEqual(self.renderer(self.owner, self.private, frame="1").mode, "frame")
 
 
-class TestCheckIsUnchanged(ShellCase):
-	def test_a_check_request_gets_todays_document(self):
+class TestCheck(ShellCase):
+	def test_a_check_request_gets_the_document_with_its_chrome_off(self):
 		stamp = signature.mint(self.private.name, ttl_seconds=600)
 		renderer = self.renderer("Guest", self.private, theme="light", **stamp)
 		self.assertIsNotNone(renderer, "the signed URL still opens a private Prototype")
@@ -199,16 +193,32 @@ class TestCheckIsUnchanged(ShellCase):
 		self.assertIn("sandbox allow-scripts", response.headers[CSP])
 		data = utils.data_slot(response.get_data(as_text=True))
 		self.assertIn("src/App.vue", data["files"])
-		self.assertNotIn("chrome", data)
+		self.assertEqual(data["chrome"], "off")
+		self.assertEqual(credential_keys(data), [])
+		self.assertEqual(set(data), FRAME_KEYS)
 
 
-class TestFlagOff(ShellCase):
-	def test_every_request_gets_todays_document(self):
-		for params in ({}, {"frame": "1"}):
-			with self.subTest(**params):
-				response = self.render(self.owner, self.public, on=False, **params)
-				self.assertIn("sandbox allow-scripts", response.headers[CSP])
-				data = utils.data_slot(response.get_data(as_text=True))
-				self.assertNotIn("chrome", data)
-				self.assertTrue(data["is_owner"])
-				self.assertTrue(data["sig"], "today's owner page still polls with its signature")
+class TestNothingSignedIsLeft(ShellCase):
+	def test_every_removed_door_is_gone(self):
+		for module, names in REMOVED.items():
+			for name in names:
+				with self.subTest(f"{module.__name__}.{name}"):
+					self.assertFalse(hasattr(module, name))
+
+	def test_no_removed_method_answers_over_http(self):
+		for name in REMOVED[api]:
+			with self.subTest(name):
+				self.assertRaises(Exception, frappe.get_attr, f"sketch.api.{name}")
+
+	def test_no_frame_payload_for_any_role_holds_a_credential(self):
+		# The editor is invited to the public one only, so the private one is the owner's and check's.
+		cases = [(self.public, role, user) for role, user in self.readers()]
+		cases += [(self.private, "owner", self.owner), (self.public, "check", "Guest"), (self.private, "check", "Guest")]
+		for doc, role, user in cases:
+			params = signature.mint(doc.name, ttl_seconds=600) if role == "check" else {"frame": "1"}
+			with self.subTest(doc=doc.slug, role=role), set_user(user), self.query(**params):
+				renderer = SketchViewerRenderer(path=f"u/{self.username}/{doc.slug}")
+				self.assertTrue(renderer.can_render())
+				data = renderer.frame_payload()
+				self.assertEqual(credential_keys(data), [])
+				self.assertEqual(set(data), FRAME_KEYS)

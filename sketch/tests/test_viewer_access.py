@@ -92,7 +92,10 @@ class TestViewerAccess(IntegrationTestCase):
 		"""The control. Without it, a broken renderer would pass every 404 test."""
 		response = self.get(f"/u/{self.username}/d2t-public")
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(utils.data_slot(response.text)["name"], self.public.name)
+		self.assertEqual(utils.shell_slot(response.text)["name"], self.public.name)
+		frame = self.get(f"/u/{self.username}/d2t-public?frame=1")
+		self.assertEqual(frame.status_code, 200)
+		self.assertEqual(utils.data_slot(frame.text)["name"], self.public.name)
 
 	# --------------------------------------------------------- the signature
 
@@ -104,7 +107,8 @@ class TestViewerAccess(IntegrationTestCase):
 		self.assertEqual(response.status_code, 200, response.text[:400])
 		payload = utils.data_slot(response.text)
 		self.assertEqual(payload["name"], self.private.name)
-		self.assertFalse(payload["is_owner"], "a signature must not make the caller the owner")
+		self.assertEqual(payload["chrome"], "off", "a signature opens check's document, never the shell")
+		self.assertEqual(utils.credential_keys(payload), [], "nor anything that acts as someone")
 
 	def test_an_expired_signature_falls_through_to_404(self):
 		stamp = signature.mint(self.private.name, ttl_seconds=-60)
@@ -200,7 +204,7 @@ class TestViewerWebsiteCache(IntegrationTestCase):
 
 		self.assertEqual(guest.status_code, 404)
 		self.assertEqual(owner.status_code, 200, owner.get_data(as_text=True)[:400])
-		self.assertTrue(utils.data_slot(owner.get_data(as_text=True))["is_owner"])
+		self.assertEqual(utils.shell_slot(owner.get_data(as_text=True))["role"], "owner")
 		self.assertFalse(frappe.cache.hget("website_404", frappe.local.request.url))
 
 	def test_missing_viewer_paths_are_not_cached(self):

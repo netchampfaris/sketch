@@ -46,7 +46,8 @@ class TestViewerSandbox(IntegrationTestCase):
 		cls.username = utils.username_of(cls.user)
 		cls.doc = utils.make_prototype(cls.user, "d2t-sandbox", files=FILES, is_public=True)
 		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
-		cls.path = f"/u/{cls.username}/d2t-sandbox"
+		cls.path = f"/u/{cls.username}/d2t-sandbox?frame=1"
+		cls.shell = f"/u/{cls.username}/d2t-sandbox"
 
 	def setUp(self):
 		utils.require_webserver()
@@ -62,9 +63,10 @@ class TestViewerSandbox(IntegrationTestCase):
 	def test_the_owner_gets_the_sandbox_too(self):
 		"""The owner reads a tree a fork may have filled with a stranger's code."""
 		response = utils.request("GET", self.path, headers=utils.api_auth_header(self.user))
+		shell = utils.request("GET", self.shell, headers=utils.api_auth_header(self.user))
 
 		self.assertEqual(response.status_code, 200, response.text[:400])
-		self.assertTrue(utils.data_slot(response.text)["is_owner"], "the request must be the owner's")
+		self.assertEqual(utils.shell_slot(shell.text)["role"], "owner", "the request must be the owner's")
 		self.assertIn("sandbox", response.headers[CSP])
 		self.assertNotIn("allow-same-origin", response.headers[CSP])
 

@@ -19,9 +19,10 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import annotations, api, comments, editor_variants, prototype, prototype_files, sharing, signature, variant_default, versions
+from sketch import annotations, api, editor_variants, prototype, prototype_files, sharing, variant_default, versions, viewer_api
 from sketch.mcp import tools
 from sketch.tests import utils
+from sketch.tests.test_viewer_api import delete_session, open_session, post
 from sketch.viewer import SketchViewerRenderer
 
 HOME = """<script setup>
@@ -96,25 +97,20 @@ class ShareCase(IntegrationTestCase):
 		return prototype_files.read_tree(self.doc.name)
 
 	def page_data_for(self, user):
-		"""The data slot the Viewer would carry for this person."""
+		"""What the Viewer gives this person: the shell's boot JSON over the frame's data slot."""
 		renderer = SketchViewerRenderer(path=f"u/d2tshown/{self.doc.slug}")
 		with set_user(user):
 			self.assertTrue(renderer.can_render(), user)
-			return renderer.payload()
-
-	def edit_credential(self, user):
-		stamp = signature.mint(signature.subject(self.doc.name, utils.username_of(user)), 600, signature.VARIANT_EDIT)
-		return {"username": utils.username_of(user), "exp": str(stamp["exp"]), "sig": stamp["sig"]}
+			return {**renderer.frame_payload(), **renderer.shell_payload()}
 
 	def delete_as(self, user, option):
-		with set_user("Guest"):
-			return api.delete_variant_signed(self.doc.name, option=option, **self.edit_credential(user))
+		"""The shell's delete, with this person's session."""
+		with set_user(user):
+			return viewer_api.delete_variant(self.doc.name, option=option)
 
 	def undo_delete_as(self, user, option, sequence):
-		with set_user("Guest"):
-			return api.undo_delete_variant_signed(
-				self.doc.name, option=option, sequence=str(sequence), **self.edit_credential(user)
-			)
+		with set_user(user):
+			return viewer_api.undo_delete_variant(self.doc.name, option=option, sequence=str(sequence))
 
 	def add_variant(self, content=COMPACT, name="compact.vue", commit=True):
 		self.invite()
@@ -407,18 +403,9 @@ class TestEditorsCannotDecide(ShareCase):
 			with self.assertRaises(frappe.DoesNotExistError):
 				api.set_variant_default("d2tshown/d2t-share", "src/pages/Home.vue", "KPI strip", "tall")
 
-		# The signed door wants a credential only the owner's live page carries.
-		editor_page = self.page_data_for(self.ed)
-		self.assertEqual(editor_page["variant_sig"], "")
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.set_variant_default_signed(
-				self.doc.name,
-				exp=str(signature.mint(self.doc.name, 600, signature.VARIANT_EDIT)["exp"]),
-				sig=signature.mint(self.doc.name, 600, signature.VARIANT_EDIT)["sig"],
-				file="src/pages/Home.vue",
-				set_name="KPI strip",
-				option="tall",
-			)
+		# The shell's session API has no default door at all: Make default is the owner's, by slug.
+		self.assertFalse(hasattr(viewer_api, "set_variant_default"))
+		self.assertEqual(self.page_data_for(self.ed)["role"], "editor")
 
 		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME)
 
@@ -432,16 +419,14 @@ class TestEditorNotes(ShareCase):
 	def body(self, note: str, id: str = "n1") -> str:
 		return json.dumps({"notes": [{**self.NOTE, "id": id, "note": note}], "tweaks": [], "prompt": ""})
 
-	def save_as_editor(self, page: dict, note: str, id: str = "e1"):
-		with set_user("Guest"):
-			return api.save_annotations(
-				self.doc.name,
-				str(page["annotate_exp"]),
-				page["annotate_sig"],
-				self.body(note, id),
-				str(page["annotations_epoch"]),
-				username="d2tshed",
-			)
+	def save_as(self, user, note: str, id: str = "e1"):
+		"""The shell's save, with `user`'s session and the epoch their page read."""
+		epoch = self.page_data_for(user)["annotations_epoch"]
+		with set_user(user):
+			return viewer_api.save_annotations(self.doc.name, self.body(note, id), str(epoch))
+
+	def save_as_editor(self, note: str, id: str = "e1"):
+		return self.save_as(self.ed, note, id)
 
 	def setUp(self):
 		super().setUp()
@@ -451,55 +436,61 @@ class TestEditorNotes(ShareCase):
 	def notes(self, reply) -> list[str]:
 		return [n["note"] for n in self.ok(reply)["structuredContent"]["notes"]]
 
-	def test_the_editors_page_carries_their_own_notes_and_a_signature_for_them(self):
+	def test_the_editors_page_carries_their_own_notes_and_never_the_owners(self):
 		page = self.page_data_for(self.ed)
-		self.assertTrue(page["annotate_sig"])
+		self.assertEqual(page["role"], "editor")
 		self.assertEqual(page["annotations"]["notes"], [])
-		self.assertTrue(
-			signature.verify(signature.subject(self.doc.name, "d2tshed"), page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE)
-		)
-		self.assertFalse(
-			signature.verify(self.doc.name, page["annotate_exp"], page["annotate_sig"], signature.ANNOTATE),
-			"an editor's signature never writes the owner's notes",
-		)
+		self.assertNotIn("owner's", json.dumps(page))
 
 	def test_an_editor_saves_their_own_and_the_owner_never_sees_them(self):
-		self.save_as_editor(self.page_data_for(self.ed), "editor's")
+		self.save_as_editor("editor's")
 		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), ["owner's"])
 		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), ["editor's"])
 		self.assertEqual(self.page_data_for(self.owner)["annotations"]["notes"][0]["note"], "owner's")
 		self.assertEqual(self.page_data_for(self.ed)["annotations"]["notes"][0]["note"], "editor's")
 
 	def test_clearing_touches_only_the_callers_notes(self):
-		self.save_as_editor(self.page_data_for(self.ed), "editor's")
+		self.save_as_editor("editor's")
 		self.ok(self.agent(self.ed, "clear_annotations"))
 		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), [])
 		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), ["owner's"])
 
-		self.save_as_editor(self.page_data_for(self.ed), "again")
+		self.save_as_editor("again")
 		self.ok(self.agent(self.owner, "clear_annotations"))
 		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), [])
 		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), ["again"])
 
-	def test_the_owners_signature_cannot_write_as_an_editor(self):
-		owner_page = self.page_data_for(self.owner)
-		with self.assertRaises(frappe.DoesNotExistError):
-			self.save_as_editor(owner_page, "forged")
+	def test_the_owners_session_writes_the_owners_notes_never_an_editors(self):
+		self.save_as(self.owner, "owner again", id="n1")
+		self.assertEqual(self.notes(self.agent(self.owner, "get_annotations")), ["owner again"])
 		self.assertEqual(self.notes(self.agent(self.ed, "get_annotations")), [])
 
-	def test_a_removed_editors_signature_saves_nothing(self):
-		page = self.page_data_for(self.ed)
+	def test_a_removed_editors_session_saves_nothing(self):
+		epoch = self.page_data_for(self.ed)["annotations_epoch"]
 		with set_user(self.owner):
 			api.remove_editor(self.doc.slug, "d2tshed")
-		with self.assertRaises(frappe.DoesNotExistError):
-			self.save_as_editor(page, "late")
+		with set_user(self.ed), self.assertRaises(frappe.DoesNotExistError):
+			viewer_api.save_annotations(self.doc.name, self.body("late", "e1"), str(epoch))
 
-	def test_a_disabled_editors_signature_saves_nothing(self):
-		page = self.page_data_for(self.ed)
-		frappe.db.set_value("User", self.ed, "enabled", 0)
-		self.addCleanup(frappe.db.set_value, "User", self.ed, "enabled", 1)
-		with self.assertRaises(frappe.DoesNotExistError):
-			self.save_as_editor(page, "late")
+	def test_a_disabled_editors_session_saves_nothing(self):
+		frappe.db.commit()  # the request runs on its own connection
+		sid, token = open_session(self.ed)
+		self.addCleanup(delete_session, sid)
+		path = "/api/method/sketch.viewer_api.save_annotations"
+		form = {"name": self.doc.name, "data": self.body("late", "e1"), "epoch": "0"}
+		headers = {"Cookie": f"sid={sid}", "X-Frappe-CSRF-Token": token}
+
+		# Disabling a person ends their sessions, so the shell they still have open writes nothing.
+		self.set_enabled(self.ed, 0)
+		self.addCleanup(self.set_enabled, self.ed, 1)
+		frappe.db.commit()
+		self.assertNotEqual(post(path, form, headers), 200)
+		self.assertEqual(annotations.read(self.doc.name, editor=self.ed)["notes"], [])
+
+	def set_enabled(self, user, enabled):
+		doc = frappe.get_doc("User", user)
+		doc.enabled = enabled
+		doc.save(ignore_permissions=True)
 
 	def test_a_reader_and_a_stranger_get_no_notes(self):
 		for user in (self.reader, self.other):
@@ -564,21 +555,17 @@ class TestPrivate(ShareCase):
 	def test_the_editor_comments_on_a_private_prototype_and_the_reader_cannot(self):
 		self.invite()
 		for user, ok in ((self.ed, True), (self.reader, False)):
-			username = utils.username_of(user)
-			ticket = comments.mint_ticket(self.doc.name, username)
-			with set_user("Guest"):
+			with self.subTest(user=user), set_user(user):
 				if ok:
-					got = api.comment_pass(self.doc.name, username, str(ticket["exp"]), ticket["sig"])
-					self.assertTrue(got["sig"])
+					self.assertEqual(viewer_api.comments_list(self.doc.name)["threads"], [])
 				else:
 					with self.assertRaises(frappe.DoesNotExistError):
-						api.comment_pass(self.doc.name, username, str(ticket["exp"]), ticket["sig"])
+						viewer_api.comments_list(self.doc.name)
 
 	def test_a_removed_editor_loses_everything_at_once_and_their_variants_stay(self):
 		self.add_variant()
-		ticket = comments.mint_ticket(self.doc.name, "d2tshed")
-		with set_user("Guest"):
-			held = api.comment_pass(self.doc.name, "d2tshed", str(ticket["exp"]), ticket["sig"])
+		with set_user(self.ed):
+			self.assertEqual(viewer_api.comments_list(self.doc.name)["threads"], [], "they could comment a moment ago")
 		with set_user(self.owner):
 			api.remove_editor(self.doc.slug, "d2tshed")
 
@@ -589,11 +576,10 @@ class TestPrivate(ShareCase):
 			with self.assertRaises(frappe.DoesNotExistError):
 				api.list_prototype_files(self.doc.slug, "d2tshown")
 
-		with set_user("Guest"):
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comments_list(self.doc.name, "d2tshed", str(held["exp"]), held["sig"])
-			with self.assertRaises(frappe.DoesNotExistError):
-				self.delete_as(self.ed, "@d2tshed/compact")
+		with set_user(self.ed), self.assertRaises(frappe.DoesNotExistError):
+			viewer_api.comments_list(self.doc.name)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.delete_as(self.ed, "@d2tshed/compact")
 
 		listed = self.agent(self.ed, "list_prototypes")["structuredContent"]["prototypes"]
 		self.assertEqual(listed, [])
@@ -622,16 +608,19 @@ class TestPrivate(ShareCase):
 		utils.require_webserver()
 		self.invite()
 		path = f"/u/d2tshown/{self.doc.slug}"
-		editor = utils.request("GET", path, headers=utils.api_auth_header(self.ed))
-		reader = utils.request("GET", path, headers=utils.api_auth_header(self.reader))
-		guest = utils.request("GET", path)
-		self.assertEqual((editor.status_code, reader.status_code, guest.status_code), (200, 404, 404))
-		slot = utils.data_slot(editor.text)
-		self.assertEqual(slot["role"], "editor")
-		self.assertFalse(slot["is_owner"])
-		self.assertTrue(slot["annotate_sig"], "an editor keeps notes of their own")
-		self.assertEqual(slot["variant_sig"], "")
-		self.assertTrue(slot["edit_sig"], "an editor may delete their own variants")
+		for params in ("", "?frame=1"):
+			with self.subTest(params=params):
+				editor = utils.request("GET", path + params, headers=utils.api_auth_header(self.ed))
+				reader = utils.request("GET", path + params, headers=utils.api_auth_header(self.reader))
+				guest = utils.request("GET", path + params)
+				self.assertEqual((editor.status_code, reader.status_code, guest.status_code), (200, 404, 404))
+
+		shell = utils.shell_slot(utils.request("GET", path, headers=utils.api_auth_header(self.ed)).text)
+		self.assertEqual(shell["role"], "editor")
+		self.assertEqual(shell["annotations"]["notes"], [], "an editor keeps notes of their own")
+		frame = utils.data_slot(utils.request("GET", path + "?frame=1", headers=utils.api_auth_header(self.ed)).text)
+		self.assertIn("src/pages/Home.vue", frame["files"])
+		self.assertEqual(utils.credential_keys(frame), [])
 
 
 class TestVersions(ShareCase):
@@ -758,7 +747,7 @@ class TestDeleteAndDefault(ShareCase):
 			api.invite_editor(self.doc.slug, "d2tshoth")
 		other = "src/variants/@d2tshoth/theirs.vue"
 		prototype_files.write_files(self.doc.name, [{"path": other, "content": COMPACT}])
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaises((frappe.PermissionError, frappe.DoesNotExistError)):
 			self.delete_as(self.other, "@d2tshed/compact")
 
 		with self.assertRaises((frappe.PermissionError, frappe.ValidationError)):
@@ -849,20 +838,14 @@ class TestDeleteAndDefault(ShareCase):
 
 
 class TestKeepOnly(ShareCase):
-	def owner_page(self):
-		return self.page_data_for(self.owner)
+	def keep_as_page(self, option, name="KPI strip", file="src/pages/Home.vue", user=None):
+		"""The shell's Keep only this: the owner's own call, by slug, with the session."""
+		with set_user(user or self.owner):
+			return api.keep_variant(self.doc.slug, file, name, option)
 
-	def keep_as_page(self, option, sig=None, exp=None, name="KPI strip", file="src/pages/Home.vue"):
-		page = self.owner_page()
-		with set_user("Guest"):
-			return api.keep_variant_signed(
-				self.doc.name,
-				exp=str(page["variant_exp"]) if exp is None else exp,
-				sig=page["variant_sig"] if sig is None else sig,
-				file=file,
-				set_name=name,
-				option=option,
-			)
+	def undo_keep_as_page(self, file, sequence, name, option, user=None):
+		with set_user(user or self.owner):
+			return api.undo_keep_variant(self.doc.slug, file, sequence, name, option)
 
 	def test_a_restore_brings_back_an_editors_option_that_keep_only_this_deleted(self):
 		self.add_variant()
@@ -897,31 +880,23 @@ class TestKeepOnly(ShareCase):
 		self.assertEqual(self.tree()["src/components/KpiStrip.vue"], FILES["src/components/KpiStrip.vue"])
 		self.assertNotIn(self.folder + "dense.vue", self.tree())
 
-	def test_only_the_owners_signature_keeps_only_this(self):
+	def test_only_the_owner_keeps_only_this(self):
 		self.add_variant()
 		before = self.tree()
-		page = self.owner_page()
-		stamp = signature.mint(self.doc.name, 600, signature.VARIANT_EDIT)
-		editor = self.edit_credential(self.ed)
-		for who, args in {
-			"an editor's own signature": {"exp": editor["exp"], "sig": editor["sig"]},
-			"the edit scope for the page": {"exp": str(stamp["exp"]), "sig": stamp["sig"]},
-			"a bad signature": {"exp": str(page["variant_exp"]), "sig": "0" * len(page["variant_sig"])},
-			"no signature": {"exp": "", "sig": ""},
-		}.items():
-			with self.subTest(who), self.assertRaises(frappe.DoesNotExistError):
-				self.keep_as_page("tall", **args)
-
-		self.assertEqual(self.editor_page_signature(), "")
-		for user in (self.ed, self.reader):
-			with set_user(user):
+		for user in (self.ed, self.reader, "Guest"):
+			with self.subTest(user=user):
 				with self.assertRaises(frappe.DoesNotExistError):
-					api.keep_variant(self.doc.slug, "src/pages/Home.vue", "KPI strip", "tall")
+					self.keep_as_page("tall", user=user)
+				with self.assertRaises(frappe.DoesNotExistError):
+					self.keep_slug_as("d2tshown/d2t-share", user)
 
+		# The shell's session API has no Keep only this door: it is the owner's, by slug.
+		self.assertFalse(hasattr(viewer_api, "keep_variant"))
 		self.assertEqual(self.tree(), before)
 
-	def editor_page_signature(self):
-		return self.page_data_for(self.ed)["variant_sig"]
+	def keep_slug_as(self, slug, user):
+		with set_user(user):
+			return api.keep_variant(slug, "src/pages/Home.vue", "KPI strip", "tall")
 
 	def test_keep_only_refuses_an_option_the_set_does_not_have_and_a_set_with_one(self):
 		self.add_variant()
@@ -1042,17 +1017,7 @@ class TestKeepOnly(ShareCase):
 		before = self.tree()
 		done = self.keep_as_page("@d2tshed/dense", name="Kpi strip", file="src/components/KpiStrip.vue")
 		self.assertNotEqual(self.tree(), before)
-		page = self.owner_page()
-		with set_user("Guest"):
-			api.undo_keep_variant_signed(
-				self.doc.name,
-				exp=str(page["variant_exp"]),
-				sig=page["variant_sig"],
-				file="src/components/KpiStrip.vue",
-				sequence=str(done["sequence"]),
-				set_name="Kpi strip",
-				option=done["option"],
-			)
+		self.undo_keep_as_page("src/components/KpiStrip.vue", done["sequence"], "Kpi strip", done["option"])
 
 		self.assertEqual(self.tree(), before)
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cDense\u201d in Kpi strip")
@@ -1075,17 +1040,7 @@ class TestKeepOnly(ShareCase):
 		before = self.tree()
 		done = self.keep_as_page("tall")
 		self.assertNotEqual(self.tree(), before)
-		page = self.owner_page()
-		with set_user("Guest"):
-			api.undo_keep_variant_signed(
-				self.doc.name,
-				exp=str(page["variant_exp"]),
-				sig=page["variant_sig"],
-				file="src/pages/Home.vue",
-				sequence=str(done["sequence"]),
-				set_name="KPI strip",
-				option="tall",
-			)
+		self.undo_keep_as_page("src/pages/Home.vue", done["sequence"], "KPI strip", "tall")
 
 		self.assertEqual(self.tree(), before)
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cTall\u201d in KPI strip")
@@ -1097,17 +1052,7 @@ class TestKeepOnly(ShareCase):
 		before = self.tree()
 		done = self.keep_as_page("@d2tshed/compact")
 		self.assertNotEqual(self.tree(), before)
-		page = self.owner_page()
-		with set_user("Guest"):
-			api.undo_keep_variant_signed(
-				self.doc.name,
-				exp=str(page["variant_exp"]),
-				sig=page["variant_sig"],
-				file="src/pages/Home.vue",
-				sequence=str(done["sequence"]),
-				set_name="KPI strip",
-				option=done["option"],
-			)
+		self.undo_keep_as_page("src/pages/Home.vue", done["sequence"], "KPI strip", done["option"])
 
 		self.assertEqual(self.tree(), before)
 		self.assertEqual(versions.history(self.doc.name)[0]["prompt"], "Undid keeping only \u201cCompact\u201d in KPI strip")
@@ -1136,32 +1081,22 @@ class TestKeepOnly(ShareCase):
 	def test_undo_is_refused_when_the_page_changed_since_and_to_anyone_but_the_owner(self):
 		self.add_variant()
 		done = self.keep_as_page("tall")
-		args = {"file": "src/pages/Home.vue", "sequence": str(done["sequence"]), "set_name": "KPI strip", "option": "tall"}
-		editor = self.edit_credential(self.ed)
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.undo_keep_variant_signed(self.doc.name, exp=editor["exp"], sig=editor["sig"], **args)
+		args = ("src/pages/Home.vue", done["sequence"], "KPI strip", "tall")
+		for user in (self.ed, self.reader):
+			with self.subTest(user=user), self.assertRaises(frappe.DoesNotExistError):
+				self.undo_keep_as_page(*args, user=user)
 
 		prototype_files.write_files(self.doc.name, [{"path": "src/pages/Home.vue", "content": HOME.replace("Tall", "Taller")}])
-		page = self.owner_page()
-		with set_user("Guest"), self.assertRaises(frappe.ValidationError):
-			api.undo_keep_variant_signed(self.doc.name, exp=str(page["variant_exp"]), sig=page["variant_sig"], **args)
+		with self.assertRaises(frappe.ValidationError):
+			self.undo_keep_as_page(*args)
 
 		self.assertNotIn(self.folder + "compact.vue", self.tree())
 
 	def test_undo_keep_refuses_a_version_that_kept_nothing(self):
 		self.add_variant()
 		done = self.delete_as(self.owner, "@d2tshed/compact")
-		page = self.owner_page()
-		with set_user("Guest"), self.assertRaises(frappe.ValidationError):
-			api.undo_keep_variant_signed(
-				self.doc.name,
-				exp=str(page["variant_exp"]),
-				sig=page["variant_sig"],
-				file="src/pages/Home.vue",
-				sequence=str(done["sequence"]),
-				set_name="KPI strip",
-				option="wide",
-			)
+		with self.assertRaises(frappe.ValidationError):
+			self.undo_keep_as_page("src/pages/Home.vue", done["sequence"], "KPI strip", "wide")
 
 
 class TestFork(ShareCase):

@@ -3,22 +3,25 @@
 
 """Comments: people talking on a live Prototype, apart from the owner's notes.
 
-Every case drives the whitelisted method directly with a pass, the way the
-toolbar does, so a wrong pass, a wrong person and a private Prototype all meet
-the same door the page meets. Comments are their own rows: nothing here may
-reach `get_annotations`, and nothing the agent clears may touch them.
+Every case drives the shell's whitelisted method (sketch/viewer_api.py) as the
+signed-in person, the way the Viewer's shell does, so a wrong person and a
+private Prototype meet the same door the page meets. Comments are their own
+rows: nothing here may reach `get_annotations`, and nothing the agent clears
+may touch them.
 """
 
 import json
 from unittest import mock
 
 import frappe
+from frappe.sessions import delete_session
 from frappe.tests import IntegrationTestCase, set_user
 
-from sketch import annotations, api, comments, signature
+from sketch import annotations, api, comments, viewer_api
 from sketch.mcp import tools
 from sketch.patches.v1_0 import move_reader_notes_to_comments
 from sketch.tests import utils
+from sketch.tests.test_viewer_api import open_session
 from sketch.viewer import SketchViewerRenderer
 
 FILES = {"src/App.vue": "<template><h1>hello</h1></template>\n"}
@@ -58,91 +61,55 @@ class CommentCase(IntegrationTestCase):
 
 	# -- the door, as the toolbar uses it
 
-	def ticket(self, username: str, name: str | None = None) -> dict:
-		return comments.mint_ticket(name or self.doc.name, username)
+	def user_of(self, username: str) -> str:
+		return frappe.db.get_value("User", {"username": username}) or username
 
-	def pass_for(self, username: str) -> dict:
-		t = self.ticket(username)
-		with set_user("Guest"):
-			return api.comment_pass(self.doc.name, username, str(t["exp"]), t["sig"])
-
-	def call(self, fn, username: str, **fields):
-		p = self.pass_for(username)
-		with set_user("Guest"):
-			return fn(self.doc.name, username, str(p["exp"]), p["sig"], **fields)
+	def call(self, fn, username: str, name: str | None = None, **fields):
+		"""`fn` as the signed-in person `username`, on this Prototype or on `name`."""
+		with set_user(self.user_of(username)):
+			return fn(name or self.doc.name, **fields)
 
 	def start(self, username: str, text: str = "Looks off", anchor=None) -> dict:
-		return self.call(api.comment_add, username, anchor=json.dumps(ANCHOR if anchor is None else anchor), text=text)
+		return self.call(viewer_api.comment_add, username, anchor=json.dumps(ANCHOR if anchor is None else anchor), text=text)
 
 	def rows(self) -> list[str]:
 		return frappe.get_all("Sketch Comment", filters={"prototype": self.doc.name}, pluck="name")
 
 
-class TestPass(CommentCase):
-	def test_a_ticket_buys_a_fifteen_minute_pass(self):
-		p = self.pass_for(self.reader_name)
-		self.assertEqual(p["ttl"], 15 * 60)
-		self.assertAlmostEqual(int(p["exp"]) - signature._now(), 15 * 60, delta=5)
+class TestDoor(CommentCase):
+	def test_a_guest_is_refused_even_on_a_public_prototype(self):
+		for fn in (viewer_api.comments_list, viewer_api.comment_add):
+			with self.subTest(fn=fn.__name__), set_user("Guest"), self.assertRaises(frappe.PermissionError):
+				fn(self.doc.name)
 
-	def test_the_pass_expires(self):
-		p = self.pass_for(self.reader_name)
-		with set_user("Guest"), mock.patch.object(signature, "_now", return_value=int(p["exp"]) + 1):
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comments_list(self.doc.name, self.reader_name, str(p["exp"]), p["sig"])
-
-	def test_a_ticket_opens_no_comment_and_a_pass_mints_no_pass(self):
-		t = self.ticket(self.reader_name)
-		p = self.pass_for(self.reader_name)
-		with set_user("Guest"):
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comments_list(self.doc.name, self.reader_name, str(t["exp"]), t["sig"])
-
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comment_pass(self.doc.name, self.reader_name, str(p["exp"]), p["sig"])
-
-	def test_a_pass_speaks_for_one_person_on_one_prototype(self):
-		p = self.pass_for(self.reader_name)
-		other_doc = utils.make_prototype(self.owner, "d2t-comments-two", files=FILES, is_public=True)
-		self.addCleanup(utils.drop_prototype, other_doc.name)
-		with set_user("Guest"):
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comments_list(self.doc.name, self.other_name, str(p["exp"]), p["sig"])
-
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comments_list(other_doc.name, self.reader_name, str(p["exp"]), p["sig"])
-
-	def test_other_scopes_are_not_a_pass(self):
-		for scope in (signature.ANNOTATE, signature.REVISION, signature.VIEW):
-			with self.subTest(scope=scope):
-				mark = signature.mint(signature.subject(self.doc.name, self.reader_name), 600, scope)
-				with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-					api.comments_list(self.doc.name, self.reader_name, str(mark["exp"]), mark["sig"])
-
-	def test_nobody_gets_a_pass_for_a_name_that_is_not_theirs(self):
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.comment_pass(self.doc.name, "nobody-here", "1", "x")
+	def test_someone_who_may_not_see_a_private_prototype_gets_a_404(self):
+		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(viewer_api.comments_list, self.reader_name)
 
 
 class TestPayload(CommentCase):
-	def payload(self) -> dict:
+	def renderer(self) -> SketchViewerRenderer:
 		renderer = SketchViewerRenderer(path=f"u/{self.owner_name}/{self.doc.slug}")
 		self.assertTrue(renderer.can_render())
-		return renderer.payload()
+		return renderer
 
-	def test_a_reader_carries_a_ticket_and_never_a_pass_or_a_comment(self):
+	def payload(self) -> dict:
+		return self.renderer().shell_payload()
+
+	def test_a_reader_is_named_and_carries_no_comment_and_the_frame_no_credential(self):
 		self.start(self.other_name, "secret words")
 		with set_user(self.reader):
 			payload = self.payload()
+			frame = self.renderer().frame_payload()
 
-		self.assertEqual(payload["commenter"], self.reader_name)
+		self.assertEqual(payload["me"]["username"], self.reader_name)
+		self.assertEqual(payload["role"], "viewer")
 		self.assertEqual(payload["comments_open"], 1)
 		self.assertIsNone(payload["annotations"], "no notes for a reader")
-		self.assertEqual(payload["annotate_sig"], "")
-		subject = signature.subject(self.doc.name, self.reader_name)
-		args = (subject, payload["comment_exp"], payload["comment_sig"])
-		self.assertTrue(signature.verify(*args, signature.COMMENT_MINT))
-		self.assertFalse(signature.verify(*args, signature.COMMENT), "the payload holds no pass")
 		self.assertNotIn("secret words", json.dumps(payload))
+		self.assertEqual(utils.credential_keys(frame), [])
+		self.assertNotIn("secret words", json.dumps(frame))
 
 	def test_the_owners_notes_never_reach_a_reader(self):
 		annotations.save(self.doc.name, json.dumps({"notes": [{"id": "n1", "note": "mine"}]}), 0)
@@ -153,14 +120,14 @@ class TestPayload(CommentCase):
 			payload = self.payload()
 
 		self.assertEqual(payload["annotations"]["notes"][0]["note"], "mine")
-		self.assertEqual(payload["commenter"], self.owner_name)
+		self.assertEqual(payload["me"]["username"], self.owner_name)
 
 	def test_a_guest_is_offered_sign_in_and_nothing_else(self):
 		with set_user("Guest"):
 			payload = self.payload()
 
 		self.assertTrue(payload["sign_in"])
-		self.assertEqual((payload["commenter"], payload["comment_sig"], payload["comments_open"]), ("", "", 0))
+		self.assertEqual((payload["me"], payload["csrf_token"], payload["comments_open"]), (None, "", 0))
 
 	def test_a_private_prototype_offers_nobody_else_anything(self):
 		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
@@ -175,7 +142,7 @@ class TestThreads(CommentCase):
 		self.assertEqual(thread["author"], self.reader_name)
 		self.assertNotIn("author", thread["anchor"])
 		self.assertNotIn("evil", thread["anchor"])
-		reply = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="Agreed")
+		reply = self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="Agreed")
 		self.assertEqual([r["author"] for r in reply["replies"]], [self.other_name])
 
 	def test_a_thread_needs_an_element(self):
@@ -186,8 +153,8 @@ class TestThreads(CommentCase):
 	def test_the_list_carries_everyones_threads_and_their_pictures(self):
 		self.start(self.reader_name, "one")
 		reply_to = self.start(self.other_name, "two")
-		self.call(api.comment_reply, self.reader_name, thread=reply_to["id"], text="three")
-		listed = self.call(api.comments_list, self.owner_name)
+		self.call(viewer_api.comment_reply, self.reader_name, thread=reply_to["id"], text="three")
+		listed = self.call(viewer_api.comments_list, self.owner_name)
 		self.assertEqual(sorted(t["text"] for t in listed["threads"]), ["one", "two"])
 		self.assertTrue(listed["is_owner"])
 		self.assertEqual(set(listed["people"]), {self.reader_name, self.other_name})
@@ -195,7 +162,7 @@ class TestThreads(CommentCase):
 
 	def test_every_comment_carries_its_authors_full_name(self):
 		thread = self.start(self.reader_name, "one")
-		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="two")
+		after = self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="two")
 		self.assertEqual(after["name"], "Sketch Test cmreader")
 		self.assertEqual(after["replies"][0]["name"], "Sketch Test cmother")
 
@@ -209,71 +176,71 @@ class TestThreads(CommentCase):
 	def test_editing_is_for_the_author_alone_the_owner_included(self):
 		thread = self.start(self.reader_name, "mine")
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_edit, self.owner_name, comment=thread["id"], text="owner edit")
+			self.call(viewer_api.comment_edit, self.owner_name, comment=thread["id"], text="owner edit")
 
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_edit, self.other_name, comment=thread["id"], text="other edit")
+			self.call(viewer_api.comment_edit, self.other_name, comment=thread["id"], text="other edit")
 
-		edited = self.call(api.comment_edit, self.reader_name, comment=thread["id"], text="changed")
+		edited = self.call(viewer_api.comment_edit, self.reader_name, comment=thread["id"], text="changed")
 		self.assertEqual((edited["text"], edited["edited"]), ("changed", True))
 
 	def test_deleting_is_for_the_author_and_the_owner(self):
 		thread = self.start(self.reader_name)
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_delete, self.other_name, comment=thread["id"])
+			self.call(viewer_api.comment_delete, self.other_name, comment=thread["id"])
 
-		self.assertIsNone(self.call(api.comment_delete, self.reader_name, comment=thread["id"]))
+		self.assertIsNone(self.call(viewer_api.comment_delete, self.reader_name, comment=thread["id"]))
 		again = self.start(self.reader_name)
-		self.call(api.comment_reply, self.other_name, thread=again["id"], text="reply")
+		self.call(viewer_api.comment_reply, self.other_name, thread=again["id"], text="reply")
 		self.assertEqual(len(self.rows()), 2)
-		self.assertIsNone(self.call(api.comment_delete, self.owner_name, comment=again["id"]))
+		self.assertIsNone(self.call(viewer_api.comment_delete, self.owner_name, comment=again["id"]))
 		self.assertEqual(self.rows(), [], "a thread takes its replies with it")
 
 	def test_a_reply_can_be_deleted_alone(self):
 		thread = self.start(self.reader_name)
-		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="reply")
-		left = self.call(api.comment_delete, self.other_name, comment=after["replies"][0]["id"])
+		after = self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="reply")
+		left = self.call(viewer_api.comment_delete, self.other_name, comment=after["replies"][0]["id"])
 		self.assertEqual((left["id"], left["replies"]), (thread["id"], []))
 
 	def test_a_delete_comes_back_whole_for_the_deleter_once(self):
 		thread = self.start(self.reader_name, "keep me")
-		self.call(api.comment_reply, self.other_name, thread=thread["id"], text="reply")
-		self.call(api.comment_delete, self.owner_name, comment=thread["id"])
+		self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="reply")
+		self.call(viewer_api.comment_delete, self.owner_name, comment=thread["id"])
 		self.assertEqual(self.rows(), [])
 
 		for stranger in (self.reader_name, self.other_name):
 			with self.subTest(who=stranger), self.assertRaises(frappe.DoesNotExistError):
-				self.call(api.comment_restore, stranger, comment=thread["id"])
+				self.call(viewer_api.comment_restore, stranger, comment=thread["id"])
 
-		back = self.call(api.comment_restore, self.owner_name, comment=thread["id"])
+		back = self.call(viewer_api.comment_restore, self.owner_name, comment=thread["id"])
 		self.assertEqual((back["id"], back["text"], back["author"]), (thread["id"], "keep me", self.reader_name))
 		self.assertEqual([r["text"] for r in back["replies"]], ["reply"])
 		with self.assertRaises(frappe.DoesNotExistError):
-			self.call(api.comment_restore, self.owner_name, comment=thread["id"])
+			self.call(viewer_api.comment_restore, self.owner_name, comment=thread["id"])
 		self.assertEqual(len(self.rows()), 2, "a second undo adds nothing")
 
 	def test_a_reply_cannot_come_back_once_its_thread_has_gone(self):
 		thread = self.start(self.reader_name)
-		after = self.call(api.comment_reply, self.reader_name, thread=thread["id"], text="reply")
-		self.call(api.comment_delete, self.reader_name, comment=after["replies"][0]["id"])
-		self.call(api.comment_delete, self.reader_name, comment=thread["id"])
+		after = self.call(viewer_api.comment_reply, self.reader_name, thread=thread["id"], text="reply")
+		self.call(viewer_api.comment_delete, self.reader_name, comment=after["replies"][0]["id"])
+		self.call(viewer_api.comment_delete, self.reader_name, comment=thread["id"])
 		with self.assertRaises(frappe.DoesNotExistError):
-			self.call(api.comment_restore, self.reader_name, comment=after["replies"][0]["id"])
+			self.call(viewer_api.comment_restore, self.reader_name, comment=after["replies"][0]["id"])
 		self.assertEqual(self.rows(), [])
 
 	def test_only_the_owner_deletes_the_resolved_threads(self):
 		done = self.start(self.reader_name, "done")
-		self.call(api.comment_reply, self.other_name, thread=done["id"], text="reply")
-		self.call(api.comment_resolve, self.reader_name, thread=done["id"])
+		self.call(viewer_api.comment_reply, self.other_name, thread=done["id"], text="reply")
+		self.call(viewer_api.comment_resolve, self.reader_name, thread=done["id"])
 		open_ = self.start(self.reader_name, "open")
 		gone = self.start(self.other_name, "on a removed tile")
 
 		for who in (self.reader_name, self.other_name):
 			with self.subTest(who=who), self.assertRaises(frappe.PermissionError):
-				self.call(api.comments_delete_resolved, who)
+				self.call(viewer_api.comments_delete_resolved, who)
 		self.assertEqual(len(self.rows()), 4)
 
-		answer = self.call(api.comments_delete_resolved, self.owner_name, also=json.dumps([gone["id"]]))
+		answer = self.call(viewer_api.comments_delete_resolved, self.owner_name, also=json.dumps([gone["id"]]))
 		self.assertEqual(answer, {"deleted": 2})
 		self.assertEqual(self.rows(), [open_["id"]], "open threads stay; resolved ones take their replies")
 
@@ -281,68 +248,65 @@ class TestThreads(CommentCase):
 		other = utils.make_prototype(self.owner, "d2t-comments-two", files=FILES, is_public=True)
 		self.addCleanup(utils.drop_prototype, other.name)
 		elsewhere = comments.add_thread(other.name, comments.Actor(self.reader_name, self.reader, False), ANCHOR, "elsewhere")
-		self.call(api.comments_delete_resolved, self.owner_name, also=json.dumps([elsewhere]))
+		self.call(viewer_api.comments_delete_resolved, self.owner_name, also=json.dumps([elsewhere]))
 		self.assertTrue(frappe.db.exists("Sketch Comment", elsewhere))
 
 	def test_resolving_is_for_the_starter_and_the_owner(self):
 		thread = self.start(self.reader_name)
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_resolve, self.other_name, thread=thread["id"])
+			self.call(viewer_api.comment_resolve, self.other_name, thread=thread["id"])
 
-		resolved = self.call(api.comment_resolve, self.reader_name, thread=thread["id"])
+		resolved = self.call(viewer_api.comment_resolve, self.reader_name, thread=thread["id"])
 		self.assertTrue(resolved["resolved"])
-		reopened = self.call(api.comment_resolve, self.owner_name, thread=thread["id"], resolved="0")
+		reopened = self.call(viewer_api.comment_resolve, self.owner_name, thread=thread["id"], resolved="0")
 		self.assertFalse(reopened["resolved"])
-		self.assertTrue(self.call(api.comment_resolve, self.owner_name, thread=thread["id"])["resolved"])
+		self.assertTrue(self.call(viewer_api.comment_resolve, self.owner_name, thread=thread["id"])["resolved"])
 		self.assertEqual(comments.open_count(self.doc.name), 0)
 
 	def test_a_stale_page_cannot_bring_a_deleted_comment_back(self):
 		thread = self.start(self.reader_name, "gone soon")
-		self.call(api.comment_delete, self.reader_name, comment=thread["id"])
+		self.call(viewer_api.comment_delete, self.reader_name, comment=thread["id"])
 		# A tab that still shows it: every write it can make now meets a 404, and nothing is created.
 		attempts = (
-			(api.comment_reply, {"thread": thread["id"], "text": "late"}),
-			(api.comment_edit, {"comment": thread["id"], "text": "late"}),
-			(api.comment_resolve, {"thread": thread["id"]}),
-			(api.comment_delete, {"comment": thread["id"]}),
+			(viewer_api.comment_reply, {"thread": thread["id"], "text": "late"}),
+			(viewer_api.comment_edit, {"comment": thread["id"], "text": "late"}),
+			(viewer_api.comment_resolve, {"thread": thread["id"]}),
+			(viewer_api.comment_delete, {"comment": thread["id"]}),
 		)
 		for fn, fields in attempts:
 			with self.subTest(fn=fn.__name__), self.assertRaises(frappe.DoesNotExistError):
 				self.call(fn, self.reader_name, **fields)
 
 		self.assertEqual(self.rows(), [])
-		self.assertEqual(self.call(api.comments_list, self.reader_name)["threads"], [])
+		self.assertEqual(self.call(viewer_api.comments_list, self.reader_name)["threads"], [])
 
 	def test_a_write_only_ever_names_one_comment(self):
 		"""No door takes a whole set, so a stale set has nothing to replace."""
 		import inspect
 
-		allowed = {"name", "username", "exp", "sig", "anchor", "text", "thread", "comment", "resolved"}
-		doors = [n for n in dir(api) if n.startswith("comment_") and n != "comment_pass"]
-		self.assertEqual(len(doors), 7)
+		allowed = {"name", "anchor", "text", "thread", "comment", "resolved"}
+		doors = [n for n in dir(viewer_api) if n.startswith("comment_") and n != "comment_note_draft"]
+		self.assertEqual(len(doors), 6)
 		for name in doors:
-			self.assertLessEqual(set(inspect.signature(getattr(api, name)).parameters), allowed, name)
+			self.assertLessEqual(set(inspect.signature(getattr(viewer_api, name)).parameters), allowed, name)
 
 	def test_an_id_from_another_prototype_is_a_404(self):
 		other = utils.make_prototype(self.owner, "d2t-comments-other", files=FILES, is_public=True)
 		self.addCleanup(utils.drop_prototype, other.name)
 		thread = self.start(self.reader_name)
-		p = comments.mint_ticket(other.name, self.owner_name)
-		with set_user("Guest"):
-			mint = api.comment_pass(other.name, self.owner_name, str(p["exp"]), p["sig"])
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comment_delete(other.name, self.owner_name, str(mint["exp"]), mint["sig"], thread["id"])
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(viewer_api.comment_delete, self.owner_name, name=other.name, comment=thread["id"])
 
 		self.assertEqual(len(self.rows()), 1)
 
 	def test_every_write_takes_the_prototype_lock_first(self):
 		thread = self.start(self.reader_name)
 		writes = (
-			(api.comment_add, {"anchor": json.dumps(ANCHOR), "text": "a"}),
-			(api.comment_reply, {"thread": thread["id"], "text": "b"}),
-			(api.comment_edit, {"comment": thread["id"], "text": "c"}),
-			(api.comment_resolve, {"thread": thread["id"]}),
-			(api.comment_delete, {"comment": thread["id"]}),
+			(viewer_api.comment_add, {"anchor": json.dumps(ANCHOR), "text": "a"}),
+			(viewer_api.comment_reply, {"thread": thread["id"], "text": "b"}),
+			(viewer_api.comment_edit, {"comment": thread["id"], "text": "c"}),
+			(viewer_api.comment_resolve, {"thread": thread["id"]}),
+			(viewer_api.comment_delete, {"comment": thread["id"]}),
 		)
 		for fn, fields in writes:
 			with self.subTest(fn=fn.__name__), mock.patch.object(comments, "_lock", wraps=comments._lock) as lock:
@@ -373,10 +337,10 @@ class TestCaps(CommentCase):
 
 		self.assertEqual(caught.exception.http_status_code, 413)
 		with self.assertRaises(comments.CommentTooLarge):
-			self.call(api.comment_reply, self.reader_name, thread=thread["id"], text=over)
+			self.call(viewer_api.comment_reply, self.reader_name, thread=thread["id"], text=over)
 
 		with self.assertRaises(comments.CommentTooLarge):
-			self.call(api.comment_edit, self.reader_name, comment=thread["id"], text=over)
+			self.call(viewer_api.comment_edit, self.reader_name, comment=thread["id"], text=over)
 
 	def test_the_cap_counts_bytes_not_characters(self):
 		with self.assertRaises(comments.CommentTooLarge):
@@ -401,52 +365,40 @@ class TestCaps(CommentCase):
 	def test_replies_do_not_count_as_threads(self):
 		thread = self.start(self.reader_name)
 		with mock.patch.object(comments, "MAX_THREADS", 1):
-			self.call(api.comment_reply, self.reader_name, thread=thread["id"], text="still fine")
+			self.call(viewer_api.comment_reply, self.reader_name, thread=thread["id"], text="still fine")
 
 	def test_text_with_angle_brackets_survives_the_http_door(self):
 		utils.require_webserver()
-		p = self.pass_for(self.reader_name)
-		form = {
-			"name": self.doc.name,
-			"username": self.reader_name,
-			"exp": str(p["exp"]),
-			"sig": p["sig"],
-			"anchor": json.dumps(ANCHOR),
-			"text": "Use <Badge> & <b>bold</b>",
-		}
+		form = {"name": self.doc.name, "anchor": json.dumps(ANCHOR), "text": "Use <Badge> & <b>bold</b>"}
 		frappe.db.commit()  # the web server reads through its own connection
-		response = utils.request("POST", "/api/method/sketch.api.comment_add", data=form)
+		sid, token = open_session(self.reader)
+		self.addCleanup(delete_session, sid)
+		headers = {"Cookie": f"sid={sid}", "X-Frappe-CSRF-Token": token}
+		response = utils.request("POST", "/api/method/sketch.viewer_api.comment_add", data=form, headers=headers)
 		self.assertEqual(response.status_code, 200, response.text)
 		self.assertEqual(response.json()["message"]["text"], "Use <Badge> & <b>bold</b>")
-		self.assertEqual(response.headers["Access-Control-Allow-Origin"], "*")
-		self.assertNotIn("Access-Control-Allow-Credentials", response.headers)
-		frappe.db.rollback()
+		frappe.db.delete("Sketch Comment", {"prototype": self.doc.name})
+		frappe.db.commit()
 
 
 class TestPrivate(CommentCase):
 	def test_a_reader_loses_comments_at_once_and_gets_them_back(self):
 		thread = self.start(self.reader_name, "still here")
-		p = self.pass_for(self.reader_name)
 		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
-		with set_user("Guest"):
-			for fn, fields in (
-				(api.comments_list, {}),
-				(api.comment_add, {"anchor": json.dumps(ANCHOR), "text": "x"}),
-				(api.comment_reply, {"thread": thread["id"], "text": "x"}),
-				(api.comment_delete, {"comment": thread["id"]}),
-			):
-				with self.subTest(fn=fn.__name__), self.assertRaises(frappe.DoesNotExistError):
-					fn(self.doc.name, self.reader_name, str(p["exp"]), p["sig"], **fields)
-
-			t = self.ticket(self.reader_name)
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comment_pass(self.doc.name, self.reader_name, str(t["exp"]), t["sig"])
+		for fn, fields in (
+			(viewer_api.comments_list, {}),
+			(viewer_api.comment_add, {"anchor": json.dumps(ANCHOR), "text": "x"}),
+			(viewer_api.comment_reply, {"thread": thread["id"], "text": "x"}),
+			(viewer_api.comment_delete, {"comment": thread["id"]}),
+		):
+			with self.subTest(fn=fn.__name__), self.assertRaises(frappe.DoesNotExistError):
+				self.call(fn, self.reader_name, **fields)
 
 		self.assertEqual(self.rows(), [thread["id"]], "hidden, not deleted")
-		seen = self.call(api.comments_list, self.owner_name)
+		seen = self.call(viewer_api.comments_list, self.owner_name)
 		self.assertEqual([t["id"] for t in seen["threads"]], [thread["id"]], "the owner keeps seeing them")
 		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 1)
-		again = self.call(api.comments_list, self.reader_name)
+		again = self.call(viewer_api.comments_list, self.reader_name)
 		self.assertEqual([t["id"] for t in again["threads"]], [thread["id"]])
 
 
@@ -456,9 +408,9 @@ class TestAddToNotes(CommentCase):
 	def test_only_the_owner_gets_a_draft_and_it_saves_nothing(self):
 		thread = self.start(self.reader_name, "Labels are hard to scan")
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_note_draft, self.reader_name, comment=thread["id"])
+			self.call(viewer_api.comment_note_draft, self.reader_name, comment=thread["id"])
 
-		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		draft = self.call(viewer_api.comment_note_draft, self.owner_name, comment=thread["id"])
 		self.assertEqual(draft["note"], "Sketch Test cmreader: Labels are hard to scan")
 		self.assertEqual((draft["anchor"]["selector"], draft["anchor"]["route"]), (ANCHOR["selector"], ANCHOR["route"]))
 		self.assertEqual(annotations.read(self.doc.name)["notes"], [], "the owner has not saved it yet")
@@ -466,11 +418,11 @@ class TestAddToNotes(CommentCase):
 
 	def test_the_draft_is_the_whole_thread_one_line_per_comment_whichever_comment_asked(self):
 		thread = self.start(self.reader_name, "first")
-		after = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="second\nline  two")
-		after = self.call(api.comment_reply, self.owner_name, thread=thread["id"], text="third")
+		after = self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="second\nline  two")
+		after = self.call(viewer_api.comment_reply, self.owner_name, thread=thread["id"], text="third")
 		for asked in (thread["id"], after["replies"][1]["id"]):
 			with self.subTest(asked=asked):
-				draft = self.call(api.comment_note_draft, self.owner_name, comment=asked)
+				draft = self.call(viewer_api.comment_note_draft, self.owner_name, comment=asked)
 				self.assertEqual(
 					draft["note"].split("\n"),
 					["Sketch Test cmreader: first", "Sketch Test cmother: second line two", "Sketch Test cmowner: third"],
@@ -479,13 +431,13 @@ class TestAddToNotes(CommentCase):
 
 	def test_a_mention_reads_as_a_name(self):
 		thread = self.start(self.reader_name, f"@[{self.owner_name}] is this right?")
-		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		draft = self.call(viewer_api.comment_note_draft, self.owner_name, comment=thread["id"])
 		self.assertNotIn("@[", draft["note"])
 		self.assertIn("@Sketch Test cmowner is this right?", draft["note"])
 
 	def test_the_owner_saves_the_edited_words_as_the_note(self):
 		thread = self.start(self.reader_name, "Labels are hard to scan")
-		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		draft = self.call(viewer_api.comment_note_draft, self.owner_name, comment=thread["id"])
 		note = {**draft["anchor"], "id": "n1", "note": "Make the labels bolder"}
 		annotations.save(self.doc.name, json.dumps({"notes": [note]}), 0)
 		stored = annotations.read(self.doc.name)["notes"]
@@ -531,7 +483,7 @@ class TestTiles(CommentCase):
 		self.assertEqual(anchor["tile"], TILE)
 		self.assertEqual(anchor["offset"], {"x": 0.62, "y": 0.3})
 		self.assertEqual((anchor["selector"], anchor["component"], anchor["element"]), ("", "", ""))
-		listed = self.call(api.comments_list, self.owner_name)["threads"]
+		listed = self.call(viewer_api.comments_list, self.owner_name)["threads"]
 		self.assertEqual(listed[0]["anchor"]["tile"]["option"], "donut")
 
 	def test_an_option_is_named_by_its_slot_never_by_its_place_in_the_set(self):
@@ -579,13 +531,10 @@ class TestTiles(CommentCase):
 		thread = self.start(self.reader_name, "Mine", anchor=tile_anchor())
 		other = utils.make_prototype(self.owner, "d2t-comments-tiles-two", files=FILES, is_public=True)
 		self.addCleanup(utils.drop_prototype, other.name)
-		t = comments.mint_ticket(other.name, self.reader_name)
-		with set_user("Guest"):
-			p = api.comment_pass(other.name, self.reader_name, str(t["exp"]), t["sig"])
-			elsewhere = api.comments_list(other.name, self.reader_name, str(p["exp"]), p["sig"])
-			self.assertEqual(elsewhere["threads"], [])
-			with self.assertRaises(frappe.DoesNotExistError):
-				api.comment_resolve(other.name, self.reader_name, str(p["exp"]), p["sig"], thread=thread["id"], resolved="1")
+		elsewhere = self.call(viewer_api.comments_list, self.reader_name, name=other.name)
+		self.assertEqual(elsewhere["threads"], [])
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(viewer_api.comment_resolve, self.reader_name, name=other.name, thread=thread["id"], resolved="1")
 
 	def test_tile_threads_count_toward_the_thread_cap_with_the_rest(self):
 		with mock.patch.object(comments, "MAX_THREADS", 2):
@@ -605,8 +554,8 @@ class TestTiles(CommentCase):
 	def test_a_thread_on_a_tile_that_has_gone_is_still_read_and_resolved(self):
 		# The server keeps no list of options: the canvas decides a tile has gone. The thread must stay whole.
 		thread = self.start(self.reader_name, "Renamed since", anchor=tile_anchor(option="old-name"))
-		self.call(api.comment_reply, self.owner_name, thread=thread["id"], text="Noted")
-		after = self.call(api.comment_resolve, self.owner_name, thread=thread["id"], resolved="1")
+		self.call(viewer_api.comment_reply, self.owner_name, thread=thread["id"], text="Noted")
+		after = self.call(viewer_api.comment_resolve, self.owner_name, thread=thread["id"], resolved="1")
 		self.assertTrue(after["resolved"])
 		self.assertEqual(after["anchor"]["tile"]["option"], "old-name")
 		self.assertEqual(len(after["replies"]), 1)
@@ -614,26 +563,21 @@ class TestTiles(CommentCase):
 	def test_readers_resolve_their_own_and_the_owner_any(self):
 		mine = self.start(self.reader_name, anchor=tile_anchor())
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_resolve, self.other_name, thread=mine["id"], resolved="1")
+			self.call(viewer_api.comment_resolve, self.other_name, thread=mine["id"], resolved="1")
 
-		self.assertTrue(self.call(api.comment_resolve, self.reader_name, thread=mine["id"], resolved="1")["resolved"])
+		self.assertTrue(self.call(viewer_api.comment_resolve, self.reader_name, thread=mine["id"], resolved="1")["resolved"])
 
 	def test_a_private_prototype_refuses_a_reader_a_tile_comment(self):
-		t = self.ticket(self.reader_name)
-		with set_user("Guest"):
-			p = api.comment_pass(self.doc.name, self.reader_name, str(t["exp"]), t["sig"])
-
 		frappe.db.set_value("Sketch Prototype", self.doc.name, "is_public", 0)
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.comment_add(
-				self.doc.name, self.reader_name, str(p["exp"]), p["sig"], anchor=json.dumps(tile_anchor()), text="x"
-			)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(viewer_api.comment_add, self.reader_name, anchor=json.dumps(tile_anchor()), text="x")
 
 		self.assertEqual(self.rows(), [])
 
 	def test_a_guest_cannot_comment_on_a_tile(self):
-		with set_user("Guest"), self.assertRaises(frappe.DoesNotExistError):
-			api.comment_add(self.doc.name, "", "0", "", anchor=json.dumps(tile_anchor()), text="x")
+		with set_user("Guest"), self.assertRaises(frappe.PermissionError):
+			viewer_api.comment_add(self.doc.name, anchor=json.dumps(tile_anchor()), text="x")
+		self.assertEqual(self.rows(), [])
 
 	# -- what the agent reads
 
@@ -675,7 +619,7 @@ class TestTiles(CommentCase):
 		with set_user(self.owner):
 			self.assertEqual(self._annotations()["notes"], [])
 
-		draft = self.call(api.comment_note_draft, self.owner_name, comment=thread["id"])
+		draft = self.call(viewer_api.comment_note_draft, self.owner_name, comment=thread["id"])
 		self.assertEqual(draft["anchor"]["tile"]["option"], "donut", "the tile comes along")
 		note = {**draft["anchor"], "id": "n1", "note": draft["note"]}
 		annotations.save(self.doc.name, json.dumps({"notes": [note]}), 0)
@@ -690,7 +634,7 @@ class TestTiles(CommentCase):
 	def test_a_reader_cannot_copy_a_tile_comment_into_notes(self):
 		thread = self.start(self.reader_name, anchor=tile_anchor())
 		with self.assertRaises(frappe.PermissionError):
-			self.call(api.comment_note_draft, self.reader_name, comment=thread["id"])
+			self.call(viewer_api.comment_note_draft, self.reader_name, comment=thread["id"])
 
 		self.assertEqual(annotations.read(self.doc.name)["notes"], [])
 
@@ -700,9 +644,11 @@ class TestTiles(CommentCase):
 		with set_user(self.reader):
 			renderer = SketchViewerRenderer(path=f"u/{self.owner_name}/{self.doc.slug}")
 			self.assertTrue(renderer.can_render())
-			payload = renderer.payload()
+			payload = renderer.shell_payload()
+			frame = renderer.frame_payload()
 
 		self.assertNotIn("private to my agent", json.dumps(payload))
+		self.assertNotIn("private to my agent", json.dumps(frame))
 		self.assertIsNone(payload["annotations"])
 
 	def test_a_stranger_cannot_read_the_agents_notes_over_mcp(self):
@@ -785,13 +731,13 @@ class TestPicks(CommentCase):
 
 	def test_the_picks_come_back_with_the_thread(self):
 		thread = self.start(self.reader_name, anchor={**ANCHOR, "picks": self.PICKS})
-		listed = self.call(api.comments_list, self.owner_name)["threads"][0]
+		listed = self.call(viewer_api.comments_list, self.owner_name)["threads"][0]
 		self.assertEqual(listed["id"], thread["id"])
 		self.assertEqual(listed["anchor"]["picks"], self.PICKS)
 
 	def test_a_thread_with_no_picks_has_none(self):
 		self.start(self.reader_name)
-		self.assertNotIn("picks", self.call(api.comments_list, self.owner_name)["threads"][0]["anchor"])
+		self.assertNotIn("picks", self.call(viewer_api.comments_list, self.owner_name)["threads"][0]["anchor"])
 
 	def test_a_bad_pick_is_dropped_and_the_rest_kept(self):
 		bad = [
@@ -829,7 +775,7 @@ class TestOutsidersLoseAccess(CommentCase):
 
 	def test_the_share_state_names_those_who_commented_and_are_not_invited(self):
 		self.start(self.reader_name)
-		self.call(api.comment_reply, self.other_name, thread=self.start(self.reader_name)["id"], text="me too")
+		self.call(viewer_api.comment_reply, self.other_name, thread=self.start(self.reader_name)["id"], text="me too")
 		self.start(self.owner_name)
 		self.invite(self.other_name)
 		with set_user(self.owner):
@@ -845,7 +791,7 @@ class TestOutsidersLoseAccess(CommentCase):
 	def test_an_outsiders_comment_stays_and_is_marked_when_it_goes_private(self):
 		self.invite(self.other_name)
 		thread = self.start(self.reader_name, "Outsider")
-		self.call(api.comment_reply, self.other_name, thread=thread["id"], text="Editor")
+		self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="Editor")
 		self.start(self.owner_name, "Owner")
 		self.go_private()
 		listed = comments.list_threads(self.doc.name)
@@ -854,11 +800,11 @@ class TestOutsidersLoseAccess(CommentCase):
 		self.assertEqual([r["noAccess"] for r in by_text["Outsider"]["replies"]], [False], "an editor keeps access")
 		self.assertFalse(by_text["Owner"]["noAccess"])
 
-	def test_an_outsider_does_not_open_the_pass_when_it_is_private(self):
+	def test_an_outsider_cannot_open_the_comments_when_it_is_private(self):
 		self.start(self.reader_name)
 		self.go_private()
-		with self.assertRaises(Exception):
-			self.pass_for(self.reader_name)
+		with self.assertRaises(frappe.DoesNotExistError):
+			self.call(viewer_api.comments_list, self.reader_name)
 
 	def test_inviting_them_gives_the_access_back(self):
 		self.start(self.reader_name)
@@ -928,9 +874,9 @@ class TestConversations(CommentCase):
 	def mentioned_only(self):
 		"""The other person replied once, was mentioned after, and took their own reply back: only the mention is left."""
 		thread = self.start(self.reader_name)
-		reply = self.call(api.comment_reply, self.other_name, thread=thread["id"], text="hm")["replies"][0]
-		self.call(api.comment_reply, self.owner_name, thread=thread["id"], text=f"@[{self.other_name}] what do you think?")
-		self.call(api.comment_delete, self.other_name, comment=reply["id"])
+		reply = self.call(viewer_api.comment_reply, self.other_name, thread=thread["id"], text="hm")["replies"][0]
+		self.call(viewer_api.comment_reply, self.owner_name, thread=thread["id"], text=f"@[{self.other_name}] what do you think?")
+		self.call(viewer_api.comment_delete, self.other_name, comment=reply["id"])
 		self.assertFalse(frappe.db.exists(comments.COMMENT, {"prototype": self.doc.name, "author": self.other_name}))
 
 	def test_a_mention_puts_it_there_without_a_comment(self):
@@ -961,13 +907,8 @@ class TestConversations(CommentCase):
 		later = utils.make_prototype(self.owner, "d2t-comments-two", files=FILES, is_public=True)
 		self.addCleanup(utils.drop_prototype, later.name)
 		self.start(self.reader_name)
-		p = self.pass_for(self.reader_name)
-		with set_user("Guest"):
-			mint = comments.mint_ticket(later.name, self.reader_name)
-			door = api.comment_pass(later.name, self.reader_name, str(mint["exp"]), mint["sig"])
-			api.comment_add(later.name, self.reader_name, str(door["exp"]), door["sig"], anchor=json.dumps(ANCHOR), text="second")
+		self.call(viewer_api.comment_add, self.reader_name, name=later.name, anchor=json.dumps(ANCHOR), text="second")
 		self.assertEqual(self.listed(self.reader), [later.name, self.doc.name])
-		self.assertTrue(p)
 
 	def test_a_guest_has_none(self):
 		self.start(self.reader_name)
