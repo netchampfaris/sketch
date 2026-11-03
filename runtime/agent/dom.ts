@@ -13,6 +13,9 @@ export function setSourceFiles(files: Record<string, string>) {
   fileMap = null
 }
 
+// The tree itself, for Tweak's hard-coded copy (tweakDom.ts copySource). Never sent on.
+export const sourceFiles = () => source
+
 export const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(n, hi))
 export const typing = (t: EventTarget | null) => {
   const el = t as HTMLElement | null

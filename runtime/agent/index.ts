@@ -6,6 +6,7 @@ import { watch } from 'vue'
 import { envelope, read, toFrame, type FromFrame, type Theme, type ToFrame } from '../shared/protocol'
 import { isOurs, pageLayerOpen, routeKey, setSourceFiles, typing } from './dom'
 import { startPicking } from './pick'
+import { startTweak } from './tweakPick'
 
 type Router = {
 	afterEach: (fn: () => void) => void
@@ -162,8 +163,20 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 
 	let theme = themeNow()
 	const picker = startPicking(post, () => (variants && router ? variants.currentPicks(router.currentRoute.value) : []))
+	// Tweak hears its keys before forwardKeys below sends Escape on: started first, its window listener runs first.
+	const tweak = router ? startTweak(post, () => routeKey(router.currentRoute.value)) : null
 	const handlers: { [K in keyof ToFrame]?: (d: ToFrame[K]) => void } = {
-		tool: picker.tool,
+		tool: (d) => {
+			picker.tool(d)
+			tweak?.tool(d)
+		},
+		'tweak:inspect': (d) => void tweak?.inspect(d),
+		'tweak:preview': (d) => tweak?.preview(d),
+		'tweak:commit': (d) => tweak?.commit(d),
+		'tweak:cancel': (d) => tweak?.cancel(d),
+		'tweak:props': (d) => tweak?.props(d),
+		'tweak:copy': (d) => tweak?.copy(d),
+		'tweak:reapply': (d) => tweak?.reapply(d),
 		selection: picker.selection,
 		step: picker.step,
 		track: picker.track,
@@ -229,6 +242,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 			postRoute()
 			postLayout()
 			picker.routed()
+			tweak?.routed(routeKey(router.currentRoute.value))
 		})
 	}
 	forwardKeys()
