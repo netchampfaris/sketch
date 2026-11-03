@@ -100,10 +100,11 @@ const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
 
-// Desktop: a panel on the right, open or not for the whole session. Phone: the Show dropdown.
+// Desktop: a panel on the right, open or not for the whole session. Phone: the Show dropdown. In the Viewer shell the
+// panel is the shell's, drawn over this frame, and it says how much room it takes (`bridge.shellReserve`).
 const PANEL_W = 312
 const panelOpen = ref(session.panel)
-const panelShown = computed(() => !phone.value && panelOpen.value)
+const panelShown = computed(() => !phone.value && (bridge.shell ? bridge.shellReserve > 0 : panelOpen.value))
 const setPanel = (o: boolean) => (panelOpen.value = session.panel = o)
 const pickerOpen = ref(false)
 function choose(v: string) {
@@ -399,6 +400,8 @@ onBeforeUnmount(() => {
   bridge.corner = 0
   document.documentElement.style.removeProperty('--sketch-panel-w')
   bridge.view = ''
+  bridge.pan = { x: 0, y: 0 }
+  bridge.items = []
   alive = false
   pending?.(errorSnap('Closed'))
   detach()
@@ -413,7 +416,9 @@ function onViewportClick(e: MouseEvent) {
   if (pz.moved()) return
   // The clicked element may already be gone (an error box is replaced by the live render), so look at the path.
   const path = e.composedPath() as HTMLElement[]
-  if (!path.some((n) => n.hasAttribute?.('data-tile') || n.hasAttribute?.('data-live'))) liveId.value = null
+  if (path.some((n) => n.hasAttribute?.('data-tile') || n.hasAttribute?.('data-live'))) return
+  liveId.value = null
+  if (bridge.tool) bridge.onEmptyClick?.()
 }
 function activate(t: TileBox, e?: MouseEvent | KeyboardEvent) {
   const tool = bridge.tool
@@ -481,6 +486,8 @@ async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
 
 watch(pickValue, (v) => (bridge.view = v), { immediate: true })
 watch(() => view.z, (z) => (bridge.zoom = z), { immediate: true })
+watch(() => [view.x, view.y], ([x, y]) => (bridge.pan = { x, y }), { immediate: true })
+watch(items, (i) => (bridge.items = i), { immediate: true })
 watch(model, (m) => (bridge.model = m), { immediate: true })
 watch(phone, (p) => (bridge.phone = p), { immediate: true })
 watch(() => layout.value.tiles, (t) => (bridge.tiles = t), { immediate: true })
@@ -598,10 +605,10 @@ watch(
         <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
       </div>
 
-      <Panel v-if="panelShown" :items="items" :selected="pickValue" @choose="choose" @hide="setPanel(false)" />
+      <Panel v-if="panelShown && !bridge.shell" :items="items" :selected="pickValue" @choose="choose" @hide="setPanel(false)" />
       <!-- Where the hide button sits in the open panel, so the icon stays put when toggled. -->
       <div
-        v-else-if="!phone"
+        v-else-if="!phone && !bridge.shell"
         data-ui
         class="absolute right-6 top-6 z-10 rounded-[8px] bg-surface-elevation-2 shadow-sm ring-1 ring-outline-gray-2"
       >

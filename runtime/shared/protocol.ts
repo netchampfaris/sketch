@@ -203,9 +203,26 @@ export type FromFrame = {
 	demo: { entries: DemoEntry[] }
 	rects: { req: string; map: Record<string, Rect | null> }
 	track: { map: Record<string, Rect | null>; labels: Record<string, string> }
-	canvas: { open: boolean; phone: boolean; view: string; zoom: number; pan: { x: number; y: number }; tiles: CanvasTile[] }
+	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, and how wide the zoom pill in the bottom-right
+	// corner is. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
+	// come only when they changed: the pan and zoom alone come once per frame while they move.
+	canvas: {
+		open: boolean
+		phone: boolean
+		view: string
+		zoom: number
+		pan: { x: number; y: number }
+		corner: number
+		tiles?: CanvasTile[]
+		pages?: CanvasPage[]
+		items?: PickItem[]
+	}
 	'tile:menu': { tileId: string; rect: Rect }
 	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
+	// A click on the canvas off every tile while a tool is in hand: the shell's comment box closes, as a click outside does.
+	'canvas:click': Obj
+	// The answer to `canvas:reveal`: where the spot is on the screen now, or null when the canvas has no such tile.
+	'canvas:revealed': { req: string; point: { x: number; y: number } | null }
 	// `layer` says what was open in the page when the key went down: a dialog, another layer (a menu, a popover,
 	// a list), or nothing. That layer takes Escape itself, before the shell hears of it.
 	key: { key: string; mods: string[]; layer: '' | 'dialog' | 'layer' }
@@ -215,7 +232,13 @@ export type Page = { path: string; title: string }
 export type ModelOption = { value: string; label: string; author: string }
 export type ModelSet = { id: string; key: string; name: string; label: string; file: string; path: string; options: ModelOption[] }
 export type ModelState = { id: string; label: string; value: string; options: string[] }
-export type CanvasTile = { id: string; rect: Rect; tile: TileRef; label: string; isDefault: boolean; isNew: boolean; author: string }
+// `rect` is in the canvas's own coordinates: the screen point is pan + rect * zoom.
+export type CanvasTile = { id: string; route: string; rect: Rect; tile: TileRef; label: string; isDefault: boolean; author: string }
+// What the canvas found on a page, enough to tell whether a pinned tile still exists (sets by key with their option
+// values, states by key with their options).
+export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[] }
+// One row of the Show list (runtime/variants/picker.ts PickItem).
+export type PickItem = { value: string; label: string; sub: string; short: string; complete: boolean; group: 'sets' | 'states' | 'pages'; options: string[] }
 export type ComponentInfo = { component: string; chain: string[]; file: string }
 // One element picked in the page. `ref` names it for later messages (selection, step, track), so the frame
 // can find the same element again while it lives; `selector` is the fallback once it is gone.
@@ -265,14 +288,38 @@ const canvasTile = (v: unknown): CanvasTile | null =>
 	isObj(v)
 		? all<CanvasTile>({
 				id: str(v.id),
+				route: str(v.route, CAPS.route),
 				rect: rect(v.rect),
 				tile: tileRef(v.tile),
 				label: str(v.label),
 				isDefault: bool(v.isDefault ?? false),
-				isNew: bool(v.isNew ?? false),
 				author: str(v.author ?? ''),
 			})
 		: null
+const keyed = (v: unknown) => (isObj(v) ? all<{ key: string; options: string[] }>({ key: str(v.key), options: strings(v.options, CAPS.options) }) : null)
+const canvasPage = (v: unknown): CanvasPage | null =>
+	isObj(v)
+		? all<CanvasPage>({
+				path: str(v.path, CAPS.route),
+				title: str(v.title),
+				sets: list(v.sets, CAPS.sets, keyed),
+				states: list(v.states, CAPS.sets, keyed),
+			})
+		: null
+const pickItem = (v: unknown): PickItem | null =>
+	isObj(v)
+		? all<PickItem>({
+				value: str(v.value, CAPS.route),
+				label: str(v.label),
+				sub: str(v.sub ?? ''),
+				short: str(v.short, 40),
+				complete: bool(v.complete ?? true),
+				group: oneOf(v.group, ['sets', 'states', 'pages'] as const),
+				options: strings(v.options ?? [], CAPS.options),
+			})
+		: null
+// A list that may be left out: absent stays absent, present must read.
+const maybe = <T>(v: unknown, read: (v: unknown) => T | null): T | null | undefined => (v === undefined ? undefined : read(v))
 const page = (v: unknown): Page | null => (isObj(v) ? all<Page>({ path: str(v.path, CAPS.route), title: str(v.title) }) : null)
 const componentInfo = (v: unknown): ComponentInfo | null =>
 	isObj(v) ? all<ComponentInfo>({ component: str(v.component), chain: strings(v.chain, 10), file: str(v.file ?? '', CAPS.route) }) : null
@@ -319,17 +366,35 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 	demo: (d) => all({ entries: list(d.entries, CAPS.sets, demoEntry) }),
 	rects: (d) => all({ req: str(d.req, 40), map: rectMap(d.map) }),
 	track: (d) => all({ map: rectMap(d.map), labels: record(d.labels ?? {}, CAPS.rects, (x) => str(x)) }),
-	canvas: (d) =>
-		all({
+	canvas: (d) => {
+		const base = all({
 			open: bool(d.open),
 			phone: bool(d.phone),
-			view: str(d.view, 40),
-			zoom: num(d.zoom),
+			view: str(d.view, CAPS.route),
+			// A zoom of zero or less cannot be drawn (the pins divide by it).
+			zoom: typeof d.zoom === 'number' && d.zoom > 0 ? num(Math.max(d.zoom, 0.01)) : null,
 			pan: point(d.pan),
-			tiles: list(d.tiles, CAPS.tiles, canvasTile),
-		}),
+			corner: num(d.corner ?? 0),
+		})
+		if (!base) return null
+		const parts = {
+			tiles: maybe(d.tiles, (v) => list(v, CAPS.tiles, canvasTile)),
+			pages: maybe(d.pages, (v) => list(v, CAPS.list, canvasPage)),
+			items: maybe(d.items, (v) => list(v, CAPS.tiles, pickItem)),
+		}
+		if (Object.values(parts).some((x) => x === null)) return null
+		return some({ ...base, ...parts })
+	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
 	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
+	'canvas:click': () => ({}),
+	'canvas:revealed': (d) => {
+		const req = str(d.req, 40)
+		if (req === null) return null
+		if (d.point === null) return { req, point: null }
+		const p = point(d.point)
+		return p && { req, point: p }
+	},
 	// Escape and the tool shortcuts only: the frame has the focus while a person works in the page.
 	key: (d) =>
 		all({
@@ -361,9 +426,13 @@ export type ToFrame = {
 	nav: { path: string }
 	'state:set': { id: string; value: string }
 	'picks:apply': { picks: PickRef[] }
+	// Open the canvas on a view, or show another view in it when it is open.
 	'canvas:open': { view?: string }
 	'canvas:close': Obj
-	'canvas:reveal': { tile: TileRef }
+	// Bring a tile into view, `fx, fy` being the spot on it as a fraction. The frame answers with `canvas:revealed`.
+	'canvas:reveal': { req: string; spot: TileSpot; fx: number; fy: number }
+	// The tool picking tiles, '' while browsing: a click on a tile is then a `tile:pick`, not opening it live.
+	'canvas:tool': { tool: '' | 'comment' | 'note' }
 	// Where the shell's chrome sits, for the page's own chrome to keep clear of it. Any field may be left out.
 	display: { newOptions?: string[]; reserve?: number; corner?: string; toolbarLift?: number; toolbarRight?: number }
 	theme: { theme: Theme }
@@ -398,9 +467,10 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	nav: (d) => all({ path: str(d.path, CAPS.route) }),
 	'state:set': (d) => all({ id: str(d.id), value: str(d.value) }),
 	'picks:apply': (d) => all({ picks: list(d.picks, CAPS.sets, pickRef) }),
-	'canvas:open': (d) => some({ view: str(d.view, 40) }),
+	'canvas:open': (d) => some({ view: str(d.view, CAPS.route) }),
 	'canvas:close': () => ({}),
-	'canvas:reveal': (d) => all({ tile: tileRef(d.tile) }),
+	'canvas:reveal': (d) => all({ req: str(d.req, 40), spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy) }),
+	'canvas:tool': (d) => all({ tool: oneOf(d.tool, ['', 'comment', 'note'] as const) }),
 	display: (d) =>
 		some({
 			newOptions: strings(d.newOptions, CAPS.options),

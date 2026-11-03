@@ -4,6 +4,7 @@
 import { shallowReactive } from 'vue'
 import type { Component } from 'vue'
 import type { PageModel, TileBox } from './layout'
+import type { PickItem } from './picker'
 
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
@@ -27,6 +28,9 @@ export const bridge = shallowReactive({
   corner: 0,
   model: null as PageModel[] | null,
   tiles: [] as TileBox[],
+  // The pan (the zoom is above), and the Show list's rows, for the Viewer shell, which draws the pins and the panel.
+  pan: { x: 0, y: 0 },
+  items: [] as PickItem[],
   // Asked of the canvas: bring a tile into view and give its point on the screen; leave the canvas.
   reveal: null as ((spot: TileSpot, at?: { fx: number; fy: number }) => Promise<{ x: number; y: number } | null>) | null,
   pointOf: null as ((spot: TileSpot, at: { fx: number; fy: number }) => { x: number; y: number } | null) | null,
@@ -46,6 +50,12 @@ export const bridge = shallowReactive({
   // The pins drawn on the tiles, and the content of each extra tab.
   Pins: null as Component | null,
   tabs: {} as { comments?: Component; notes?: Component },
+  // ---- Set by the Viewer shell's agent (runtime/agent): the panel and the toolbar are the shell's, drawn over the
+  // canvas. `shellReserve` is the room the shell's panel takes on the right; `onEmptyClick` hears a click on the
+  // canvas off every tile while a tool is in hand.
+  shell: false,
+  shellReserve: 312,
+  onEmptyClick: null as (() => void) | null,
 })
 
 // ---- Tiles as data

@@ -32,8 +32,9 @@ const SHORTCUTS = ['n', 'c', 't']
 let started = false
 
 function post<K extends keyof FromFrame>(type: K, data: FromFrame[K]) {
-	// An opaque origin cannot name the shell's origin, and nothing here is secret.
-	parent.postMessage(envelope(type, data), '*')
+	// An opaque origin cannot name the shell's origin, and nothing here is secret. Plain data only: what the canvas
+	// learned of the pages is partly reactive, which cannot be cloned across.
+	parent.postMessage(JSON.parse(JSON.stringify(envelope(type, data))), '*')
 }
 
 const themeNow = (): Theme => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
@@ -92,6 +93,64 @@ function postLayout() {
 	})
 }
 
+// ---- The canvas ------------------------------------------------------------------------------
+// The canvas draws its tiles here; the shell draws its panel, its toolbar and the pins on the tiles. A tile clicked with
+// a tool in hand is a `tile:pick` (Canvas.vue `activate`), a click off the tiles a `canvas:click`. What the canvas shows
+// goes up at most once a frame: the pan and zoom every time, the tiles, pages and Show rows only when they changed.
+function startCanvas(variants: any) {
+	const { bridge, spotOf } = variants
+	bridge.shell = true
+	bridge.pick = (hit: any) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
+	bridge.onEmptyClick = () => post('canvas:click', {})
+
+	const tilesOf = (): FromFrame['canvas']['tiles'] =>
+		(bridge.tiles as any[]).flatMap((t) => {
+			const spot = spotOf(t, bridge.view)
+			if (!spot) return []
+			return [{ id: t.id, route: spot.route, rect: { x: t.x, y: t.y, w: t.w, h: t.h }, tile: spot.tile, label: t.opt ?? t.caption ?? '', isDefault: !!t.isDefault, author: t.author ?? '' }]
+		})
+	const pagesOf = (): FromFrame['canvas']['pages'] =>
+		((bridge.model ?? []) as any[]).map((p) => ({
+			path: p.path,
+			title: p.title,
+			sets: p.sets.map((s: any) => ({ key: s.key, options: s.options.map((o: any) => o.value) })),
+			states: p.states.map((s: any) => ({ key: s.key, options: s.options })),
+		}))
+	const itemsOf = (): FromFrame['canvas']['items'] =>
+		(bridge.items as any[]).map((i) => ({ value: i.value, label: i.label, sub: i.sub ?? '', short: i.short, complete: i.complete ?? true, group: i.group, options: i.options ?? [] }))
+
+	let sent = { tiles: '', pages: '', items: '' }
+	let queued = false
+	const send = () => {
+		queued = false
+		const msg: FromFrame['canvas'] = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner }
+		// Closed, it has nothing to show, and opened again it says everything again.
+		if (!bridge.open) {
+			sent = { tiles: '', pages: '', items: '' }
+			return post('canvas', msg)
+		}
+		const parts = { tiles: tilesOf(), pages: pagesOf(), items: itemsOf() }
+		for (const k of ['tiles', 'pages', 'items'] as const) {
+			// The pages are unknown until the canvas has looked: none is not the same as an empty list.
+			if (k === 'pages' && !bridge.model) continue
+			const json = JSON.stringify(parts[k])
+			if (json === sent[k]) continue
+			sent[k] = json
+			;(msg as any)[k] = parts[k]
+		}
+		post('canvas', msg)
+	}
+	watch(
+		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.tiles, bridge.model, bridge.items],
+		() => {
+			if (queued) return
+			queued = true
+			requestAnimationFrame(send)
+		},
+		{ immediate: true },
+	)
+}
+
 export async function startAgent({ status, routes, router, files, repaint }: AgentStart) {
 	if (started || window.parent === window) return
 	started = true
@@ -111,11 +170,27 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		scrollTo: picker.scrollTo,
 		escape: escapeInPage,
 		'picks:apply': ({ picks }) => router && variants?.applyPicks(picks as any, router),
-		// The Demo pill rides above the shell's toolbar on a phone when the two would meet (Pills.vue).
+		// The Demo pill rides above the shell's toolbar on a phone when the two would meet (Pills.vue). The canvas fits
+		// its tiles in the room the shell's panel leaves. The options new to this reader get their "New" badge.
 		display: (d) => {
 			if (!variants) return
 			if (d.toolbarLift !== undefined) variants.bridge.toolbarLift = d.toolbarLift
 			if (d.toolbarRight !== undefined) variants.bridge.toolbarRight = d.toolbarRight
+			if (d.reserve !== undefined) variants.bridge.shellReserve = Math.max(0, d.reserve)
+			for (const o of d.newOptions ?? []) variants.badges.fresh[o] = true
+		},
+		'canvas:open': ({ view }) => {
+			if (!router || !variants) return
+			const id = view || 'page:' + router.currentRoute.value.path
+			// Open, it shows another view in place (as the panel's rows do); closed, it opens on top of the page, so Back leaves it.
+			if (variants.bridge.open) router.replace({ query: { ...router.currentRoute.value.query, canvas: id } }).catch(() => {})
+			else variants.openCanvas(router, id)
+		},
+		'canvas:close': () => router && variants?.bridge.open && variants.closeCanvas(router),
+		'canvas:tool': ({ tool }) => variants && (variants.bridge.tool = tool),
+		'canvas:reveal': async ({ req, spot, fx, fy }) => {
+			const point = (await variants?.bridge.reveal?.(spot, { fx, fy }).catch(() => null)) ?? null
+			post('canvas:revealed', { req, point })
 		},
 		theme: ({ theme: next }) => {
 			theme = next
@@ -152,15 +227,11 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	forwardKeys()
 
 	// The Demo's sets and states, and what each shows, whenever they change: the shell tells from them whether a
-	// comment's picks are on show. The canvas opening and closing hides the shell's page tools.
+	// comment's picks are on show. The canvas, for the shell's panel and the pins it draws on the tiles.
 	if (variants) {
-		const { bridge, demoEntries } = variants
+		const { demoEntries } = variants
 		watch(() => JSON.stringify(demoEntries()), () => post('demo', { entries: demoEntries() }), { immediate: true })
-		watch(
-			() => [bridge.open, bridge.phone] as const,
-			([open, phone]) => post('canvas', { open, phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: { x: 0, y: 0 }, tiles: [] }),
-			{ immediate: true },
-		)
+		startCanvas(variants)
 	}
 
 	// The Prototype may switch its own theme (a toggle in the page writes data-theme); the shell follows it. The
