@@ -125,10 +125,12 @@ type Draft = {
 	tile?: TileHit
 	// A note made from a thread ("Add to notes"): the thread's own anchor, kept as it is.
 	anchor?: PinAnchor
-	editing?: string // id of the note, or in Comment mode the thread, being edited
+	// The note or thread the box is open on; none for a new one.
+	editing?: Editing
 	component: string
 	extra: number
 }
+type Editing = { kind: 'note'; id: string } | { kind: 'thread'; id: string }
 const draft = shallowRef<Draft | null>(null)
 const draftKey = ref(0)
 const text = ref('')
@@ -233,7 +235,7 @@ function show(els: Element[], x: number, y: number, box?: BoxInfo) {
 function openEdit(n: Note, x: number, y: number) {
 	const els = [0, ...(n.extras ?? []).map((_, i) => i + 1)].map((i) => resolveNote(n, i)).filter((e): e is Element => !!e)
 	text.value = n.note
-	draft.value = { x, y, els, infos: [], box: n.box, editing: n.id, component: n.component || n.element.split(/[.\s]/)[0], extra: n.extras?.length ?? 0 }
+	draft.value = { x, y, els, infos: [], box: n.box, editing: { kind: 'note', id: n.id }, component: n.component || n.element.split(/[.\s]/)[0], extra: n.extras?.length ?? 0 }
 	draftKey.value++
 }
 
@@ -288,8 +290,9 @@ function save() {
 	const d = draft.value
 	const t = text.value.trim()
 	if (!d || !t) return
-	if (d.editing) updateNote(d.editing, t)
-	else if (d.anchor) {
+	if (d.editing) {
+		if (d.editing.kind === 'note') updateNote(d.editing.id, t)
+	} else if (d.anchor) {
 		const { picks, ...where } = d.anchor
 		addNote({ ...where, note: t }, d.els)
 	} else if (d.tile) addNote({ ...tileAnchor(d.tile, d.tile), note: t })
@@ -298,7 +301,10 @@ function save() {
 }
 
 // ---- Comments: the thread open beside its pin ---------------------------------------------
-const thread = computed(() => threadById(draft.value?.editing))
+const thread = computed(() => {
+	const e = draft.value?.editing
+	return e?.kind === 'thread' ? threadById(e.id) : undefined
+})
 const newAnchor = computed(() => {
 	const d = draft.value
 	if (!d || d.editing) return undefined
@@ -328,7 +334,7 @@ function openThreadNow(t: Thread, x: number, y: number) {
 	const els = [0, ...(t.anchor.extras ?? []).map((_, i) => i + 1)]
 		.map((i) => resolve(i === 0 ? t.anchor.selector : (t.anchor.extras?.[i - 1]?.selector ?? '')))
 		.filter((e): e is Element => !!e)
-	draft.value = { x, y, els, infos: [], box: t.anchor.box, editing: t.id, component: t.anchor.component || t.anchor.element.split(/[.\s]/)[0], extra: t.anchor.extras?.length ?? 0 }
+	draft.value = { x, y, els, infos: [], box: t.anchor.box, editing: { kind: 'thread', id: t.id }, component: t.anchor.component || t.anchor.element.split(/[.\s]/)[0], extra: t.anchor.extras?.length ?? 0 }
 	draftKey.value++
 	const a = t.anchor
 	const spot = spotOfThread(t)
@@ -337,7 +343,7 @@ function openThreadNow(t: Thread, x: number, y: number) {
 // A thread you made keeps its popover: it turns from the composer into the thread in place.
 function onCreated(t: Thread) {
 	const d = draft.value
-	if (d) draft.value = { ...d, editing: t.id, comp: undefined }
+	if (d) draft.value = { ...d, editing: { kind: 'thread', id: t.id }, comp: undefined }
 	text.value = ''
 }
 // The owner's "Add to notes": the Note tool opens on the thread's words, in the same place. Nothing is saved until
@@ -357,7 +363,7 @@ async function onNoteDraft(d: { note: string; anchor: PinAnchor }) {
 }
 // The thread is gone (deleted here, or by its author or the owner in another tab).
 watch(thread, (t, was) => {
-	if (was && !t && draft.value?.editing === was.id) close()
+	if (was && !t && draft.value?.editing?.kind === 'thread' && draft.value.editing.id === was.id) close()
 })
 // A new comment or note on a tile has no pin yet: the canvas draws a draft one where the tile was clicked.
 watch(
@@ -369,12 +375,16 @@ watch(
 	{ immediate: true },
 )
 watch(
-	() => draft.value?.editing,
-	(id) => {
-		openThread.value = mode.value === 'comment' ? (id ?? null) : null
+	() => {
+		const e = draft.value?.editing
+		return e && `${e.kind}:${e.id}`
+	},
+	() => {
+		const e = draft.value?.editing
+		openThread.value = e?.kind === 'thread' ? e.id : null
 		// Opening a thread is reading it.
-		if (id && mode.value === 'comment') read(id)
-		canvasUi.noteId = mode.value === 'note' ? (id ?? '') : ''
+		if (e?.kind === 'thread') read(e.id)
+		canvasUi.noteId = e?.kind === 'note' ? e.id : ''
 	},
 )
 
@@ -480,7 +490,8 @@ async function openNoteFromList(n: Note, row?: HTMLElement) {
 }
 
 function remove() {
-	if (draft.value?.editing) removeNote(draft.value.editing)
+	const e = draft.value?.editing
+	if (e?.kind === 'note') removeNote(e.id)
 	close()
 }
 
@@ -1287,7 +1298,7 @@ function revealTweak(id: string) {
 	<TweakLayer v-if="noter" />
 
 	<template v-if="enabled">
-		<Pins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="draft?.editing" @open="(n, x, y) => openEdit(n, x, y)" />
+		<Pins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="draft?.editing?.kind === 'note' ? draft.editing.id : undefined" @open="(n, x, y) => openEdit(n, x, y)" />
 		<CommentPins v-if="active && mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" @draft="reopenDraft" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
