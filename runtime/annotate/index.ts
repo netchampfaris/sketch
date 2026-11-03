@@ -6,8 +6,9 @@
 import { createApp } from 'vue'
 import Annotate from './Annotate.vue'
 import { isOurs, ownMenuOpen } from './annotate'
-import { canNote, initHost, type Payload } from './host'
+import { canNote, host, initHost, type Payload } from './host'
 import { restore, startSaving } from './store'
+import { setSourceFiles } from '../agent/dom'
 
 export function mountAnnotate(data: Payload) {
   const root = document.getElementById('app') as (HTMLElement & { __vue_app__?: any }) | null
@@ -15,6 +16,7 @@ export function mountAnnotate(data: Payload) {
   if (!router || !(data.annotate_sig || data.commenter || data.sign_in) || document.querySelector('[data-sketch-ui="annotate"]')) return
 
   initHost(data, router)
+  setSourceFiles(host.files)
   restore()
 
   const el = document.createElement('div')

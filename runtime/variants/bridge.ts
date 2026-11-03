@@ -5,24 +5,12 @@ import { shallowReactive } from 'vue'
 import type { Component } from 'vue'
 import type { PageModel, TileBox } from './layout'
 
-// A canvas tile in plain data: the page it belongs to (`route` sits beside it in an anchor), the variant option
-// or page state it shows, and the view it was pinned in. Options are named by their slot, never by their order,
-// so a tile keeps its comments when Make default reorders a set.
-export type TileRef = {
-  kind: 'set' | 'state' | 'default'
-  // The URL value of the pick the tile was pinned in: `set:overview/spend-summary`.
-  view: string
-  // Words for people and agents: the page title, the set or state label, the option's label.
-  page: string
-  group: string
-  groupKey: string
-  option: string
-  optionLabel: string
-}
-// A tile and the page it sits on, as an anchor stores them.
-export type TileSpot = { route: string; tile: TileRef }
-// A click on a tile: the spot, where on it as a fraction, and where on the screen.
-export type TileHit = TileSpot & { fx: number; fy: number; x: number; y: number }
+// A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
+// which the Viewer shell shares.
+import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/tiles'
+
+export { sameTile, tileLabel, whereOf } from '../shared/tiles'
+export type { TileHit, TileRef, TileSpot }
 
 export type Tab = 'browse' | 'comments' | 'notes'
 
@@ -78,10 +66,6 @@ export const spotOf = (t: TileBox, view: string): TileSpot | null => {
   return tile ? { route: t.path, tile } : null
 }
 
-// The same tile, whichever view it was pinned in.
-export const sameTile = (a: TileSpot, b: TileSpot) =>
-  a.route === b.route && a.tile.kind === b.tile.kind && a.tile.groupKey === b.tile.groupKey && a.tile.option === b.tile.option
-
 export function findTile(tiles: TileBox[], spot: TileSpot, view: string): TileBox | undefined {
   return tiles.find((t) => {
     const s = spotOf(t, view)
@@ -98,28 +82,4 @@ export function tileExists(model: PageModel[] | null, spot: TileSpot): boolean |
   if (kind === 'default') return true
   if (kind === 'set') return !!page.sets.find((s) => s.key === groupKey)?.options.some((o) => o.value === option)
   return !!page.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
-}
-
-// The tile in plain words, the way the agent reads it: "Canvas · Overview › Spend summary › option Donut".
-// Mirrors sketch/comments.py `where_of`.
-export function whereOf(spot: TileSpot): string {
-  const { tile } = spot
-  const say = (v: string) => (v || '').split(/\s+/).filter(Boolean).join(' ')
-  const page = say(tile.page) || say(spot.route)
-  const option = say(tile.optionLabel) || say(tile.option)
-  const group = say(tile.group) || say(tile.groupKey)
-  const parts =
-    tile.kind === 'set'
-      ? [page, group, `option ${option}`]
-      : tile.kind === 'state'
-        ? [page, ...(group && group.toLowerCase() !== 'state' ? [group] : []), `state ${option}`]
-        : [page, 'default']
-  return 'Canvas · ' + parts.filter(Boolean).join(' › ')
-}
-
-// The tile's name inside its page, for a list row: "Spend summary › Donut", or just the option when the page is clear.
-export function tileLabel(tile: TileRef, short = false): string {
-  if (tile.kind === 'default') return 'Default'
-  if (tile.kind === 'state' || short) return tile.optionLabel || tile.option
-  return `${tile.group || tile.groupKey} › ${tile.optionLabel || tile.option}`
 }

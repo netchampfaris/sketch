@@ -2,19 +2,10 @@
 // held. A comment saves them so that, later, a person can see what it was about, and the page can be put back the same way.
 // Plain data in the anchor (sketch/comments.py `clean_picks`); a set or state that has since gone is simply skipped.
 import { choices, currentOf, idOf, isChoice, mirrorSets, mirrorStates, onPage, sets, stateOf, stateValues, states } from './state'
+import type { DemoEntry, DemoPick } from '../shared/picks'
 
-export type DemoPick = {
-  kind: 'set' | 'state'
-  // The matched route record's path the set or state belongs to, and '' for an app-wide state.
-  path: string
-  key: string
-  label: string
-  // The option's value, and its words.
-  option: string
-  optionLabel: string
-  // The option is the first one, the one the page opens on.
-  default: boolean
-}
+export type { DemoPick }
+export { picksWords } from '../shared/picks'
 
 // What the Demo shows now on the page `route` shows.
 export function currentPicks(route: any): DemoPick[] {
@@ -63,10 +54,11 @@ export function applyPicks(picks: DemoPick[] | undefined, router: any) {
   mirrorStates(router)
 }
 
-// "Donut", "Donut · Error": the picks that are not the defaults, in words. Empty when the comment was made on the defaults.
-export function picksWords(picks: DemoPick[] | undefined): string {
-  return (picks ?? [])
-    .filter((p) => !p.default)
-    .map((p) => p.optionLabel || p.option)
-    .join(' · ')
+// Every mounted set and registered state, with what it shows now: the Viewer shell's frame agent reports this,
+// so the shell can tell whether a comment's picks are on show (runtime/shared/picks.ts).
+export function demoEntries(): DemoEntry[] {
+  return [
+    ...sets.map((s) => ({ kind: 'set' as const, path: s.path, key: s.key, value: currentOf(s) ?? '', options: s.options().map((o) => o.value) })),
+    ...Object.values(states).map((s) => ({ kind: 'state' as const, path: s.path, key: s.key, value: stateOf(s), options: [...s.options] })),
+  ]
 }
