@@ -4,16 +4,14 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
-import { Button, Dropdown, Popover, Tooltip } from 'frappe-ui'
+import { Button, Dropdown, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
-import Panel from './Panel.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, landed, spotOf, tileExists } from './bridge'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
-import { lookAt } from './badges'
 import { menuBind, menuHost } from './menus'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
@@ -78,16 +76,6 @@ watch(raw, (r) => {
   const next = m.map((p) => ({ ...p, sets: p.sets.filter((s) => !isLone(s) || r === `set:${p.slug}/${s.key}`) }))
   model.value = session.model = pagesModel.value = next
 })
-// Opening a set is looking at all of its options: the ones a teammate made stop being new (the tiles keep their
-// "New" badge until the next visit, so nothing vanishes under the pointer).
-watch(
-  pick,
-  (p) => {
-    if (p?.kind !== 'set') return
-    lookAt(p.page.sets.find((s) => s.key === p.key)?.options.map((o) => o.value) ?? [])
-  },
-  { immediate: true },
-)
 const summary = computed(() => (pick.value && model.value ? pickSummary(pick.value, model.value) : ''))
 // Beside the name in the top-left pill: a set's option count ("12 options"), without the page it is on; else the summary.
 const countText = computed(() => {
@@ -100,15 +88,17 @@ const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
 
-// Desktop: the Show panel on the right is the Viewer shell's, drawn over this frame, and the shell says how much room it
-// takes (`bridge.shellReserve`). Phone: the Show dropdown, here.
+// The Show list is the Viewer shell's, drawn over this frame. Desktop: the panel on the right, and the shell says how much
+// room it takes (`bridge.shellReserve`). Phone: the name in the title pill asks the shell for the list under it, or to
+// close it when it was open as the press began (a press here closes the shell's list before the click lands).
 const PANEL_W = 312
 const panelShown = computed(() => !phone.value && bridge.shellReserve > 0)
-const pickerOpen = ref(false)
-function choose(v: string) {
-  pickerOpen.value = false
-  if (!v || v === pickValue.value) return
-  router.replace({ query: { ...route.query, canvas: v } })
+let showWasOpen = false
+function askShow(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  // A key's click had no press: the list is as it is now.
+  const was = e.detail ? showWasOpen : bridge.showOpen
+  bridge.showMenu?.({ x: r.left, y: r.top, w: r.width, h: r.height }, !was)
 }
 
 // ---- The layout: computed from the view, the window and the panel, never from the zoom.
@@ -359,7 +349,7 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     // A tool picking tiles takes its own Escape: it closes its box, then puts the tool down.
     if (e.defaultPrevented || bridge.tool) return
-    if (pickerOpen.value || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
+    if (bridge.showOpen || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
     if (liveId.value) liveId.value = null
     else closeCanvas(router)
     return
@@ -565,20 +555,23 @@ watch(
         <Tooltip text="Back (Esc)">
           <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="closeCanvas(router)" />
         </Tooltip>
-        <Popover v-if="phone" v-model:open="pickerOpen" side="bottom" align="start" :offset="8" :collision-padding="12" class="min-w-0 flex-1">
-          <template #trigger>
-            <div class="min-w-0">
-            <Button variant="ghost" class="w-full max-w-full justify-start" aria-label="Show on the canvas">
-              <span class="flex w-full min-w-0 items-center gap-1.5">
-                <span class="truncate text-ink-gray-8">{{ triggerLabel }}</span>
-                <span v-if="countText" class="shrink-0 text-p-sm text-ink-gray-5">{{ countText }}</span>
-                <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
-              </span>
-            </Button>
-            </div>
-          </template>
-          <Panel :items="items" :selected="pickValue" style="width: calc(100vw - 24px)" @choose="choose" />
-        </Popover>
+        <div
+          v-if="phone"
+          class="min-w-0"
+          aria-haspopup="dialog"
+          :aria-expanded="bridge.showOpen"
+          :data-state="bridge.showOpen ? 'open' : 'closed'"
+          @pointerdown="showWasOpen = bridge.showOpen"
+          @click="askShow"
+        >
+          <Button variant="ghost" class="w-full max-w-full justify-start" aria-label="Show on the canvas">
+            <span class="flex w-full min-w-0 items-center gap-1.5">
+              <span class="truncate text-ink-gray-8">{{ triggerLabel }}</span>
+              <span v-if="countText" class="shrink-0 text-p-sm text-ink-gray-5">{{ countText }}</span>
+              <span class="lucide-chevron-down size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
+            </span>
+          </Button>
+        </div>
         <div v-else class="flex min-w-0 items-center gap-1.5 pl-1 pr-2">
           <span class="truncate text-base text-ink-gray-8">{{ triggerLabel }}</span>
           <span v-if="countText" class="shrink-0 text-p-sm text-ink-gray-5">{{ countText }}</span>

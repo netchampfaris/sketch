@@ -102,6 +102,8 @@ function startCanvas(variants: any) {
 	bridge.onEmptyClick = () => post('canvas:click', {})
 	// The live tile's ⋯: the shell opens its menu at the button (runtime/shell/TileMenu.vue).
 	bridge.tileMenu = (tileId: string, rect: FromFrame['tile:menu']['rect']) => post('tile:menu', { tileId, rect })
+	// The phone's title pill: the shell opens its Show list under the name (runtime/shell/CanvasLayer.vue).
+	bridge.showMenu = (rect: FromFrame['canvas:show']['rect'], open: boolean) => post('canvas:show', { rect, open })
 
 	const tilesOf = (): FromFrame['canvas']['tiles'] =>
 		(bridge.tiles as any[]).flatMap((t) => {
@@ -197,6 +199,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 			if (d.busyTile !== undefined) variants.bridge.busyTile = d.busyTile
 			if (d.menuTile !== undefined) variants.bridge.menuTile = d.menuTile
 			if (d.landed && variants.landed) variants.landed.value = d.landed
+			if (d.showOpen !== undefined) variants.bridge.showOpen = d.showOpen
 		},
 		'canvas:open': ({ view }) => {
 			if (!router || !variants) return

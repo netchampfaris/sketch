@@ -224,6 +224,8 @@ export type FromFrame = {
 		items?: PickItem[]
 	}
 	'tile:menu': { tileId: string; rect: Rect }
+	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
+	'canvas:show': { rect: Rect; open: boolean }
 	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
 	// A click on the canvas off every tile while a tool is in hand: the shell's comment box closes, as a click outside does.
 	'canvas:click': Obj
@@ -537,6 +539,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 		return some({ ...base, ...parts })
 	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
+	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
 	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
 	'canvas:click': () => ({}),
 	'canvas:revealed': (d) => {
@@ -616,7 +619,8 @@ export type ToFrame = {
 	'canvas:tool': { tool: '' | 'comment' | 'note' }
 	// Where the shell's chrome sits, for the page's own chrome to keep clear of it. Any field may be left out.
 	// `busyTile` is the tile whose action the shell is saving and `menuTile` the one whose menu is open ('' for none);
-	// `landed` the option a write has just put in place, which the canvas rings once it is drawn.
+	// `landed` the option a write has just put in place, which the canvas rings once it is drawn; `showOpen` whether the
+	// phone's Show list is open.
 	display: {
 		newOptions?: string[]
 		reserve?: number
@@ -624,6 +628,7 @@ export type ToFrame = {
 		busyTile?: string
 		menuTile?: string
 		landed?: { set: string; option: string }
+		showOpen?: boolean
 	}
 	// Sort and measure the Demo's rows again (the card opened, a row is hovered): the frame answers with `model`.
 	'model:measure': Obj
@@ -721,6 +726,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 			busyTile: str(d.busyTile),
 			menuTile: str(d.menuTile),
 			landed: isObj(d.landed) ? all({ set: str(d.landed.set), option: str(d.landed.option) }) : null,
+			showOpen: d.showOpen === undefined ? null : bool(d.showOpen),
 		}),
 	'model:measure': () => ({}),
 	'tile:open': (d) => all({ tileId: str(d.tileId) }),

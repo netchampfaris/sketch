@@ -43,6 +43,10 @@ export const bridge = shallowReactive({
   busyTile: '',
   menuTile: '',
   openTile: null as ((tileId: string) => void) | null,
+  // The phone's Show list is the shell's too: the title pill's name asks for it at its box (`open` false closes it),
+  // and `showOpen` is whether it is open, for the name's pressed look.
+  showMenu: null as ((rect: { x: number; y: number; w: number; h: number }, open: boolean) => void) | null,
+  showOpen: false,
 })
 
 // ---- Tiles as data
