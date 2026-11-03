@@ -179,9 +179,8 @@ def full_names(usernames) -> dict:
 	if not names:
 		return {}
 
-	users = frappe.get_all("User", filters={"username": ["in", list(names)]}, fields=["username", "full_name"])
-	found = {u.username: (u.full_name or "").strip() for u in users}
-	return {u: found.get(u) or u for u in names}
+	found = sharing.people(names, disabled=True)
+	return {u: found[u]["name"] if u in found else u for u in names}
 
 
 def without_access(name: str, usernames) -> set:
@@ -293,13 +292,7 @@ def people_in(threads: list[dict]) -> dict:
 	"""Name and picture of everyone who spoke in these threads, by username."""
 	names = {c["author"] for t in threads for c in (t, *t["replies"])}
 	names |= {u for t in threads for c in (t, *t["replies"]) for u in MENTION.findall(c["text"])}
-	if not names:
-		return {}
-
-	users = frappe.get_all(
-		"User", filters={"username": ["in", list(names)]}, fields=["username", "full_name", "user_image"]
-	)
-	return {u.username: {"name": u.full_name or "", "image": u.user_image or ""} for u in users}
+	return sharing.people(names, disabled=True)
 
 
 def one_thread(name: str, thread: str, user: str = "") -> dict | None:
@@ -330,7 +323,7 @@ def mentionable(name: str) -> list[dict]:
 		order += frappe.get_all(COMMENT, filters={"prototype": name}, pluck="author", order_by="creation asc", limit_page_length=0)
 
 	known = sharing.people(order)
-	return [{"username": u, **known[u]} for u in dict.fromkeys(order) if u in known]
+	return [known[u] for u in dict.fromkeys(order) if u in known]
 
 
 def with_mentions(name: str, text: str) -> tuple[str, list[str]]:

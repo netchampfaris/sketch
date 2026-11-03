@@ -308,8 +308,7 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 	owner = None
 	if who.role == "editor":
 		handle = sharing.username_of(sharing.owner_of(name) or "")
-		found = sharing.people([handle])
-		owner = {"username": handle, **found[handle]} if handle in found else None
+		owner = sharing.people([handle]).get(handle)
 
 	invited = _invited(name, who, seen, owner)
 	adopted = _adopted(name, who, seen, owner)
@@ -320,14 +319,14 @@ def card(name: str, user: str, files: list | None = None) -> dict | None:
 	activity = sorted([(v["at"], v["author"]) for v in variants] + [(r.creation, r.author) for r in fresh], reverse=True)
 	order = list(dict.fromkeys(author for _at, author in activity))
 	known = sharing.people(order)
-	people = [{"username": u, **known[u]} for u in order if u in known]
+	people = [known[u] for u in order if u in known]
 	mentions = [s["mention"] for s in state.values() if s["mention"]]
 	mention = None
 	if mentions:
 		row = max(mentions, key=lambda r: r.creation)
 		by = known.get(row.author)
 		if by:
-			mention = {"by": {"username": row.author, **by}, "thread": row.thread or row.name}
+			mention = {"by": by, "thread": row.thread or row.name}
 
 	# When the newest of it happened, for the card's " · 2 hours ago". The moments stay on the server.
 	moments = [at for at, _author in activity] + [n.pop("at") for n in (invited, adopted) if n]

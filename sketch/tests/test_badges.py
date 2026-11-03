@@ -547,6 +547,15 @@ class TestMentions(BadgeCase):
 		people = comments.people_in(comments.list_threads(self.name))
 		self.assertIn("d2tbgown", people)
 
+	def test_a_disabled_author_without_a_full_name_still_shows_by_username(self):
+		self.say(self.ed, "look")
+		kept = frappe.db.get_value("User", self.ed, ["enabled", "first_name", "full_name"], as_dict=True)
+		self.addCleanup(frappe.db.set_value, "User", self.ed, kept)
+		frappe.db.set_value("User", self.ed, {"enabled": 0, "first_name": "", "full_name": ""})
+		people = comments.people_in(comments.list_threads(self.name))
+		self.assertEqual(people["d2tbged"]["name"], "d2tbged")
+		self.assertEqual(comments.full_names(["d2tbged"]), {"d2tbged": "d2tbged"})
+
 
 class TestTheSeenCredential(BadgeCase):
 	def credential(self, user, name=None):

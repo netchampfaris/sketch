@@ -353,18 +353,26 @@ def authors(tree_paths) -> dict:
 	return people(names)
 
 
-def people(usernames) -> dict:
+def people(usernames, disabled: bool = False) -> dict:
+	"""{username: {"username", "name", "image"}} for the people who exist. The name falls back to the username.
+
+	A disabled person is left out, unless `disabled`: an old comment's author still shows by name.
+	"""
 	usernames = {u for u in usernames if u}
 	if not usernames:
 		return {}
 
-	rows = frappe.get_all(
-		"User",
-		filters={"username": ["in", list(usernames)], "enabled": 1},
-		fields=["username", "full_name", "user_image"],
-	)
+	filters = {"username": ["in", list(usernames)]}
+	if not disabled:
+		filters["enabled"] = 1
+
+	rows = frappe.get_all("User", filters=filters, fields=["username", "full_name", "user_image"])
 	return {
-		row.username: {"name": (row.full_name or "").strip() or row.username, "image": row.user_image or ""}
+		row.username: {
+			"username": row.username,
+			"name": (row.full_name or "").strip() or row.username,
+			"image": row.user_image or "",
+		}
 		for row in rows
 	}
 
