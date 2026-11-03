@@ -37,6 +37,7 @@ import {
 	markSent,
 	mode,
 	notes,
+	pageLayerOpen,
 	parentOf,
 	pinPoint,
 	readAnchor,
@@ -493,8 +494,8 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
 	if (e.key === 'Escape') {
 		// The tweak layer takes its own Escape first and says so.
 		if (!enabled.value || e.defaultPrevented) return
-		// Let an open frappe-ui dialog take its own Escape.
-		if (document.querySelector('[role="dialog"][data-state="open"]')) return
+		// Let an open page menu, popover or dialog close first.
+		if (pageLayerOpen()) return
 		if (dragging) resetDrag()
 		else if (draft.value) close()
 		else if (listOpen.value) listOpen.value = false
