@@ -72,8 +72,9 @@ and the bench running on port 8007.
 | `runtime-entry/` | One entry per import-map specifier |
 | `runtime-entry/compiler.js` | In-browser SFC compiler: `@vue/compiler-sfc` plus sucrase |
 | `tailwind/` | The browser Tailwind engine with the frappe-ui preset |
-| `annotate/`, `vite.annotate.config.js` | The comment and tweak toolbar. One ES module, `annotate.js`, that `boot.js` imports for the owner's live tab. vue, vue-router, frappe-ui and vueuse are external |
-| `variants/` | `<Variants>`, the design-option switcher, `useDemoState` (personas and phases), and their two stacked pills. Built as `variants.js` by the same config. `sketch:variants` is a Prototype import, and annotate imports it too (external) to share its Keep handler |
+| `agent/`, `vite.annotate.config.js` | The shell's agent inside the Prototype's frame: it finds elements, places pins and applies tweaks, and talks to the shell over `postMessage` (`shared/protocol.ts`). One ES module, `agent.js`, that `boot.js` imports when the frame sits in the shell. vue, vue-router, frappe-ui and vueuse are external |
+| `shell/` | The Viewer's shell: Sketch's own page around the frame, with the toolbar, comments, notes, tweaks and the canvas menus. It acts with the reader's session (`sketch/viewer_api.py`). Built by the frontend as its `viewer` entry, not by this folder's scripts |
+| `variants/` | `<Variants>`, the design-option switcher, `useDemoState` (personas and phases), and their two stacked pills. Built as `variants.js` by the same config. `sketch:variants` is a Prototype import, so it exports nothing that writes: Make default, Keep only this and delete live in the shell |
 | `shared/` | Small pure helpers both the runtime and the gallery import, so one person is one colour everywhere (`avatarTheme.ts`). Part of every build's stamp |
 | `internals.css`, `internals.tailwind.config.js` | Layer 1: precompiled frappe-ui CSS |
 | `fonts/inter.css` | Inter, roman only |
@@ -106,8 +107,8 @@ Four places, every time: the build entry, `manifest.json`, the `viewer.html`
 import map, and `sketch/skill/frappe-ui.md`.
 `sketch/tests/test_skill_names.py` catches the drift.
 
-`sketch:annotate` is the exception: it is in the first three and **not** in the
-skill, because a Prototype must never import the toolbar. Only `boot.js` does.
+`sketch:agent` is the exception: it is in the first three and **not** in the
+skill, because a Prototype must never import it. Only `boot.js` does.
 
 ## Two traps that cost time once
 
