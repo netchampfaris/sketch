@@ -20,6 +20,7 @@ import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
+  belongsTo,
   choices,
   closeCanvas,
   idOf,
@@ -27,7 +28,6 @@ import {
   mirrorSets,
   mirrorStates,
   nav,
-  slugOf,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -83,13 +83,13 @@ const countText = computed(() => {
   const n = p.page.sets.find((s) => s.key === p.key)?.options.length ?? 0
   return `${n} ${n === 1 ? 'option' : 'options'}`
 })
-// One option's component states: the set, the option, and the words its states are declared with (`of`).
+// One option's component states: the set and the option its states name with `of`.
 const optView = computed(() => {
   const p = pick.value
   if (p?.kind !== 'opt') return null
   const set = p.page.sets.find((s) => s.key === p.key)
   const opt = set?.options.find((o) => o.value === p.value)
-  return set && opt ? { page: p.page, set, opt, of: `${set.label}/${opt.label}`, cacheId: `${p.page.path}|v|${set.key}|${opt.value}|full` } : null
+  return set && opt ? { page: p.page, set, opt, cacheId: `${p.page.path}|v|${set.key}|${opt.value}|full` } : null
 })
 const setViewValue = computed(() => (optView.value ? `set:${optView.value.page.slug}/${optView.value.set.key}` : ''))
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
@@ -131,7 +131,7 @@ function statesOfOption(cacheId: string): StateInfo[] | 'error' | null {
   const snap = cache[keyOf(cacheId)]
   if (!v || !snap) return null
   if (snap.error) return 'error'
-  return snap.reg.states.filter((s) => s.path === v.page.path && !!s.of && slugOf(s.of) === slugOf(v.of))
+  return snap.reg.states.filter((s) => s.path === v.page.path && !!s.of && belongsTo(s.of, v.set, v.opt))
 }
 const layout = computed(() =>
   layoutPick(pick.value, {
@@ -212,7 +212,7 @@ async function discover() {
       .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null }))
     // A component state belongs to its set option, and shows there. One whose option is no longer in a set (after Keep only
     // this) shows on its page.
-    const lives = (of: string) => sets.some((s) => s.options.some((o) => slugOf(`${s.label}/${o.label}`) === slugOf(of)))
+    const lives = (of: string) => sets.some((s) => s.options.some((o) => belongsTo(of, s, o)))
     pages.push({
       path: r.path,
       slug: slugOfRoute(r),

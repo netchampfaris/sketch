@@ -4,7 +4,7 @@
 import { shallowReactive, shallowRef } from 'vue'
 import type { PageModel, TileBox } from './layout'
 import type { PickItem } from './picker'
-import { slugOf } from './state'
+import { ofOption, slugOf } from './state'
 
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
@@ -126,7 +126,7 @@ export const pagesOf = (model: PageModel[] | null): CanvasPage[] | null =>
     sets: p.sets.map((s) => ({ key: s.key, options: s.options.map((o) => o.value) })),
     states: p.states.map((s) => ({ key: s.key, options: s.options })),
     // A component state stands while its set's option does: the options as `of` names them ("Supplier card/Compact").
-    ofs: p.sets.flatMap((s) => s.options.map((o) => slugOf(`${s.label}/${o.label}`))),
+    ofs: p.sets.flatMap((s) => s.options.map((o) => slugOf(ofOption(s.label, o.label)))),
   }))
 
 // The option a write has just put in place (Make default, Keep only this, or their Undo, saved by the shell): the canvas

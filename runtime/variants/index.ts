@@ -6,7 +6,7 @@
 import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Variants from './Variants.vue'
-import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, readOptions, sandboxKey, slugOf, stateValues, states } from './state'
+import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, readOptions, sandboxKey, stateKeyOf, stateValues, states } from './state'
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
@@ -23,7 +23,7 @@ export { demoModel, measureDemo, setDemo } from './model'
 export function useDemoState<T extends string>(name: string, input: readonly T[] | Record<string, readonly T[]>, config: { of?: string } = {}) {
   const { options, groups } = readOptions(input)
   const of = config.of?.trim() || undefined
-  const key = of ? `${slugOf(name)}@${slugOf(of)}` : slugOf(name)
+  const key = stateKeyOf(name, of)
   const path = pageKeyOf()
   const id = idOf(path, key)
   const route = useRoute()
