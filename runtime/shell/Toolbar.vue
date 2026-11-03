@@ -57,6 +57,7 @@ import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
 import NotePins from './NotePins.vue'
 import { labels, onFrame, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
+import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
 import { applyPicks, bridge, hasUnreadThreads, picksShown, pointOf, revealTile, tileExists } from './variants'
@@ -835,12 +836,7 @@ const anchor = ref<Anchor>(readAnchor())
 const moved = ref(storedAnchor() !== null)
 // On a phone, everything at the bottom edge rides above the Prototype's own bottom bar.
 const navH = computed(() => page.navBottom)
-// Above the Variants pill when there is one: the frame reports its height, and this page publishes it as the frame does.
-watch(
-	() => page.variantsH,
-	(h) => (h ? document.documentElement.style.setProperty('--sketch-variants-h', `${h}px`) : document.documentElement.style.removeProperty('--sketch-variants-h')),
-	{ immediate: true },
-)
+// Above the Variants pill when there is one: the shell's pill publishes its height in --sketch-variants-h (DemoPill.vue).
 // The faint trigger sits where the toolbar last snapped: 12px in from a corner, centred on a centre anchor.
 // The canvas's panel covers the right edge: the toolbar and its trigger sit in the room left of it.
 const reserve = computed(() => (canvasOpen.value ? bridge.reserve : 0))
@@ -888,7 +884,7 @@ const barBox = computed(() => ({ left: pos.value.left, top: pos.value.top, right
 // the two would sit on each other, which the pill works out from where the toolbar ends.
 watch(
 	[() => enabled.value && phone.value && !canvasOpen.value && anchor.value.startsWith('bottom') && !!bh.value, bh, navH, () => barBox.value.right, () => page.ready],
-	([on, , , right]) => post('display', { toolbarLift: on ? LIVE_INSET + navH.value + bh.value + 8 : 0, toolbarRight: on ? right : 0 }),
+	([on, , , right]) => Object.assign(demo, { toolbarLift: on ? LIVE_INSET + navH.value + bh.value + 8 : 0, toolbarRight: on ? right : 0 }),
 	{ immediate: true },
 )
 

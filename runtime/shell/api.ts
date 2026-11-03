@@ -26,3 +26,28 @@ export async function call<T = any>(method: string, fields: Record<string, strin
 	if (!res.ok) throw new HttpError(res.status)
 	return (await res.json()).message as T
 }
+
+// Frappe answers a refusal with `_server_messages`: a JSON list of JSON strings, each with a `message`.
+function readError(body: any): string {
+	try {
+		const first = JSON.parse(JSON.parse(body._server_messages)[0])
+		return String(first.message).replace(/<[^>]*>/g, '')
+	} catch {
+		return 'Reload the page and try again.'
+	}
+}
+
+// A write whose refusal is shown to the person: the error carries the server's own words, as the frame's writes did
+// (runtime/variants/default.ts). `method` is the whole dotted path. A connection that fails is the browser's TypeError.
+export async function write<T = any>(method: string, fields: Record<string, string>): Promise<T> {
+	const res = await fetch(`/api/method/${method}`, {
+		method: 'POST',
+		body: new URLSearchParams(fields),
+		credentials: 'same-origin',
+		cache: 'no-store',
+		headers: { Accept: 'application/json', 'X-Frappe-CSRF-Token': cred.csrf },
+	})
+	const body = await res.json().catch(() => ({}))
+	if (!res.ok) throw new Error(readError(body))
+	return body.message as T
+}

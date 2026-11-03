@@ -4,7 +4,7 @@
 // credential. Everything that acts as the reader, or shows a person's data, is drawn here, on Sketch's
 // origin, over the frame (plan steps 3 to 6 move it in). The shell never scrolls; the frame's rects are
 // the shell's coordinates.
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 import { fromFrame, read, type FromFrame, type Theme } from '../shared/protocol'
@@ -12,12 +12,15 @@ import { host, type Role } from '../annotate/host'
 import { transport } from '../annotate/comments'
 import type { ShellBoot } from './boot'
 import { applyTheme, resolveTheme, watchTheme } from './theme'
-import { startLiveReload } from './liveReload'
+import { startLiveReload, type LiveReload } from './liveReload'
+import { initActions, placeToasts } from './actions'
 import { call, initApi } from './api'
 import { freshOptions, initBadges } from './badges'
 import { frameGone, page, post, receive, setFrameWindow } from './frame'
 import { restoreNotes, startSaving } from './notes'
 import CanvasLayer from './CanvasLayer.vue'
+import DemoPill from './DemoPill.vue'
+import TileMenu from './TileMenu.vue'
 import Toolbar from './Toolbar.vue'
 
 const props = defineProps<{ boot: ShellBoot }>()
@@ -52,6 +55,8 @@ if (toolbar) {
 }
 // The toolbar comes once the Prototype has drawn, as it did in the frame, and stays through a live reload.
 const shown = ref(false)
+// The Demo pill shows whatever the frame's Demo has, for everyone; nothing on a status screen.
+const pillShown = computed(() => page.ready && !STATUS_SCREENS.includes(page.status))
 watch(
 	() => page.ready && !STATUS_SCREENS.includes(page.status),
 	(ok) => {
@@ -104,8 +109,8 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 		applyTheme(next)
 	},
 	// layout, demo, hover, pick, drag, rects, track, key, canvas, tile:pick, canvas:click and canvas:revealed go to
-	// frame.ts (`receive`), for the toolbar and the canvas layer. model, tile:menu and tweak:info are read by the
-	// validators already and handled from plan steps 5 and 6.
+	// frame.ts (`receive`), for the toolbar and the canvas layer; model to demo.ts (the Demo pill), tile:menu to
+	// TileMenu.vue. tweak:info is read by its validator already and handled from plan step 6.
 }
 
 function onMessage(e: MessageEvent) {
@@ -135,19 +140,30 @@ function onThemeSource() {
 }
 
 let stopTheme = () => {}
-let stopReload = () => {}
+let live: LiveReload | null = null
+// The variant writes (Make default, Keep only this, Delete variant) reload the frame and hold the live reload meanwhile.
+initActions({
+	name: boot.name,
+	slug: boot.slug,
+	role: boot.role,
+	me: boot.me?.username ?? '',
+	reload: reloadFrame,
+	hold: async () => (live ? live.hold() : async () => {}),
+})
+// The owner's toasts stand clear of the pill and the toolbar's trigger from the start, as in the frame (default.ts).
+if (boot.role === 'owner') placeToasts()
 onMounted(() => {
 	window.addEventListener('message', onMessage)
 	window.addEventListener('hashchange', onHashChange)
 	stopTheme = watchTheme(onThemeSource)
 	// Only the owner has an agent writing to the tree, and only the owner's page carries a baseline.
-	if (props.boot.role === 'owner' && props.boot.rev) stopReload = startLiveReload(props.boot.slug, props.boot.rev, reloadFrame)
+	if (props.boot.role === 'owner' && props.boot.rev) live = startLiveReload(props.boot.slug, props.boot.rev, reloadFrame)
 })
 onBeforeUnmount(() => {
 	window.removeEventListener('message', onMessage)
 	window.removeEventListener('hashchange', onHashChange)
 	stopTheme()
-	stopReload()
+	live?.stop()
 })
 </script>
 
@@ -167,6 +183,8 @@ onBeforeUnmount(() => {
 		<!-- Sketch's chrome over the frame. It takes no pointer events itself; each widget opts back in. -->
 		<div data-sketch-ui="shell" class="pointer-events-none fixed inset-0">
 			<CanvasLayer />
+			<DemoPill v-if="pillShown" />
+			<TileMenu />
 			<Toolbar v-if="shown" :noter="noter" />
 		</div>
 	</FrappeUIProvider>

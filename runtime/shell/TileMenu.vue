@@ -1,0 +1,110 @@
+<script setup lang="ts">
+// The live tile's ⋯ menu, drawn by the shell (runtime/variants/Tile.vue keeps the in-frame original for the flag-off
+// page). The frame's ⋯ only says where it is (`tile:menu`); the menu opens there with the items and copy the tile had:
+// Make default and Keep only this for the owner, Open page for everyone, Delete variant on a teammate's option for the
+// owner and on an editor's own.
+//
+// The frame may post `tile:menu` whenever it likes, so the menu could open under a pointer that was aiming at the page.
+// An item acts only on a press that began on it, at least 300 ms after the menu opened, so a press already on its way
+// (or one dragged in from the page) does nothing.
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { Dropdown, toast } from 'frappe-ui'
+import type { Rect } from '../shared/protocol'
+import { canDelete, deleteFailure, deleteVariant, isOwner, keepFailure, keepOnly, makeDefault, makeFailure } from './actions'
+import { onFrame, onGone, post } from './frame'
+import { bridge, menuBind, type ShellTile } from './variants'
+
+const GUARD_MS = 300
+
+const at = ref<{ tileId: string; rect: Rect } | null>(null)
+const tile = computed<ShellTile | null>(() => (at.value ? (bridge.tiles.find((t) => t.id === at.value!.tileId) ?? null) : null))
+const bind = computed(() => menuBind('tile-menu'))
+const open = computed({
+	get: () => !!tile.value && bind.value.open,
+	set: (o: boolean) => {
+		bind.value['onUpdate:open'](o)
+		if (!o) at.value = null
+	},
+})
+
+let openedAt = 0
+let armed: { label: string; t: number } | null = null
+onBeforeUnmount(
+	onFrame('tile:menu', (d) => {
+		// Only a tile the canvas shows now, and only while it is open.
+		if (!bridge.open || !bridge.tiles.some((t) => t.id === d.tileId)) return
+		at.value = d
+		openedAt = performance.now()
+		armed = null
+		bind.value['onUpdate:open'](true)
+	}),
+)
+onBeforeUnmount(onGone(() => (open.value = false)))
+// The frame's ⋯ holds its pressed look while its menu is open, as a menu's trigger does.
+watch(open, (o) => post('display', { menuTile: o && at.value ? at.value.tileId : '' }))
+watch(() => bridge.open, (o) => !o && (open.value = false))
+
+// Which item a press or a key began on, and when.
+const itemOf = (t: EventTarget | null) => (t instanceof Element ? t.closest('[role="menuitem"]')?.textContent?.trim() ?? '' : '')
+useEventListener(document, 'pointerdown', (e: PointerEvent) => (armed = open.value ? { label: itemOf(e.target), t: performance.now() } : null), { capture: true })
+useEventListener(document, 'keydown', (e: KeyboardEvent) => {
+	if (open.value && (e.key === 'Enter' || e.key === ' ')) armed = { label: itemOf(e.target), t: performance.now() }
+}, { capture: true })
+// A refused activation keeps the menu open (reka closes it unless the select is prevented).
+function guarded(label: string, run: () => void) {
+	return (e: Event) => {
+		const ok = !!armed && armed.label === label && armed.t - openedAt >= GUARD_MS
+		armed = null
+		if (!ok) return e.preventDefault()
+		run()
+	}
+}
+
+// The set's default tile on the canvas now, for where Make default's Undo lands.
+const firstOf = (t: ShellTile) => {
+	const d = bridge.tiles.find((x) => x.isDefault && x.spot.route === t.spot.route && x.spot.tile.kind === 'set' && x.spot.tile.groupKey === t.spot.tile.groupKey)
+	return d ? { value: d.spot.tile.option } : undefined
+}
+
+async function act(run: () => Promise<void>, failure: (e: Error) => string) {
+	try {
+		await run()
+	} catch (e) {
+		toast.error(failure(e as Error))
+	}
+}
+
+const items = computed(() => {
+	const t = tile.value
+	if (!t) return []
+	const { kind, option } = t.spot.tile
+	const set = kind === 'set' && !!option && !!t.setFile && !!t.setName
+	const owner = isOwner() && !bridge.tool
+	return [
+		...(set && owner && !t.isDefault
+			? [{ label: 'Make default', icon: 'lucide-star', onClick: guarded('Make default', () => act(() => makeDefault({ name: t.setName, file: t.setFile, first: firstOf(t) }, option, t.id, t.id), makeFailure)) }]
+			: []),
+		{ label: 'Open page', icon: 'lucide-arrow-up-right', onClick: guarded('Open page', () => post('tile:open', { tileId: t.id })) },
+		...(set && owner && t.setCount > 1
+			? [{ label: 'Keep only this', icon: 'lucide-check', onClick: guarded('Keep only this', () => act(() => keepOnly({ name: t.setName, file: t.setFile }, option, t.id, t.id), keepFailure)) }]
+			: []),
+		...(canDelete(option, t.author)
+			? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: guarded('Delete variant', () => act(() => deleteVariant(option, t.id, t.id), deleteFailure)) }]
+			: []),
+	]
+})
+</script>
+
+<template>
+	<Dropdown v-model:open="open" :options="items">
+		<template #trigger>
+			<!-- Where the frame's ⋯ is: the menu hangs from it. It takes no pointer, the frame's button under it does. -->
+			<div
+				aria-hidden="true"
+				class="pointer-events-none fixed"
+				:style="at ? { left: `${at.rect.x}px`, top: `${at.rect.y}px`, width: `${at.rect.w}px`, height: `${at.rect.h}px` } : { left: '-9999px', top: '0', width: '1px', height: '1px' }"
+			/>
+		</template>
+	</Dropdown>
+</template>

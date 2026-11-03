@@ -9,6 +9,7 @@ import { computed, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Button, Tooltip } from 'frappe-ui'
 import CanvasPanel from './CanvasPanel.vue'
+import { placeToasts } from './actions'
 import { lookAt } from './badges'
 import { page, post } from './frame'
 import { PANEL_W, bridge } from './variants'
@@ -21,6 +22,10 @@ watch(
 	([reserve, open]) => {
 		bridge.reserve = open ? reserve : 0
 		post('display', { reserve })
+		// Toasts stand left of the panel (actions.ts placeToasts): it is 12px off the right edge and PANEL_W - 24 wide.
+		if (open) placeToasts()
+		if (open && reserve) document.documentElement.style.setProperty('--sketch-panel-w', `${reserve - 12}px`)
+		else document.documentElement.style.removeProperty('--sketch-panel-w')
 	},
 	{ immediate: true },
 )

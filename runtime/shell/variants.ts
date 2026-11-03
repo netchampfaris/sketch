@@ -19,7 +19,21 @@ export { hasUnreadThreads, readThread, setUnread } from './badges'
 
 export type Tab = 'browse' | 'comments' | 'notes'
 // A tile as the shell holds it: its box before pan and zoom, and the spot it is.
-export type ShellTile = { id: string; x: number; y: number; w: number; h: number; spot: TileSpot }
+// A set's tile also names its `<Variants>` and how many options it has, for the tile menu (TileMenu.vue).
+export type ShellTile = {
+	id: string
+	x: number
+	y: number
+	w: number
+	h: number
+	spot: TileSpot
+	label: string
+	isDefault: boolean
+	author: string
+	setName: string
+	setFile: string
+	setCount: number
+}
 
 // The panel on the right of the canvas (runtime/variants/Canvas.vue PANEL_W): 12px off the edge, 300px wide.
 export const PANEL_W = 312
@@ -56,7 +70,8 @@ export const bridge = shallowReactive({
 onFrame('canvas', (d) => {
 	const was = bridge.open
 	Object.assign(bridge, { open: d.open, phone: d.phone, view: d.view, zoom: d.zoom, pan: d.pan, corner: d.corner })
-	if (d.tiles) bridge.tiles = d.tiles.map((t) => ({ id: t.id, ...t.rect, spot: { route: t.route, tile: t.tile } }))
+	if (d.tiles)
+		bridge.tiles = d.tiles.map(({ rect, route, tile, ...t }) => ({ ...t, ...rect, spot: { route, tile } }))
 	if (d.pages) bridge.model = d.pages
 	if (d.items) bridge.items = d.items
 	// Closed, the canvas has no tiles: a pin list or a count must not read the last ones.

@@ -14,6 +14,8 @@ export const badges = reactive({
 	// The ones whose set the person has opened since.
 	looked: {} as Record<string, true>,
 	threads: {} as Record<string, { route: string; mention: boolean }>,
+	// Pages (by path) whose Demo card was opened this visit.
+	opened: {} as Record<string, true>,
 })
 
 let on = false
@@ -33,7 +35,8 @@ const isFresh = (option: string) => !!badges.fresh[option] && !badges.looked[opt
 export const freshIn = (options: readonly string[]) => options.filter(isFresh).length
 export const freshOptions = () => Object.keys(badges.fresh)
 
-// The person has opened a set: every option of it counts as seen.
+// The person has opened a set (or its row in the Demo card): every option of it counts as seen. Only options the server
+// named new to this person are marked, whatever the frame reported the set holds.
 export function lookAt(options: readonly string[]) {
 	const fresh = options.filter(isFresh)
 	if (!fresh.length) return
@@ -57,6 +60,10 @@ export function setUnread(list: { id: string; route: string; unread: number; men
 	for (const id of Object.keys(badges.threads)) if (!next[id]) delete badges.threads[id]
 	Object.assign(badges.threads, next)
 }
+
+// The Demo pill's dot: this page has an option nobody here has looked at. Unread threads are not counted: the pill leads
+// to options, and a thread's dot sits on the Comment tool (runtime/variants/badges.ts pageHasNew).
+export const pageHasNew = (path: string, optionsOnPage: readonly string[]) => !badges.opened[path] && freshIn(optionsOnPage) > 0
 
 // A thread on this page (or on any page, with no path) has something this person has not read.
 export const hasUnreadThreads = (path?: string) => Object.values(badges.threads).some((t) => !path || t.route.split('?')[0] === path)
