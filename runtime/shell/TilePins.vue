@@ -76,7 +76,7 @@ const label = (p: Item) =>
 </script>
 
 <template>
-	<div data-ui data-annotate-ui class="pointer-events-none absolute left-0 top-0 z-30">
+	<div data-ui class="pointer-events-none absolute left-0 top-0 z-30">
 		<TransitionGroup enter-from-class="opacity-0" enter-active-class="transition-opacity duration-150 motion-reduce:transition-none">
 			<div
 				v-for="p in pins"

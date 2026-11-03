@@ -41,7 +41,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 </script>
 
 <template>
-	<div data-annotate-ui class="flex min-h-0 flex-col">
+	<div class="flex min-h-0 flex-col">
 		<div class="flex items-center gap-1">
 			<TextInput v-model="query" class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3" placeholder="Search" aria-label="Search notes" autocomplete="off">
 				<template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>

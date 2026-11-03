@@ -7,7 +7,8 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Button, Textarea, TextInput } from 'frappe-ui'
 import TokenSelect from './TokenSelect.vue'
-import { clamp, newId, typing } from './annotate'
+import { newId } from './annotate'
+import { clamp, typing } from '../shared/dom'
 import { CAT, KNOWN, STACK_CLASSES, emitSides, isComposite, madeStack, readSides, type Sides } from '../shared/tweak'
 import type { TweakFacts } from '../shared/protocol'
 import {
@@ -481,18 +482,16 @@ watch(live, (on) => {
 	<div
 		v-for="(r, i) in outlines.hl"
 		:key="'h' + i"
-		data-annotate-ui
 		class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border-[1.5px] border-solid border-outline-violet-6"
 		:style="boxStyle(r)"
 	>
 		<span class="absolute inset-0 rounded-[3px] bg-surface-violet-7 opacity-[0.06]" />
 	</div>
 
-	<div v-if="live" data-annotate-ui class="contents" :class="peek && 'invisible'">
+	<div v-if="live" class="contents" :class="peek && 'invisible'">
 		<!-- Hover outline: the same style as the selection at 60%, gliding between elements. -->
 		<template v-if="outlines.hover">
 			<div
-				data-annotate-ui
 				class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border-[1.5px] border-solid border-outline-violet-6 opacity-60 transition-[transform,width,height] duration-[90ms] ease-out motion-reduce:transition-none"
 				:style="boxStyle(outlines.hover)"
 			>
@@ -500,7 +499,6 @@ watch(live, (on) => {
 			</div>
 			<div
 				v-if="outlines.hoverName"
-				data-annotate-ui
 				class="pointer-events-none fixed z-[2147483000] whitespace-nowrap rounded-[4px] bg-surface-violet-7 px-1.5 py-0.5 text-xs font-medium text-white opacity-80"
 				:style="tagStyle(outlines.hover)"
 			>
@@ -512,14 +510,12 @@ watch(live, (on) => {
 		<div
 			v-for="(r, i) in outlines.faint"
 			:key="'f' + i"
-			data-annotate-ui
 			class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border border-dashed border-outline-violet-6 opacity-40"
 			:style="boxStyle(r)"
 		/>
 		<div
 			v-for="(r, i) in outlines.others"
 			:key="'o' + i"
-			data-annotate-ui
 			class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border-[1.5px] border-solid border-outline-violet-6"
 			:style="boxStyle(r)"
 		>
@@ -527,7 +523,6 @@ watch(live, (on) => {
 		</div>
 		<div
 			v-if="say"
-			data-annotate-ui
 			class="pointer-events-none fixed z-[2147483000] whitespace-nowrap rounded-[4px] bg-surface-violet-7 px-1.5 py-0.5 text-xs font-medium text-white"
 			:style="{ left: `${say.x + 12}px`, top: `${say.y + 12}px` }"
 		>
@@ -536,14 +531,12 @@ watch(live, (on) => {
 
 		<template v-if="selRect">
 			<div
-				data-annotate-ui
 				class="pointer-events-none fixed left-0 top-0 z-[2147483000] rounded-[4px] border-[1.5px] border-solid border-outline-violet-6"
 				:style="boxStyle(selRect)"
 			>
 				<span class="absolute inset-0 rounded-[3px] bg-surface-violet-7 opacity-[0.06]" />
 			</div>
 			<div
-				data-annotate-ui
 				class="pointer-events-none fixed z-[2147483000] whitespace-nowrap rounded-[4px] bg-surface-violet-7 px-1.5 py-0.5 text-xs font-medium text-white"
 				:style="tagStyle(selRect)"
 			>
@@ -559,7 +552,6 @@ watch(live, (on) => {
 		>
 			<div
 				v-if="!sel"
-				data-annotate-ui
 				class="pointer-events-none fixed right-4 top-4 z-[2147483000] rounded-5 border border-outline-gray-2 bg-surface-elevation-2 px-2.5 py-1.5 text-sm text-ink-gray-6 shadow-sm"
 			>
 				Click an element to tweak it. Shift-click adds more. Hold Space to peek.
@@ -575,7 +567,6 @@ watch(live, (on) => {
 			<div
 				v-if="sel && model && selRect"
 				ref="panel"
-				data-annotate-ui
 				role="region"
 				aria-label="Tweak"
 				class="pointer-events-auto fixed z-[2147483000] w-[304px] overflow-y-auto rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-2 shadow-xl"

@@ -3,7 +3,7 @@
 // follows its element: the frame re-measures it on every scroll, resize, route change and (throttled) DOM change.
 // A pin whose element has gone stays where it last was, faded. Sent notes turn gray.
 import { computed, onBeforeUnmount } from 'vue'
-import { UI_ATTR, notes, type Note } from './annotate'
+import { notes, type Note } from './annotate'
 import { rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'
 
@@ -58,7 +58,6 @@ function click(n: Note, e: MouseEvent) {
 		<button
 			v-for="n in shown"
 			:key="n.id"
-			:[UI_ATTR]="''"
 			data-annotate-pin
 			type="button"
 			:aria-label="`Note ${numberOf(n)}: ${n.note}`"

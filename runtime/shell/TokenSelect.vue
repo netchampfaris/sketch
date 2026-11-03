@@ -2,7 +2,6 @@
 // A token dropdown that previews on hover: the element changes as the pointer or arrow keys move
 // over a row, Enter or a click keeps it, Esc or a click elsewhere puts it back.
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { UI_ATTR } from './annotate'
 
 type Swatch = { type: 'ink' | 'bg' | 'border'; cls: string }
 type Opt = { value: string | null; label: string; right?: string; swatch?: Swatch }
@@ -251,7 +250,6 @@ onBeforeUnmount(() => {
 				<div
 					v-if="open"
 					ref="pop"
-					:[UI_ATTR]="''"
 					data-tweak-select
 					class="fixed z-[2147483001] max-h-64 overflow-y-auto rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-xl"
 					:style="popStyle"

@@ -6,10 +6,7 @@ import { ref } from 'vue'
 import { whereOf, type TileRef } from '../shared/tiles'
 import { subject } from './host'
 import { elementLine } from '../shared/tweak'
-import { UI_ATTR, type BoxInfo, type ElInfo } from '../agent/dom'
-
-// The attribute that marks Sketch's own UI, and two small helpers, shared with the frame agent.
-export { UI_ATTR, clamp, typing } from '../agent/dom'
+import type { BoxInfo, ElInfo, Mode } from '../shared/protocol'
 
 export type Note = {
   id: string
@@ -48,7 +45,6 @@ export const active = ref(false)
 
 // The toolbar has three tools. Note is the owner's instructions for their agent; Comment is a
 // conversation with people (comments.ts); Tweak lives in its own files (tweaks.ts, TweakLayer.vue).
-export type Mode = 'note' | 'tweak' | 'comment'
 export const mode = ref<Mode>('note')
 export const notes = ref<Note[]>([])
 export const isNote = (n: any) => typeof n.id === 'string' && typeof n.route === 'string' && typeof n.note === 'string' && !!n.offset && !!n.rect
@@ -174,7 +170,6 @@ export async function copyText(text: string): Promise<boolean> {
     try {
       const ta = document.createElement('textarea')
       ta.value = text
-      ta.setAttribute(UI_ATTR, '')
       ta.style.cssText = 'position:fixed;opacity:0'
       document.body.appendChild(ta)
       ta.select()

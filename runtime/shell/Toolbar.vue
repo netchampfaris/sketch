@@ -20,7 +20,6 @@ import {
 	active,
 	addNote,
 	buildPrompt,
-	clamp,
 	clearNotes,
 	clearSent,
 	copyText,
@@ -33,13 +32,13 @@ import {
 	removeNote,
 	setEnabled,
 	storedAnchor,
-	typing,
 	updateNote,
 	writeAnchor,
 	type Anchor,
-	type Mode,
 	type Note,
 } from './annotate'
+import { clamp, typing } from '../shared/dom'
+import type { Mode } from '../shared/protocol'
 import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
 import { host, isGuest } from './host'
 import CanvasComments from './CanvasComments.vue'
@@ -1194,7 +1193,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 	<Tooltip v-if="!guest && !canvasOpen" :text="tweakCount ? `Annotate (N), ${plural(tweakCount, 'tweak')} applied` : noter ? 'Annotate (N)' : 'Comment (C)'">
 		<button
 			type="button"
-			data-annotate-ui
 			:aria-label="noter ? 'Annotate' : 'Comment'"
 			:aria-hidden="enabled"
 			:tabindex="enabled ? -1 : 0"
@@ -1221,7 +1219,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div
-			data-annotate-ui
 			class="pointer-events-none fixed left-0 top-0 z-[2147482995] rounded-[4px] border-[1.5px] border-outline-blue-6"
 			:class="[hoverOn ? 'opacity-100' : 'opacity-0', glide && !scrolling ? 'transition-[transform,width,height,opacity] duration-[90ms] ease-out motion-reduce:transition-opacity' : 'transition-opacity duration-100']"
 			:style="hoverBox ? { transform: `translate(${hoverBox.x}px, ${hoverBox.y}px)`, width: `${hoverBox.w}px`, height: `${hoverBox.h}px` } : { display: 'none' }"
@@ -1240,7 +1237,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		<div
 			v-for="o in outs"
 			:key="o.key"
-			data-annotate-ui
 			class="pointer-events-none fixed z-[2147482995] border-[1.5px] border-outline-blue-6"
 			:class="o.dashed ? 'rounded-5 border-dashed' : 'rounded-[4px]'"
 			:style="{ left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px` }"
@@ -1253,7 +1249,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		<Transition enter-from-class="opacity-0" enter-active-class="transition-opacity duration-100">
 			<div
 				v-if="dragRect"
-				data-annotate-ui
 				class="pointer-events-none fixed z-[2147482995] rounded-5 border-[1.5px] border-dashed border-outline-blue-6"
 				:style="{ left: `${dragRect.x}px`, top: `${dragRect.y}px`, width: `${dragRect.w}px`, height: `${dragRect.h}px` }"
 				aria-hidden="true"
@@ -1269,13 +1264,11 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		<!-- Hold Alt: distances in px. -->
 		<template v-for="(l, i) in lines" :key="`l${i}`">
 			<div
-				data-annotate-ui
 				class="pointer-events-none fixed z-[2147482995] bg-surface-red-7"
 				:style="{ left: `${l.x}px`, top: `${l.y}px`, width: `${l.w}px`, height: `${l.h}px` }"
 				aria-hidden="true"
 			/>
 			<div
-				data-annotate-ui
 				class="pointer-events-none fixed z-[2147482995] -translate-x-1/2 -translate-y-1/2 rounded-[4px] bg-surface-red-7 px-1 text-xs tabular-nums text-white"
 				:style="{ left: `${l.lx}px`, top: `${l.ly}px` }"
 				aria-hidden="true"
@@ -1354,7 +1347,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		>
 			<div
 				v-if="listOpen"
-				data-annotate-ui
 				data-notes-panel
 				class="pointer-events-auto fixed z-[2147482995] flex max-h-96 w-80 flex-col rounded-5 bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2"
 				:style="panelStyle"
@@ -1367,7 +1359,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 						<div
 							v-for="n in list"
 							:key="n.id"
-							data-annotate-ui
 							role="button"
 							tabindex="0"
 							class="group flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 transition-colors duration-100 hover:bg-surface-gray-2"
@@ -1404,7 +1395,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 							<div
 								v-for="t in list"
 								:key="t.id"
-								data-annotate-ui
 								role="button"
 								tabindex="0"
 								class="group flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 transition-colors duration-100 hover:bg-surface-gray-2"
@@ -1465,11 +1455,11 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		</Transition>
 
 		<!-- Above the comment box: the box's menus open here. -->
-		<div ref="menuHost" data-annotate-ui data-annotate-menus class="fixed left-0 top-0 z-[2147482999] size-0" />
+		<div ref="menuHost" data-annotate-menus class="fixed left-0 top-0 z-[2147482999] size-0" />
 
 		<!-- Never seen: the owner's widest toolbar (Note, with a count), only to be measured.
 			The count is measured at two digits, so the tabs hold still when it passes 9. -->
-		<div v-if="noter" ref="ghost" data-annotate-ui aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
+		<div v-if="noter" ref="ghost" aria-hidden="true" inert class="pointer-events-none invisible fixed left-0 top-0 flex w-max items-center gap-1.5 rounded-5 border p-1.5">
 			<TabButtons :options="tabOptions" model-value="note">
 				<template #suffix="{ button }">
 					<template v-if="button.value === 'comment'">
@@ -1494,7 +1484,6 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 		>
 			<div
 				ref="bar"
-				data-annotate-ui
 				role="toolbar"
 				aria-label="Annotate"
 				class="pointer-events-auto fixed z-[2147482995] flex touch-none items-center gap-1.5 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"

@@ -16,11 +16,7 @@ export function setSourceFiles(files: Record<string, string>) {
 // The tree itself, for Tweak's hard-coded copy (tweakDom.ts copySource). Never sent on.
 export const sourceFiles = () => source
 
-export const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(n, hi))
-export const typing = (t: EventTarget | null) => {
-  const el = t as HTMLElement | null
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
-}
+export { clamp, typing } from '../shared/dom'
 // Capture-phase document listeners, all removed by the returned function.
 export function listen(handlers: [string, (e: any) => void][]): () => void {
   for (const [type, fn] of handlers) document.addEventListener(type, fn, true)

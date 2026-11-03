@@ -83,7 +83,6 @@ function onKey(e: KeyboardEvent) {
       </div>
     </template>
     <div
-      data-annotate-ui
       class="max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[12px] bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2"
       :style="{ width: `${width}px` }"
       @mousedown.prevent

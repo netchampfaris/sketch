@@ -263,7 +263,6 @@ function onKey(e: KeyboardEvent) {
 <template>
 	<div
 		ref="root"
-		data-annotate-ui
 		data-comment-popover
 		role="dialog"
 		aria-label="Comment"

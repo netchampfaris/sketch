@@ -16,7 +16,6 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }
 		:is="embedded ? 'div' : 'aside'"
 		:data-comments-panel="embedded ? undefined : ''"
 		:aria-label="embedded ? undefined : 'Comments'"
-		data-annotate-ui
 		class="flex flex-col p-2"
 		:class="embedded ? 'min-h-0' : 'pointer-events-auto w-72 overflow-hidden rounded-[16px] bg-surface-elevation-2 shadow-lg ring-1 ring-outline-gray-2'"
 	>

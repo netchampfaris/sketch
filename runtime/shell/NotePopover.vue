@@ -65,7 +65,6 @@ function onKey(e: KeyboardEvent) {
 <template>
 	<div
 		ref="root"
-		data-annotate-ui
 		role="dialog"
 		aria-label="Note"
 		class="pointer-events-auto fixed z-[2147482995] w-[min(18.75rem,calc(100vw-1.5rem))] rounded-[16px] bg-surface-elevation-2 p-3 shadow-lg ring-1 ring-outline-gray-2"

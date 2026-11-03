@@ -5,7 +5,6 @@
 // as well. A new comment typed and not sent stays as a Draft pin: a dashed outline and the author's avatar dimmed;
 // clicking it reopens the box with the words.
 import { computed, onBeforeUnmount } from 'vue'
-import { UI_ATTR } from './annotate'
 import { heldDrafts, matching, openThread, plain, type HeldDraft, type Thread } from './comments'
 import { host } from './host'
 import AuthorAvatar from './AuthorAvatar.vue'
@@ -91,7 +90,6 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 		<button
 			v-for="t in shown"
 			:key="t.id"
-			:[UI_ATTR]="''"
 			data-annotate-pin
 			data-comment-pin
 			type="button"
@@ -121,7 +119,6 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 		<button
 			v-for="h in drafts.filter((d) => heldPos[d.id])"
 			:key="h.id"
-			:[UI_ATTR]="''"
 			data-annotate-pin
 			data-held-draft
 			type="button"
