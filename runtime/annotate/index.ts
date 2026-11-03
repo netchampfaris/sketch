@@ -5,7 +5,7 @@
 // its router, which is what keeps `useRoute()` in the toolbar in step with the page.
 import { createApp } from 'vue'
 import Annotate from './Annotate.vue'
-import { isOurs, ownLayerOpen } from './annotate'
+import { isOurs, ownMenuOpen } from './annotate'
 import { canNote, initHost, type Payload } from './host'
 import { restore, startSaving } from './store'
 
@@ -23,7 +23,7 @@ export function mountAnnotate(data: Payload) {
   // The page's popovers and menus close on a press or focus outside them, heard on document. A press on the toolbar or
   // focus in the comment box is not the page's: keep it from reaching there. While one of our own menus is open, let the
   // press through so it can close; the page's layers below it ignore presses outside then.
-  el.addEventListener('pointerdown', (e) => { if (!ownLayerOpen()) e.stopPropagation() })
+  el.addEventListener('pointerdown', (e) => { if (!ownMenuOpen()) e.stopPropagation() })
   el.addEventListener('focusin', (e) => e.stopPropagation())
   // A trapped menu pulls focus back when focus leaves it. Focus moving into our UI does not count as leaving.
   window.addEventListener('focusout', (e) => { if (isOurs(e.relatedTarget as Node | null)) e.stopImmediatePropagation() }, true)

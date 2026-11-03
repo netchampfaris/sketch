@@ -175,9 +175,9 @@ export const isOurs = (el: Node | null | undefined) => {
 // Escape first. Tooltips come and go with the pointer, so they never hold Escape back.
 export const pageLayerOpen = () =>
   [...document.querySelectorAll('[data-dismissable-layer]')].some((l) => !isOurs(l) && !l.querySelector('[role="tooltip"]'))
-// One of our own menus or dialogs is open, such as a comment's ⋯ menu.
-export const ownLayerOpen = () =>
-  [...document.querySelectorAll('[data-dismissable-layer]')].some((l) => isOurs(l) && !l.querySelector('[role="tooltip"]'))
+// One of our own menus is open, such as a comment's ⋯ menu or a tile's. Only menus: our non-modal popovers (the
+// @mention list) leave the page's layers as they are.
+export const ownMenuOpen = () => [...document.querySelectorAll('[role="menu"][data-state="open"]')].some(isOurs)
 // The page element an event is aimed at; never one of ours.
 export const targetOf = (e: Event) => {
   const t = e.target
