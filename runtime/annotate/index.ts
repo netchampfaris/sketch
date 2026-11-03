@@ -4,6 +4,7 @@
 // its router, which is what keeps `useRoute()` in the toolbar in step with the page.
 import { createApp } from 'vue'
 import Annotate from './Annotate.vue'
+import { isOurs } from './annotate'
 import { initHost, type Payload } from './host'
 import { restore, startSaving } from './store'
 
@@ -18,6 +19,12 @@ export function mountAnnotate(data: Payload) {
   const el = document.createElement('div')
   el.setAttribute('data-sketch-ui', 'annotate')
   document.body.append(el)
+  // The page's popovers and menus close on a press or focus outside them, heard on document. A
+  // press on the toolbar or focus in the comment box is not the page's: keep it from reaching there.
+  el.addEventListener('pointerdown', (e) => e.stopPropagation())
+  el.addEventListener('focusin', (e) => e.stopPropagation())
+  // A trapped menu pulls focus back when it leaves for elsewhere; leaving for our UI is not elsewhere.
+  window.addEventListener('focusout', (e) => isOurs(e.relatedTarget as Node | null) && e.stopImmediatePropagation(), true)
 
   const app = createApp(Annotate)
   app.use(router)
