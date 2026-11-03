@@ -141,18 +141,6 @@ def opened(name: str, user: str) -> None:
 		_record(name, user, *OPENED, frappe.utils.now_datetime())
 
 
-def _label_of(name: str, path: str) -> str:
-	"""The `<variant name>` of an adopted file, or its file name."""
-	from sketch import prototype_files
-
-	try:
-		meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-	except frappe.ValidationError:
-		meta = None
-
-	return (meta or {}).get("name") or path.rsplit("/", 1)[-1].removesuffix(".vue")
-
-
 def _invited(name: str, who: Standing, seen: dict, owner: dict | None) -> dict | None:
 	"""{"by": the owner} while this editor has never opened the Prototype."""
 	if who.role != "editor" or OPENED in seen or not owner:
@@ -184,7 +172,7 @@ def _adopted(name: str, who: Standing, seen: dict, owner: dict | None) -> dict |
 		return None
 
 	when, path = max(found)
-	return {"label": _label_of(name, path), "by": owner, "at": when}
+	return {"label": editor_variants.label_at(name, path), "by": owner, "at": when}
 
 
 def _mentions(row) -> list[str]:
@@ -198,7 +186,7 @@ def _mentions(row) -> list[str]:
 
 def new_variants(name: str, who: Standing, seen: dict, files: list | None = None) -> list[dict]:
 	"""The variants somebody else added since this person last looked: [{option, author, at}]."""
-	from sketch import prototype_files
+	from sketch import editor_variants, prototype_files
 
 	if not who.sees_variants:
 		return []
@@ -207,7 +195,7 @@ def new_variants(name: str, who: Standing, seen: dict, files: list | None = None
 	fresh = []
 	for row in stamps:
 		author = sharing.author_of_path(row.path)
-		option = row.path[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]
+		option = editor_variants.option_of(row.path)
 		if not author or author == who.username or row.creation <= who.since:
 			continue
 
@@ -224,22 +212,12 @@ def new_variants(name: str, who: Standing, seen: dict, files: list | None = None
 	made_by = sharing.people({author for _row, author, _option in fresh})
 	found = []
 	for row, author, option in fresh:
-		if row.path not in on_disk or author not in made_by or not _is_variant(name, row.path):
+		if row.path not in on_disk or author not in made_by or not editor_variants.meta_at(name, row.path):
 			continue
 
 		found.append({"option": option, "author": author, "at": row.creation})
 
 	return found
-
-
-def _is_variant(name: str, path: str) -> bool:
-	"""True when the file declares a `<variant>`. Without one the Runtime shows nothing, so it is not new."""
-	from sketch import prototype_files
-
-	try:
-		return bool(sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"]))
-	except frappe.ValidationError:
-		return False
 
 
 def threads_state(rows: list, who: Standing, seen: dict) -> dict:

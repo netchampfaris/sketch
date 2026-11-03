@@ -408,7 +408,7 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 			found = editor_variants.adoptable(doc, file, name, option)
 			label = found["meta"]["name"]
 		else:
-			label = _name_of(doc.name, kept_path, option)
+			label = editor_variants.label_at(doc.name, kept_path)
 
 	others = [path for path in extras if path != kept_path]
 	leads = bool(extra and found is None and not replaced and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
@@ -450,16 +450,6 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 		"replaced": bool(replaced),
 		"sequence": version.sequence if version else None,
 	}
-
-
-def _name_of(name: str, path: str, option: str) -> str:
-	"""The `<variant name>` of an adopted file, or the end of its option value."""
-	try:
-		meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-	except frappe.ValidationError:
-		meta = None
-
-	return (meta or {}).get("name") or option.rsplit("/", 1)[-1]
 
 
 def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:

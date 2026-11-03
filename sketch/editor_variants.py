@@ -51,6 +51,19 @@ def option_of(path: str) -> str:
 	return path[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]
 
 
+def meta_at(name: str, path: str) -> dict | None:
+	"""The `<variant>` tag of one file, or None when the file is gone, has none, or has one that cannot work."""
+	try:
+		return sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
+	except frappe.ValidationError:
+		return None
+
+
+def label_at(name: str, path: str) -> str:
+	"""The option's name: its `<variant name>`, or its file name."""
+	return (meta_at(name, path) or {}).get("name") or path.rsplit("/", 1)[-1].removesuffix(".vue")
+
+
 # ------------------------------------------------------------------- registry
 
 
@@ -97,11 +110,7 @@ def leaders(name: str, host_file: str, set_name: str, keep: str | None = None) -
 		if path == keep or not isinstance(row, dict) or not row.get("default"):
 			continue
 
-		try:
-			meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-		except frappe.ValidationError:
-			continue
-
+		meta = meta_at(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
 
@@ -124,11 +133,7 @@ def targeting(name: str, host_file: str, set_name: str) -> list[str]:
 		if not path.endswith(".vue") or not (sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)):
 			continue
 
-		try:
-			meta = sharing.variant_meta(prototype_files.read_files(name, [path])[0]["content"])
-		except frappe.ValidationError:
-			continue
-
+		meta = meta_at(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
 
@@ -240,8 +245,7 @@ def replacement(doc, host_file: str, set_name: str, option: str) -> dict:
 	except frappe.ValidationError:
 		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
 
-	meta = sharing.variant_meta(source)
-	return {"source": as_component(source, path, host_file), "label": (meta or {}).get("name") or option.rsplit("/", 1)[-1]}
+	return {"source": as_component(source, path, host_file), "label": label_at(doc.name, path)}
 
 
 def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
@@ -300,12 +304,12 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	versions.lock(doc.name)
 	by = None if is_owner else username
 	try:
-		source = prototype_files.read_files(doc.name, [path])[0]["content"]
+		prototype_files.read_files(doc.name, [path])
 	except frappe.ValidationError:
 		frappe.throw(frappe._("That variant is already gone."), frappe.ValidationError)
 
-	meta = sharing.variant_meta(source) if _quiet(source) else None
-	label = (meta or {}).get("name") or option.rsplit("/", 1)[-1]
+	# A broken tag still deletes; it just has no label.
+	label = label_at(doc.name, path)
 	versions.commit_before(doc, "Changes before a variant was deleted", [path], by)
 
 	prototype_files.delete_file(doc.name, path)
@@ -318,15 +322,6 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 
 	version = versions.commit(doc, f"Deleted the variant “{label}”", source="App", by=by)
 	return {"option": option, "label": label, "sequence": version.sequence if version else None}
-
-
-def _quiet(source: str) -> bool:
-	"""True when the tag parses. A broken file still deletes; it just has no label."""
-	try:
-		sharing.variant_meta(source)
-		return True
-	except frappe.ValidationError:
-		return False
 
 
 def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
