@@ -62,7 +62,7 @@ class Standing:
 
 	user: str
 	username: str
-	role: str
+	role: str  # `sharing.role_of`: owner, editor or viewer (a signed-in reader)
 	since: datetime
 
 	@property
@@ -110,11 +110,11 @@ def standing(name: str, user: str, rows: list | None = None) -> Standing | None:
 	rows = rows if rows is not None else _rows(name)
 	own = [r.creation for r in rows if r.author == username]
 	if own:
-		return Standing(user, username, "reader", min(own))
+		return Standing(user, username, role, min(own))
 
 	# Named in a comment but never wrote one (they took it back, or were mentioned first): the mention is where they start.
 	named = [r.creation for r in rows if username in _mentions(r)]
-	return Standing(user, username, "reader", min(named) - timedelta(microseconds=1)) if named else None
+	return Standing(user, username, role, min(named) - timedelta(microseconds=1)) if named else None
 
 
 def _rows(name: str) -> list:

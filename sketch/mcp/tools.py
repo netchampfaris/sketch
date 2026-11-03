@@ -204,7 +204,7 @@ def guard_editor_write(doc, role: str, entries: list[dict]) -> str | None:
 	"""Refuse an editor's write outside their own folder. Returns the username to stamp, or None for the owner."""
 	by = editor_of(role)
 	if by:
-		sharing.check_paths(doc.name, by, [e.get("path") for e in entries])
+		sharing.check_paths(by, [e.get("path") for e in entries])
 		sharing.check_sources(entries)
 		sharing.check_quota(doc.name, by, entries)
 
@@ -215,7 +215,7 @@ def guard_editor_edit(doc, role: str, edits: list[dict]) -> str | None:
 	"""`guard_editor_write` for edits: an editor's quota and `<variant>` tag are checked on what the files would hold after them."""
 	by = editor_of(role)
 	if by:
-		sharing.check_paths(doc.name, by, [e.get("path") for e in edits])
+		sharing.check_paths(by, [e.get("path") for e in edits])
 		guard_editor_write(doc, role, prototype_files.edited(doc.name, edits))
 
 	return by
@@ -481,7 +481,7 @@ def do_delete_file(args: dict) -> ToolResult:
 
 	by = editor_of(role)
 	if by:
-		sharing.check_paths(doc.name, by, [path])
+		sharing.check_paths(by, [path])
 
 	prototype_files.delete_file(doc.name, path)
 	versions.note(doc.name, path, versions.DELETED, by)

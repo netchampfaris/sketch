@@ -223,7 +223,7 @@ def is_editor_path(path: str) -> bool:
 	return author_of_path(path) is not None
 
 
-def check_paths(name: str, username: str, paths: list[str]) -> None:
+def check_paths(username: str, paths: list[str]) -> None:
 	"""Refuse any path outside the editor's own folder. Raises PermissionError.
 
 	Every write tool of an editor's agent calls this before it touches disk. The

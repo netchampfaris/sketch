@@ -164,8 +164,8 @@ def clear(name: str, ids: list[str] | None = None, editor: str | None = None) ->
 	moves the revision, because it is the one the open Viewer has to see.
 	"""
 	doc = read(name, for_update=True, editor=editor)
-	notes = [n for n in doc.get("notes") or [] if isinstance(n, dict)]
-	tweaks = [t for t in doc.get("tweaks") or [] if isinstance(t, dict)]
+	notes = _rows(doc.get("notes"))
+	tweaks = _rows(doc.get("tweaks"))
 
 	if ids is None:
 		keep_notes, keep_tweaks = [], []
