@@ -16,7 +16,7 @@ export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } fr
 export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
 export { menuBind } from './menus'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'
-export { applyPicks, currentPicks, picksAvailable, picksShown, picksWords } from './picks'
+export { applyPicks, currentPicks, demoEntries, picksAvailable, picksShown, picksWords } from './picks'
 export type { DemoPick } from './picks'
 
 // A demo value (a persona, a workflow phase). The first option is the default.

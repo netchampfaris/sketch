@@ -756,6 +756,7 @@ async function startShellAgent(status) {
       status,
       routes: router ? [...new Set(router.getRoutes().map((r) => r.path))] : [],
       router,
+      files: (payload && payload.files) || {},
       repaint: (hints) => {
         copyHints = hints
         document.querySelector('.sk-status')?.remove()
