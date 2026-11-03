@@ -27,7 +27,12 @@ REORDERED = """<template>
   </Variants>
 </template>
 """
-BLOBS = {"p1": PAGE, "p2": REORDERED, "lucia": "<variant set='Deal card' name='Final' />", "daniel": "<variant set='Deal card' name='Kanban' />"}
+BLOBS = {
+	"p1": PAGE,
+	"p2": REORDERED,
+	"lucia": "<variant set='Deal card' name='Final' />",
+	"daniel": "<variant set='Deal card' name='Kanban' />",
+}
 
 
 def fold(steps):

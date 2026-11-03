@@ -43,7 +43,9 @@ def first_seen(name: str) -> dict:
 	)
 	if rows:
 		for row in rows:
-			filed = {r.get("path") for r in versions._parse(row.changes) if r.get("action") != versions.DELETED}
+			filed = {
+				r.get("path") for r in versions._parse(row.changes) if r.get("action") != versions.DELETED
+			}
 			_read_version(name, state, row.sequence, versions._parse_manifest(row.manifest), filed)
 		_write(name, state)
 
@@ -90,7 +92,10 @@ def _read_version(name: str, state: dict, sequence: int, manifest: dict, filed: 
 				if slot["key"] != "default":
 					known.setdefault(slot["key"], sequence)
 
-	state["manifest"] = {**{p: sha for p, sha in was.items() if p in now}, **{p: now[p] for p in filed if p in now}}
+	state["manifest"] = {
+		**{p: sha for p, sha in was.items() if p in now},
+		**{p: now[p] for p in filed if p in now},
+	}
 
 
 def _path(name: str) -> str:
