@@ -1,18 +1,15 @@
 // Annotate: pick elements or drag a box, leave a note, copy the lot as a prompt for a coding agent.
-// The state, the element helpers and the prompt builder live here; the .vue files draw.
-// Saved state is restored by store.ts once the Prototype's payload is known; nothing here reads
-// the Prototype's files or storage directly.
-import { ref, shallowRef, type Ref } from 'vue'
-import { whereOf, type TileRef } from 'sketch:variants'
+// The toolbar's state and the prompt builder live here; the .vue files draw. The elements are in the
+// frame, which picks them (runtime/agent/pick.ts); a note holds what the frame reported about them.
+// Saved state is restored by notes.ts from the shell's boot JSON.
+import { ref } from 'vue'
+import { whereOf, type TileRef } from './variants'
 import { subject } from './host'
-import type { TweakItem } from '../shared/tweak'
 import { elementLine } from '../shared/tweak'
-import { resolve, UI_ATTR, type BoxInfo, type ElInfo } from '../agent/dom'
+import { UI_ATTR, type BoxInfo, type ElInfo } from '../agent/dom'
 
-// The DOM helpers moved to runtime/agent/dom.ts, where the shell's frame agent uses them too. They are
-// re-exported here so the in-frame toolbar and tweak tool read them as before.
-export * from '../agent/dom'
-export { elementLine }
+// The attribute that marks Sketch's own UI, and two small helpers, shared with the frame agent.
+export { UI_ATTR, clamp, typing } from '../agent/dom'
 
 export type Note = {
   id: string
@@ -36,7 +33,6 @@ export type Note = {
   tile?: TileRef
   createdAt: number
 }
-export const isTileNote = (n: { tile?: unknown }) => !!n.tile
 
 // The server's copy of a list may come from an older build or a hand edit, or be written by the
 // Prototype's own code: drop what is unusable instead of breaking the page.
@@ -47,84 +43,47 @@ export const newId = () => `${Date.now().toString(36)}${Math.random().toString(3
 // ---- State ----------------------------------------------------------------------------
 // `enabled` shows the toolbar (else only the faint trigger); `active` is a tool picking inside it (note, comment or tweak).
 // Session state: closed on every load, the faint trigger opens it.
-export const toolbarOpen = ref(false)
-export const enabled = toolbarOpen
+export const enabled = ref(false)
 export const active = ref(false)
 
 // The toolbar has three tools. Note is the owner's instructions for their agent; Comment is a
-// conversation with people (comments.ts); Tweak lives in its own files and registers its count,
-// copy and reset here, so the toolbar can drive it without importing it.
+// conversation with people (comments.ts); Tweak lives in its own files (tweaks.ts, TweakLayer.vue).
 export type Mode = 'note' | 'tweak' | 'comment'
 export const mode = ref<Mode>('note')
-export type TweakApi = {
-  count: Ref<number>
-  items: Ref<TweakItem[]>
-  copy: () => string
-  reset: () => void
-  remove: (id: string) => void
-  reveal: (id: string) => Promise<void>
-  highlight: (id: string | null) => void
-}
-export const tweakApi = shallowRef<TweakApi | null>(null)
 export const notes = ref<Note[]>([])
 export const isNote = (n: any) => typeof n.id === 'string' && typeof n.route === 'string' && typeof n.note === 'string' && !!n.offset && !!n.rect
 
-// Element outlined right now (hovered in comment mode, or the element of a hovered pin).
-export const hoverEl = shallowRef<Element | null>(null)
-export const hoverLabel = ref('')
-// Set with hoverEl when the hovered pin belongs to a dragged box, so the box is redrawn too.
-export const hoverFrac = shallowRef<BoxInfo | null>(null)
-// Outlined for a second after a jump from the notes list.
-export const flashEl = shallowRef<Element | null>(null)
-
 export function setEnabled(on: boolean) {
-  toolbarOpen.value = on
+  enabled.value = on
   if (!on) active.value = false
 }
 
-// Live elements of notes made this page session: pins trust these before any selector.
-const live = new Map<string, WeakRef<Element>>()
 // A note's number on its pin, in the list and in the prompt: its place among the notes of its page, or among
 // the notes on tiles. Never stored: deleting a note renumbers the rest.
 export const noteNumber = (n: Note) => notes.value.filter((x) => (n.tile ? !!x.tile : !x.tile && x.route === n.route)).findIndex((x) => x.id === n.id) + 1
-export function addNote(n: Omit<Note, 'id' | 'createdAt'>, els: Element[] = []) {
-  const id = newId()
-  els.forEach((el, i) => live.set(`${id}:${i}`, new WeakRef(el)))
-  notes.value = [...notes.value, { ...n, id, createdAt: Date.now() }]
-}
-// The note's i-th element (0 is the main one, then the extras): the live reference, else the selector.
-export function resolveNote(n: Note, i = 0): Element | null {
-  const el = live.get(`${n.id}:${i}`)?.deref()
-  if (el?.isConnected) return el
-  return resolve(i === 0 ? n.selector : (n.extras?.[i - 1]?.selector ?? ''))
+export function addNote(n: Omit<Note, 'id' | 'createdAt'>) {
+  notes.value = [...notes.value, { ...n, id: newId(), createdAt: Date.now() }]
 }
 export function updateNote(id: string, note: string) {
   notes.value = notes.value.map((x) => (x.id === id ? { ...x, note } : x))
 }
-// A note that is gone no longer needs its live elements.
-function forget(ids: string[]) {
-  for (const k of [...live.keys()]) if (ids.includes(k.slice(0, k.lastIndexOf(':')))) live.delete(k)
-}
 export function removeNote(id: string) {
-  forget([id])
   notes.value = notes.value.filter((x) => x.id !== id)
 }
 export function clearNotes() {
-  live.clear()
   notes.value = []
 }
 export function markSent(ids: string[]) {
   notes.value = notes.value.map((x) => (ids.includes(x.id) ? { ...x, sent: true } : x))
 }
 export function clearSent() {
-  forget(notes.value.filter((x) => x.sent).map((x) => x.id))
   notes.value = notes.value.filter((x) => !x.sent)
 }
 
 // ---- Toolbar anchor --------------------------------------------------------------------
 export const ANCHORS = ['top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'] as const
 export type Anchor = (typeof ANCHORS)[number]
-// null until the toolbar has been moved once. store.ts restores and saves it with the notes.
+// null until the toolbar has been moved once. notes.ts restores and saves it with the notes.
 export const anchorPref = ref<Anchor | null>(null)
 export const isAnchor = (v: unknown): v is Anchor => typeof v === 'string' && (ANCHORS as readonly string[]).includes(v)
 export function storedAnchor(): Anchor | null {
@@ -135,13 +94,6 @@ export function readAnchor(): Anchor {
 }
 export function writeAnchor(a: Anchor) {
   anchorPref.value = a
-}
-
-// Where a note's pin sits right now (or where it was made, when its element is gone).
-export function pinPoint(n: Note): { x: number; y: number } {
-  const el = resolveNote(n)
-  const r = el ? el.getBoundingClientRect() : null
-  return r ? { x: r.left + n.offset.x * r.width, y: r.top + n.offset.y * r.height } : { x: n.rect.x + n.offset.x * n.rect.w, y: n.rect.y + n.offset.y * n.rect.h }
 }
 
 // ---- Prompt ----------------------------------------------------------------------------

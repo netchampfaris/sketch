@@ -1,12 +1,11 @@
 <script setup lang="ts">
-// The Demo pill and the canvas. The Viewer renders this beside the Prototype's App when the Prototype imports
-// `sketch:variants`, and hands it that App, so a canvas frame can render the same app without an import cycle.
-// Nothing shows inside a frame, or while Sketch captures a thumbnail (`data-sketch-chrome="off"`). The canvas
-// is its own chunk: it downloads when the first canvas opens. In the Viewer shell's frame (`data-sketch-chrome="shell"`)
-// the shell draws the Demo pill, from what the frame agent reports, and only the canvas is drawn here.
+// The canvas. The Viewer renders this beside the Prototype's App when the Prototype imports `sketch:variants`, and
+// hands it that App, so a canvas frame can render the same app without an import cycle. Nothing shows inside a frame,
+// or for a `check` run (`data-sketch-chrome="off"`). The Demo pill is the Viewer shell's, drawn over this page from
+// what the frame agent reports (runtime/shell/DemoPill.vue). The canvas is its own chunk: it downloads when the first
+// canvas opens.
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import Pills from './Pills.vue'
 import { sandboxKey } from './state'
 
 defineProps<{ shell: any }>()
@@ -20,12 +19,8 @@ watcher.observe(document.documentElement, { attributes: true, attributeFilter: [
 onBeforeUnmount(() => watcher.disconnect())
 
 const canvasOpen = computed(() => !!route.query.canvas)
-const pills = document.documentElement.dataset.sketchChrome !== 'shell'
 </script>
 
 <template>
-  <template v-if="!inFrame && !hidden">
-    <Pills v-if="pills" />
-    <Canvas v-if="canvasOpen" :app="shell" />
-  </template>
+  <Canvas v-if="!inFrame && !hidden && canvasOpen" :app="shell" />
 </template>

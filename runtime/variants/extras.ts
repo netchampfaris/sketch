@@ -19,12 +19,9 @@ export type Extra = {
   load: () => unknown
 }
 export type Person = { name: string; image: string }
-export type Editing = { name: string; user: string; owner: boolean; exp: string; sig: string }
 
 export const extras = shallowReactive<Extra[]>([])
 export const people = reactive<Record<string, Person>>({})
-// What deleting a variant needs: set for the owner and for an invited editor, absent for everyone else.
-export const editing = shallowReactive<{ value: Editing | null }>({ value: null })
 // The Viewer's report hook, so a variant that failed shows in `check` as a warning.
 export const failed = { report: (_e: Extra, _err: unknown) => {} }
 

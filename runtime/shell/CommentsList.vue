@@ -4,7 +4,7 @@
 // (comments.ts isGone). The live page's floating panel, the canvas panel's Comments tab and the phone sheet all draw this.
 import { computed } from 'vue'
 import { Button, ScrollArea, Skeleton } from 'frappe-ui'
-import { bridge, findTile } from 'sketch:variants'
+import { bridge, findTile } from './variants'
 import { load, matching, openThread, query, spotOfThread, status, threads, type Thread } from './comments'
 import CommentRow from './CommentRow.vue'
 import { pageNameOf } from './host'

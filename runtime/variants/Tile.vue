@@ -4,13 +4,10 @@
 // use `--ls`, so zooming only scales the layout.
 import { computed, nextTick, ref, watch } from 'vue'
 import { useIntersectionObserver } from '@vueuse/core'
-import { Avatar, Badge, Button, Dropdown, toast } from 'frappe-ui'
+import { Avatar, Badge, Button } from 'frappe-ui'
 import { avatarTheme } from '../shared/avatarTheme'
 import { bridge } from './bridge'
-import { canKeepOnly, canMakeDefault, keepFailure, keepOnly, makeDefault, makeFailure } from './default'
-import { canDelete, deleteFailure, deleteVariant } from './edit'
 import { isNew } from './badges'
-import { menuBind, menuHost } from './menus'
 import { people, personName, shortName } from './extras'
 import Frame from './Frame.vue'
 import { MARGIN } from './layout'
@@ -27,7 +24,7 @@ const props = defineProps<{
   win: { w: number; h: number }
   sandbox?: Sandbox
 }>()
-const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; openPage: []; near: [near: boolean] }>()
+const emit = defineEmits<{ activate: [e: MouseEvent | KeyboardEvent]; near: [near: boolean] }>()
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -48,66 +45,8 @@ const rect = computed(() => {
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
   return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
 })
-// Make default: the owner's page only, on the live tile, on an option that is not first. The page reloads once it is
-// saved, so the Default badge is on the new first tile when it comes back.
-const defaultable = computed(() => {
-  const t = props.tile
-  return t.kind === 'set' && !t.isDefault && t.setFile && t.setName && t.setOptions
-    ? { name: t.setName, file: t.setFile, options: () => t.setOptions! }
-    : null
-})
-const canDefault = computed(() => !!defaultable.value && canMakeDefault(defaultable.value))
-const saving = ref(false)
-async function makeIt() {
-  if (!defaultable.value || saving.value) return
-  saving.value = true
-  try {
-    await makeDefault(defaultable.value, props.tile.option!)
-  } catch (e) {
-    saving.value = false
-    toast.error(makeFailure(e as Error))
-  }
-}
-
-// Delete variant: on the live tile of an option a teammate made. The page reloads once the file is gone, and the
-// Undo toast is shown by the page that comes back (edit.ts).
-const deletable = computed(() => !!props.tile.author && !!props.tile.option && canDelete(props.tile.option))
-async function deleteIt() {
-  if (!deletable.value || saving.value) return
-  saving.value = true
-  try {
-    await deleteVariant(props.tile.option!, props.tile.opt ?? props.tile.caption)
-  } catch (e) {
-    saving.value = false
-    toast.error(deleteFailure(e as Error))
-  }
-}
-
-// Keep only this: the owner's page only, on any option of a set that has others, a teammate's too (the server adopts
-// it first). It cuts the rest from the source, so it sits above Delete variant, and the page that comes back shows
-// "Kept …" with Undo (default.ts).
-const keepable = computed(() => {
-  const t = props.tile
-  return t.kind === 'set' && !!t.option && !!t.setFile && !!t.setName && (t.setOptions?.length ?? 0) > 1 && canKeepOnly({ file: t.setFile }) && !bridge.tool
-})
-async function keepIt() {
-  if (!keepable.value || saving.value) return
-  saving.value = true
-  try {
-    await keepOnly({ name: props.tile.setName!, file: props.tile.setFile! }, props.tile.option!, props.tile.opt ?? props.tile.caption)
-  } catch (e) {
-    saving.value = false
-    toast.error(keepFailure(e as Error))
-  }
-}
-// Every action of the live tile sits in its one ⋯ menu.
-const menu = computed(() => [
-  ...(canDefault.value && !bridge.tool ? [{ label: 'Make default', icon: 'lucide-star', onClick: makeIt }] : []),
-  { label: 'Open page', icon: 'lucide-arrow-up-right', onClick: () => emit('openPage') },
-  ...(keepable.value ? [{ label: 'Keep only this', icon: 'lucide-check', onClick: keepIt }] : []),
-  ...(deletable.value ? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: deleteIt }] : []),
-])
-
+// The live tile's ⋯: its menu (Make default, Open page, Keep only this, Delete variant) is the Viewer shell's
+// (runtime/shell/TileMenu.vue), which knows who is reading and saves over the session. The ⋯ only says where it is.
 function askMenu(e: MouseEvent) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
   bridge.tileMenu?.(props.tile.id, { x: r.left, y: r.top, w: r.width, h: r.height })
@@ -139,10 +78,8 @@ watch(
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
-        <!-- In the Viewer shell's frame the menu is the shell's (runtime/shell/TileMenu.vue): the ⋯ only says where it is.
-             It sits where the Dropdown's trigger does (the Dropdown takes no class, so the trigger follows the badges). -->
         <Button
-          v-if="live && bridge.shell"
+          v-if="live"
           class="-mr-1.5"
           variant="ghost"
           size="xs"
@@ -154,9 +91,6 @@ watch(
           aria-haspopup="menu"
           @click.stop="askMenu"
         />
-        <Dropdown v-else-if="live" class="ml-auto" v-bind="menuBind(`tile:${tile.id}`)" :portal-to="menuHost()" :options="menu" placement="bottom-end">
-          <Button class="-mr-1.5" variant="ghost" size="xs" icon="lucide-ellipsis" :loading="saving" aria-label="Actions for this variant" @click.stop />
-        </Dropdown>
       </div>
     </div>
     <div

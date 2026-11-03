@@ -1,7 +1,7 @@
 // The page's DOM, read for the annotate tools: which element an event is aimed at, a stable selector for it,
 // which of the Prototype's components drew it, what a dragged box covers, and the distances between two boxes.
-// It runs where the Prototype's document is: the in-frame toolbar (runtime/annotate) and the Viewer shell's
-// frame agent (runtime/agent/pick.ts) both use it. It never draws and holds no state but the source file names.
+// It runs where the Prototype's document is, in the Viewer shell's frame (runtime/agent/pick.ts, tweakPick.ts). It
+// never draws and holds no state but the source file names.
 import type { BoxInfo, ElInfo, Rect } from '../shared/protocol'
 
 export type { BoxInfo, ElInfo, Rect }

@@ -4,7 +4,7 @@
 // agent still reads it, so it is never hidden. Nothing is written, so an Undo of Keep only this brings the tile back.
 import { computed, ref } from 'vue'
 import { Button, ScrollArea, TextInput, Tooltip } from 'frappe-ui'
-import { bridge, findTile, tileExists, tileLabel } from 'sketch:variants'
+import { bridge, findTile, tileExists, tileLabel } from './variants'
 import { pageNameOf } from './host'
 import { noteNumber, notes, type Note } from './annotate'
 

@@ -5,7 +5,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { Badge, Button, Dropdown, Textarea, Tooltip, providePortalTarget, toast } from 'frappe-ui'
-import { applyPicks, menuBind, picksShown, picksWords } from 'sketch:variants'
+import { applyPicks, menuBind, picksShown, picksWords } from './variants'
 import { host } from './host'
 import {
 	MAX_BYTES,

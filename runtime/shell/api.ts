@@ -37,8 +37,8 @@ function readError(body: any): string {
 	}
 }
 
-// A write whose refusal is shown to the person: the error carries the server's own words, as the frame's writes did
-// (runtime/variants/default.ts). `method` is the whole dotted path. A connection that fails is the browser's TypeError.
+// A write whose refusal is shown to the person: the error carries the server's own words. `method` is the whole
+// dotted path. A connection that fails is the browser's TypeError.
 export async function write<T = any>(method: string, fields: Record<string, string>): Promise<T> {
 	const res = await fetch(`/api/method/${method}`, {
 		method: 'POST',

@@ -3,13 +3,13 @@
 // the prompt or the owner's saved annotations, and each change is its own call to the server
 // (sketch/comments.py), so nothing here ever replaces the whole set.
 //
-// The page holds a ticket, not a pass. The pass (15 minutes) is minted when Comment mode opens and
-// renewed while the person is active; leaving Comment mode drops it. The Viewer is sandboxed and sends
-// no cookie, so every call carries the pass and nothing else.
+// Every call goes over the reader's session (api.ts, sketch.viewer_api): who is speaking is the server's to
+// know, never the page's. No word of a comment goes to the frame.
 import { computed, ref } from 'vue'
-import { bridge, readThread, setUnread, tileExists } from 'sketch:variants'
-import type { DemoPick, TileSpot } from 'sketch:variants'
+import { bridge, readThread, setUnread, tileExists } from './variants'
+import type { DemoPick, TileSpot } from './variants'
 import { host } from './host'
+import { call } from './api'
 import type { Note } from './annotate'
 
 // `author` is the username; `name` the full name the server sends with it (the username when there is none).
@@ -23,9 +23,7 @@ export type Person = { name?: string; image?: string }
 // Someone a comment can mention: the owner, the editors and, on a public prototype, everyone who has commented.
 export type Mentionable = { username: string; name: string; image: string }
 
-const BASE = '/api/method/sketch.api.'
 const POLL_MS = 20000
-const PASS_MARGIN_S = 60
 export const MAX_BYTES = 4096
 
 export const threads = ref<Thread[]>([])
@@ -68,51 +66,6 @@ export const matching = computed(() => {
 })
 export const byteLength = (s: string) => new TextEncoder().encode(s).length
 
-// ---- The pass ------------------------------------------------------------------------------
-let pass: { exp: number; sig: string } | null = null
-let minting: Promise<{ exp: number; sig: string }> | null = null
-
-const now = () => Date.now() / 1000
-
-async function mint() {
-  const form = new URLSearchParams({ name: host.name, username: host.me, exp: host.ticketExp, sig: host.ticketSig })
-  const res = await fetch(`${BASE}comment_pass`, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store' })
-  if (!res.ok) throw new HttpError(res.status)
-  const { message } = await res.json()
-  pass = { exp: Number(message.exp), sig: String(message.sig) }
-  return pass
-}
-
-async function ensurePass(force = false) {
-  if (!force && pass && pass.exp - now() > PASS_MARGIN_S) return pass
-  minting ??= mint().finally(() => (minting = null))
-  return minting
-}
-
-export class HttpError extends Error {
-  constructor(public status: number) {
-    super(String(status))
-  }
-}
-
-// How a call reaches the server. Here in the frame, signed with the pass; the Viewer shell swaps in its
-// session calls (runtime/shell/api.ts), and the rest of this file is the same for both.
-export const transport = { call: passCall as <T = any>(method: string, fields: Record<string, string>) => Promise<T> }
-const call = <T = any>(method: string, fields: Record<string, string> = {}) => transport.call<T>(method, fields)
-
-// One call as the signed-in person. A 404 may only mean the pass went stale, so it is asked for
-// again once before it counts.
-async function passCall<T = any>(method: string, fields: Record<string, string> = {}): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    const p = await ensurePass(attempt > 0)
-    const form = new URLSearchParams({ name: host.name, username: host.me, exp: String(p.exp), sig: p.sig, ...fields })
-    const res = await fetch(BASE + method, { method: 'POST', body: form, credentials: 'omit', cache: 'no-store' })
-    if (res.status === 404 && attempt === 0) continue
-    if (!res.ok) throw new HttpError(res.status)
-    return (await res.json()).message as T
-  }
-}
-
 // ---- Reading ---------------------------------------------------------------------------------
 const RECENT_MS = 5000
 const readAt: Record<string, number> = {}
@@ -147,11 +100,10 @@ export function startListening() {
   timer = window.setInterval(() => !document.hidden && void load(true), POLL_MS)
 }
 
-// Comment mode closes: no pass is kept, and nothing polls.
+// Comment mode closes: nothing polls.
 export function stopListening() {
   listening = false
   clearInterval(timer)
-  pass = null
   openThread.value = null
   query.value = ''
 }
@@ -211,6 +163,7 @@ export const threadById = (id: string | null | undefined) => (id ? threads.value
 export const personOf = (username: string): Person => people.value[username] ?? mentionable.value.find((m) => m.username === username) ?? {}
 
 // ---- Time --------------------------------------------------------------------------------------
+const now = () => Date.now() / 1000
 export function ago(ts: number): string {
   const s = Math.max(0, now() - ts)
   if (s < 60) return 'now'

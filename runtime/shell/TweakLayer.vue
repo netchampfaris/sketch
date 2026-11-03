@@ -1,14 +1,13 @@
 <script setup lang="ts">
 // Tweak in the Viewer shell: the popover under the picked element, its outlines, the hint and the word by the pointer.
-// The shell copy of runtime/annotate/TweakLayer.vue, with the same look and copy. The page is in the frame, so the
-// pointer is caught there and the selection lives there (runtime/agent/tweakPick.ts): it sends what the picked elements
-// are (`facts`) and where they are (`outlines`), and this draws. Every change made here is the shell's own: it updates
+// The page is in the frame, so the pointer is caught there and the selection lives there (runtime/agent/tweakPick.ts):
+// it sends what the picked elements are (`facts`) and where they are (`outlines`), and this draws. Every change made here is the shell's own: it updates
 // the tweaks (tweaks.ts) and tells the frame what to write. Mounted by the toolbar for the owner and an invited editor.
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Button, Textarea, TextInput } from 'frappe-ui'
-import TokenSelect from '../annotate/TokenSelect.vue'
-import { clamp, newId, typing } from '../annotate/annotate'
+import TokenSelect from './TokenSelect.vue'
+import { clamp, newId, typing } from './annotate'
 import { CAT, KNOWN, STACK_CLASSES, emitSides, isComposite, madeStack, readSides, type Sides } from '../shared/tweak'
 import type { TweakFacts } from '../shared/protocol'
 import {

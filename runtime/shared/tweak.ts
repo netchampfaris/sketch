@@ -1,8 +1,7 @@
 // Tweak's pure half: the token lists, the class maths, what a tweak changed, the list's rows and the prompt.
-// No DOM here. The in-frame tool (runtime/annotate/tweak.ts) and the Viewer shell (runtime/shell/tweaks.ts) both
-// build their rows and their prompt from these, so the two say the same thing for the same tweaks. What reads or
-// writes the page lives with the page: runtime/annotate/tweak.ts in the frame-only toolbar, runtime/agent/tweakDom.ts
-// under the shell.
+// No DOM here. The Viewer shell (runtime/shell/tweaks.ts) builds its rows and its prompt from these, and the frame
+// agent (runtime/agent/tweakDom.ts) its class writes, so the two agree on every class. What reads or writes the page
+// lives with the page, in runtime/agent/tweakDom.ts.
 
 // One thing a row says changed: an icon (or a colour swatch) and a short value.
 export type Change = { icon?: string; swatch?: { kind: 'ink' | 'bg' | 'border'; cls: string }; text: string }

@@ -1,6 +1,8 @@
-// The Viewer's boot script. Runs inside the iframe. Reads a Prototype's source
-// tree out of the page, compiles it in the browser, links it, mounts it, and
-// reports what happened.
+// The Viewer's boot script. Runs inside the Viewer shell's sandboxed iframe, or
+// alone for a `check` run. Reads a Prototype's source tree out of the page,
+// compiles it in the browser, links it, mounts it, and reports what happened.
+// Nothing here acts as anyone: the page holds no credential, and the chrome that
+// writes is the shell's (runtime/shell), on Sketch's own origin.
 import { createApp, h } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { FrappeUI, FrappeUIProvider } from 'frappe-ui'
@@ -145,40 +147,20 @@ function setTitle(data) {
   if (title) document.title = title
 }
 
-// The gallery embeds one Viewer per card in a same-origin iframe
-// (frontend/src/components/PrototypePreview.vue). A framed Viewer is a picture
-// of the Prototype: no poller.
-const framed = window.top !== window.self
-
-// The Viewer shell's frame (sketch/viewer.py SHELL_FLAG): the renderer marks its payload `chrome: 'shell'`.
-// It is framed, by Sketch's own page, and it keeps the page's chrome.
+// The Viewer shell's frame: the renderer marks its payload `chrome: 'shell'`, and `check`'s `chrome: 'off'`
+// (sketch/viewer.py frame_payload).
 const inShell = (data) => data.chrome === 'shell'
 
-// A framed Viewer and a `check` run (the Guest request that carries `sig` in its URL) show the design
-// alone: Variants reads this and leaves its pill out.
-function chromeOff(data) {
-  if (data.chrome === 'off' || new URLSearchParams(location.search).has('sig')) return true
-  return framed && !inShell(data)
-}
+// A `check` run (the Guest request that carries `sig` in its URL) shows the design alone: Variants reads this and
+// draws no canvas, and no agent starts.
+const chromeOff = (data) => data.chrome === 'off' || new URLSearchParams(location.search).has('sig')
 
-// In the shell's frame the payload says nothing about who is reading, so the status copy takes its two
-// facts from the shell (the agent's `copy` message). Elsewhere they come from the payload, as before.
+// The payload says nothing about who is reading, so the status copy takes its two facts from the shell (the
+// agent's `copy` message): is this the owner, and does the shell reload the frame as the agent writes. Until it
+// says, and for `check`, the copy is a reader's.
 let copyHints = null
-const ownerCopy = (data) => (copyHints ? copyHints.owner : Boolean(data.is_owner))
-const reloadCopy = (data) => (copyHints ? copyHints.reloads : reloadsItself(data))
-
-// The one answer to "does this tab reload itself". startLiveReload and the
-// status copy both read it, so the promise can never outlive the poller. The
-// copy used to read `data.live` alone, so a card preview of the owner's own
-// empty Prototype promised a reload that startLiveReload never started.
-//
-// `data.sig` is the credential the poll needs. The document is sandboxed into
-// an opaque origin, so a cookie cannot authenticate the request and the
-// renderer mints a signature into the page instead. A document served before
-// that change carries none, and it must promise nothing.
-function reloadsItself(data) {
-  return Boolean(data.live) && Boolean(data.name) && Boolean(data.sig) && !framed
-}
+const ownerCopy = () => Boolean(copyHints?.owner)
+const reloadCopy = () => Boolean(copyHints?.reloads)
 
 // The statuses that leave the page empty. `ok` and `errors` both mounted the
 // Prototype, so their paint is the Prototype's own and this must not replace it.
@@ -212,22 +194,22 @@ function errorWhere(error) {
   return where
 }
 
-function emptyScreen(box, data, name) {
-  const owner = ownerCopy(data)
+function emptyScreen(box, name) {
+  const owner = ownerCopy()
   box.append(el('p', 'text-base-medium text-ink-gray-8', owner ? 'Waiting for your agent' : 'Nothing to show yet'))
 
   const lines = [`${name} has no files yet.`]
   lines.push(owner ? 'Ask your agent to build a page.' : 'The owner has not built a page yet.')
   // Only a page with a poller behind it may promise a reload.
-  if (reloadCopy(data)) lines.push('This tab reloads itself when the files arrive.')
+  if (reloadCopy()) lines.push('This tab reloads itself when the files arrive.')
   box.append(el('p', 'sk-status-body text-p-sm text-ink-gray-5', lines.join(' ')))
 }
 
-function failedScreen(box, data, status) {
+function failedScreen(box, status) {
   box.append(el('p', 'text-base-medium text-ink-gray-8', FAILED_HEADING[status]))
 
-  const lead = ownerCopy(data)
-    ? reloadCopy(data)
+  const lead = ownerCopy()
+    ? reloadCopy()
       ? 'Send these errors to your agent. This tab reloads itself after the fix.'
       : 'Send these errors to your agent.'
     : 'The owner has to fix these errors.'
@@ -266,95 +248,12 @@ function paintStatus(status, data) {
   glyph.append(icon(shape === 'empty' ? 'lucide-file-plus' : 'lucide-triangle-alert', 'size-6'))
   box.append(glyph)
 
-  if (shape === 'empty') emptyScreen(box, data, name)
-  else failedScreen(box, data, status)
+  if (shape === 'empty') emptyScreen(box, name)
+  else failedScreen(box, status)
 
   const screen = el('div', 'sk-status')
   screen.append(box)
   root.append(screen)
-}
-
-// -------------------------------------------------------------- live reload
-// The owner's own tab polls one revision string and reloads when it moves.
-// Socket.io is not an option here: Frappe's realtime auth compares the request
-// Host against the browser Origin, and the tunnel rewrites Host.
-//
-// The renderer sends `live: false` for everything except the owner reading
-// this Prototype in a session. `check` and a Guest on a public link therefore
-// make no request at all. A framed Viewer drops out too, in reloadsItself
-// above: twenty cards in iframes would make ten requests a second, and the
-// gallery already polls once for the whole grid
-// (frontend/src/pages/PrototypesScreen.vue, POLL_MS 4000).
-//
-// The poll cannot use the session. This document is sandboxed into an opaque
-// origin (sketch/viewer.py SANDBOX), so it sends no cookie and it holds no
-// csrf_token. It sends the signature the renderer minted into the payload
-// instead. That signature reads one revision number for one Prototype and
-// opens nothing else (sketch/api.py signed_revision).
-const POLL_MS = 2000 // one poll every two seconds: a stat walk, cheap to answer
-const POLL_MAX_MS = 30000 // the ceiling the backoff climbs to after failures
-
-function startLiveReload(data) {
-  if (!reloadsItself(data)) return
-
-  const url =
-    '/api/method/sketch.api.signed_revision?name=' +
-    encodeURIComponent(data.name) +
-    '&exp=' +
-    encodeURIComponent(data.exp) +
-    '&sig=' +
-    encodeURIComponent(data.sig)
-  // The renderer read the revision while it built this page, so the baseline
-  // covers the two seconds before the first poll. A write inside that window
-  // used to become the baseline, and the page never reloaded. An older served
-  // document carries no `rev`, so that one still adopts the first poll.
-  let first = typeof data.rev === 'string' && data.rev ? data.rev : null
-  let wait = POLL_MS
-  let timer = null
-
-  const stop = () => {
-    clearTimeout(timer)
-    timer = null
-  }
-
-  const schedule = () => {
-    stop()
-    // A background tab must not poll. visibilitychange restarts it.
-    if (document.hidden) return
-    timer = setTimeout(poll, wait)
-  }
-
-  async function poll() {
-    try {
-      // `omit`, not `same-origin`. An opaque origin has no same origin, and
-      // `include` would need Access-Control-Allow-Credentials, which the
-      // endpoint deliberately does not send.
-      const response = await fetch(url, { cache: 'no-store', credentials: 'omit' })
-      if (!response.ok) throw new Error(String(response.status))
-      const rev = (await response.json())?.message?.rev
-      if (typeof rev !== 'string' || !rev) throw new Error('no revision')
-      wait = POLL_MS // a good answer clears the backoff
-      if (first === null) first = rev
-      else if (rev !== first) {
-        stop()
-        // The router is hash mode (createWebHashHistory below), so the current
-        // page is in location.hash and a reload lands back on it.
-        location.reload()
-        return
-      }
-    } catch {
-      // Every failure is silent. A dead endpoint must leave the Viewer exactly
-      // as it is today, so back off and keep the page working.
-      wait = Math.min(wait * 2, POLL_MAX_MS)
-    }
-    schedule()
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stop()
-    else if (!timer) schedule()
-  })
-  schedule()
 }
 
 // -------------------------------------------------------------- module link
@@ -502,17 +401,10 @@ function variantsOf(data, compiled, blocks, skip, loader) {
 async function run() {
   const data = readData()
   payload = data
-  if (chromeOff(data)) document.documentElement.dataset.sketchChrome = 'off'
-  // In the shell's frame the Demo pill is the shell's to draw (runtime/shell/DemoPill.vue); Chrome.vue reads this.
-  else if (inShell(data)) document.documentElement.dataset.sketchChrome = 'shell'
+  // Chrome.vue reads this: in the shell's frame the Demo pill is the shell's to draw (runtime/shell/DemoPill.vue).
+  document.documentElement.dataset.sketchChrome = chromeOff(data) ? 'off' : 'shell'
   applyTheme(data.theme)
   setTitle(data)
-  // Before the early returns below: an empty or broken tree must reload too.
-  try {
-    startLiveReload(data)
-  } catch {
-    // The poller is never worth failing the boot for.
-  }
   const files = data.files || {}
 
   // A brand-new Prototype has no files until a recipe or the agent writes one.
@@ -740,17 +632,12 @@ async function run() {
   t.twDone = performance.now()
 
   report('ok')
-  // In the shell's frame the chrome that acts is the shell's, and the agent started from report().
-  if (inShell(data)) return
-  startAnnotate(data)
-  startMakeDefault(data)
-  startVariantEdit(data)
-  startBadges(data)
 }
 
 // The shell's frame talks to the shell through the agent, whatever the status: an empty or broken tree
-// still needs its route, theme and status copy. It is a separate module like the toolbar, loaded after
-// the first paint, and a failure to load it is a warning and nothing more.
+// still needs its route, theme and status copy. It is a separate module, loaded after the first paint, so
+// it cannot slow or break it, and a failure to load it is a warning and nothing more. A Prototype never
+// imports it, and the import map names it for this file alone.
 async function startShellAgent(status) {
   try {
     const { startAgent } = await import('sketch:agent')
@@ -767,58 +654,6 @@ async function startShellAgent(status) {
     })
   } catch (e) {
     console.warn('[sketch] the shell agent did not load:', e)
-  }
-}
-
-// The annotate toolbar: Note, Tweak and Comment for the owner's own live tab, Comment alone for a
-// signed-in reader of a public Prototype (`commenter`), and a "Sign in to comment" button for a
-// Guest on one (`sign_in`). A `check` request and a framed gallery card never download it: it is a
-// separate module, loaded after the Prototype has mounted, so it cannot slow or break the first
-// paint. A Prototype never imports it, and the import map names it for this file alone. A toolbar
-// that fails to load is never the Prototype's error, so the failure is a warning and nothing more.
-async function startAnnotate(data) {
-  const owner = data.is_owner && data.live && data.annotate_sig
-  if (framed || !(owner || data.commenter || data.sign_in)) return
-  try {
-    const { mountAnnotate } = await import('sketch:annotate')
-    mountAnnotate(data)
-  } catch (e) {
-    console.warn('[sketch] the annotate toolbar did not load:', e)
-  }
-}
-
-// Make default in the variants pill: the same pages as the toolbar, with a credential of its own.
-// `sketch:variants` is the module the Prototype imported, so this reaches the same state.
-async function startMakeDefault(data) {
-  if (!data.is_owner || !data.live || framed || !data.variant_sig) return
-  try {
-    const { enableMakeDefault } = await import('sketch:variants')
-    enableMakeDefault(data)
-  } catch (e) {
-    console.warn('[sketch] Make default did not load:', e)
-  }
-}
-
-// Deleting a variant a teammate made: the owner's, and an invited editor's own. Same rules as Make default.
-async function startVariantEdit(data) {
-  if (framed || !data.editor || !data.edit_sig) return
-  try {
-    const { enableVariantEdit } = await import('sketch:variants')
-    enableVariantEdit(data)
-  } catch (e) {
-    console.warn('[sketch] Delete variant did not load:', e)
-  }
-}
-
-// What is new for this person (sketch/badges.py): the server's snapshot, and the credential that reports what they look at.
-// Nobody else gets either, so a Guest, a `check` request and a framed card load nothing.
-async function startBadges(data) {
-  if (framed || !data.seen_sig) return
-  try {
-    const { initBadges } = await import('sketch:variants')
-    initBadges(data)
-  } catch (e) {
-    console.warn('[sketch] New badges did not load:', e)
   }
 }
 
@@ -856,7 +691,7 @@ function report(status) {
     // into it above. A DOM failure must take down neither.
   }
   parent.postMessage({ type: 'sketch:check', result }, '*')
-  if (payload && inShell(payload)) startShellAgent(status)
+  if (payload && inShell(payload) && !chromeOff(payload)) startShellAgent(status)
   return result
 }
 

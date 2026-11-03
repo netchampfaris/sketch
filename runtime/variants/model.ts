@@ -1,5 +1,5 @@
 // The Demo pill's rows as plain data, for the Viewer shell, which draws the pill over this frame (runtime/shell/DemoPill.vue).
-// The same rows Pills.vue shows: the app-wide states (Role), this page's states, and this page's sets that have a choice,
+// The rows: the app-wide states (Role), this page's states, and this page's sets that have a choice,
 // in page order (top to bottom, then left to right). The order is worked out when the shell asks (`measureDemo`, as the
 // card opens) and when the page or its sets change, never as a person picks, so rows hold still under the pointer.
 import { shallowRef } from 'vue'
@@ -56,7 +56,7 @@ function viewOf(router: any, s: VSet) {
 export function demoModel(router: any) {
   const route = router.currentRoute.value
   const list = here(route)
-  // A new page, or a set that came or went: sort again once the page has drawn it (Pills.vue did the same).
+  // A new page, or a set that came or went: sort again once the page has drawn it.
   if (`${route.path}|${list.length}` !== sortedFor) queueMicrotask(() => requestAnimationFrame(() => measureDemo(router.currentRoute.value)))
   const o = order.value
   const rows = [...list].sort((a, b) => (o.indexOf(setId(a)) + 1 || 99) - (o.indexOf(setId(b)) + 1 || 99))

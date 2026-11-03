@@ -1,20 +1,19 @@
 <script setup lang="ts">
-// The Viewer shell: Sketch's own page at /u/<username>/<slug> (sketch/viewer.py SHELL_FLAG). The Prototype
-// runs in a full-viewport sandboxed iframe of the same URL with ?frame=1, in an opaque origin, holding no
-// credential. Everything that acts as the reader, or shows a person's data, is drawn here, on Sketch's
-// origin, over the frame (plan steps 3 to 6 move it in). The shell never scrolls; the frame's rects are
-// the shell's coordinates.
+// The Viewer shell: Sketch's own page at /u/<username>/<slug> (sketch/viewer.py). The Prototype runs in a
+// full-viewport sandboxed iframe of the same URL with ?frame=1, in an opaque origin, holding no credential.
+// Everything that acts as the reader, or shows a person's data, is drawn here, on Sketch's origin, over the
+// frame, and every write goes over the session (api.ts). The shell never scrolls; the frame's rects are the
+// shell's coordinates.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 import { fromFrame, read, type FromFrame, type Theme } from '../shared/protocol'
-import { host, type Role } from '../annotate/host'
-import { transport } from '../annotate/comments'
+import { host, type Role } from './host'
 import type { ShellBoot } from './boot'
 import { applyTheme, resolveTheme, watchTheme } from './theme'
 import { startLiveReload, type LiveReload } from './liveReload'
 import { initActions, placeToasts } from './actions'
-import { call, initApi } from './api'
+import { initApi } from './api'
 import { freshOptions, initBadges } from './badges'
 import { frameGone, page, post, receive, setFrameWindow } from './frame'
 import { restoreNotes, startSaving } from './notes'
@@ -45,8 +44,6 @@ const toolbar = noter || !!boot.me || boot.sign_in
 if (toolbar) {
 	initApi(boot.name, boot.csrf_token)
 	Object.assign(host, { name: boot.name, title: (boot.title ?? '').trim(), role, me: boot.me?.username ?? '', openCount: Number(boot.comments_open) || 0 })
-	// Every comment call goes over the session (sketch.viewer_api), never with anything the frame holds.
-	transport.call = (method, fields) => call(method, fields)
 	initBadges(boot.badges, !!boot.me)
 	if (noter) {
 		restoreNotes(boot.annotations, boot.annotations_epoch)
@@ -62,7 +59,7 @@ watch(
 	(ok) => {
 		if (!ok) return
 		shown.value = toolbar
-		// The page names, for the comments list's groups (annotate/host.ts pageNameOf). Nothing renders from it.
+		// The page names, for the comments list's groups (host.ts pageNameOf). Nothing renders from it.
 		host.router = createRouter({
 			history: createMemoryHistory(),
 			routes: page.pages.map((p) => ({ path: p.path, component: { render: () => null }, meta: { title: p.title } })),
@@ -150,7 +147,7 @@ initActions({
 	reload: reloadFrame,
 	hold: async () => (live ? live.hold() : async () => {}),
 })
-// The owner's toasts stand clear of the pill and the toolbar's trigger from the start, as in the frame (default.ts).
+// The owner's toasts stand clear of the pill and the toolbar's trigger from the start.
 if (boot.role === 'owner') placeToasts()
 onMounted(() => {
 	window.addEventListener('message', onMessage)

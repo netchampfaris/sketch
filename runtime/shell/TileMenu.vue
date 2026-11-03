@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// The live tile's ⋯ menu, drawn by the shell (runtime/variants/Tile.vue keeps the in-frame original for the flag-off
-// page). The frame's ⋯ only says where it is (`tile:menu`); the menu opens there with the items and copy the tile had:
+// The live tile's ⋯ menu, drawn by the shell. The frame's ⋯ (runtime/variants/Tile.vue) only says where it is (`tile:menu`); the menu opens there with the items and copy the tile had:
 // Make default and Keep only this for the owner, Open page for everyone, Delete variant on a teammate's option for the
 // owner and on an editor's own.
 //

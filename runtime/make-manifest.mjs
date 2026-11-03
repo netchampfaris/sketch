@@ -31,7 +31,6 @@ writeFileSync(
         '@vueuse/core': 'vueuse.js',
         'sketch:compiler': 'compiler.js',
         'sketch:tailwind': 'tailwind.js',
-        'sketch:annotate': 'annotate.js',
         'sketch:agent': 'agent.js',
         'sketch:variants': 'variants.js',
       },

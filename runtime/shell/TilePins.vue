@@ -7,7 +7,7 @@
 // While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
 // typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
 import { computed } from 'vue'
-import { bridge, sameTile, spotOf, type TileSpot } from 'sketch:variants'
+import { bridge, sameTile, spotOf, type TileSpot } from './variants'
 import { noteNumber, notes, type Note } from './annotate'
 import { heldDrafts, matching, openThread, plain, spotOfThread, type Thread } from './comments'
 import { host } from './host'

@@ -1,5 +1,7 @@
-// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. `enableMakeDefault`,
-// `makeDefault` and `Chrome` are internal, for annotate and the Viewer, and are deliberately left out of the skill.
+// `sketch:variants`: a Prototype imports `Variants` and `useDemoState`. The rest is internal, for the Viewer's boot.js
+// and the shell's frame agent (runtime/agent), and is deliberately left out of the skill. Nothing here writes: the
+// Prototype's code can import this module, so every write (Make default, Keep only this, Delete variant, seen marks)
+// is the Viewer shell's, over the session.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
 import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -8,16 +10,11 @@ import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sa
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { enableMakeDefault, landed, makeDefault } from './default'
-export { enableVariantEdit } from './edit'
 export { registerExtras } from './extras'
-export { badges, hasUnreadThreads, initBadges, isNew, lookAt, readThread, setUnread } from './badges'
-export { bridge, findTile, sameTile, spotOf, tileExists, tileLabel, whereOf } from './bridge'
-export type { Tab, TileHit, TileRef, TileSpot } from './bridge'
-export { menuBind } from './menus'
+export { badges } from './badges'
+export { bridge, landed, spotOf } from './bridge'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'
-export { applyPicks, currentPicks, demoEntries, picksAvailable, picksShown, picksWords } from './picks'
-export type { DemoPick } from './picks'
+export { applyPicks, currentPicks, demoEntries } from './picks'
 export { demoModel, measureDemo, setDemo } from './model'
 
 // A demo value (a persona, a workflow phase). The first option is the default.

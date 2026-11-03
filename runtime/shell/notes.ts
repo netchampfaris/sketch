@@ -1,10 +1,9 @@
 // Saving the notes, the tweaks and the toolbar's corner from the shell, with the session
 // (sketch.viewer_api.save_annotations): the owner's own, or an invited editor's own (the server tells them apart by who
-// is asking). The same shape and rules as runtime/annotate/store.ts, which the in-frame toolbar keeps using with its
-// signature. Only the shell's own panel and lists change what is saved; nothing the frame says does.
+// is asking). Only the shell's own panel and lists change what is saved; nothing the frame says does.
 import { ref, watch } from 'vue'
 import { toast } from 'frappe-ui'
-import { anchorPref, buildPrompt, isAnchor, isNote, notes, readRows, type Note } from '../annotate/annotate'
+import { anchorPref, buildPrompt, isAnchor, isNote, notes, readRows, type Note } from './annotate'
 import { isChanged } from '../shared/tweak'
 import { call, HttpError } from './api'
 import { buildTweakPrompt, hasTweaks, restoreTweakRows, tweaks } from './tweaks'

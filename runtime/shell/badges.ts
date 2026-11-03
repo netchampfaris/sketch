@@ -1,6 +1,5 @@
 // Unread threads for this person (sketch/badges.py): the server's snapshot from the boot JSON, kept for the
-// visit, and what the person reads reported back with the session (sketch.viewer_api.seen_mark). The same
-// rules as runtime/variants/badges.ts. The canvas panel's rows carry the dot for options new to this person; the
+// visit, and what the person reads reported back with the session (sketch.viewer_api.seen_mark). The canvas panel's rows carry the dot for options new to this person; the
 // frame is told which options are new (option values only) for the tiles' "New" badge. Opening a set on the canvas
 // is looking at its options. Saving "seen" is quiet: a failure is kept and goes with the next read.
 import { reactive } from 'vue'

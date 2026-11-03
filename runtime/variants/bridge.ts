@@ -1,8 +1,7 @@
-// What the canvas and the annotate toolbar tell each other. They are two bundles in one document: annotate imports
-// this through `sketch:variants`, and the canvas imports it directly, so both hold the same object. The canvas
-// owns the tiles, the pan and the zoom; the toolbar owns comments and notes. Neither imports the other.
-import { shallowReactive } from 'vue'
-import type { Component } from 'vue'
+// What the canvas and the Viewer shell's agent (runtime/agent) tell each other. They are two bundles in one document:
+// the agent imports this through `sketch:variants`, and the canvas imports it directly, so both hold the same object.
+// The canvas owns the tiles, the pan and the zoom; the shell, over the frame, owns the panel, the toolbar and the pins.
+import { shallowReactive, shallowRef } from 'vue'
 import type { PageModel, TileBox } from './layout'
 import type { PickItem } from './picker'
 
@@ -13,17 +12,13 @@ import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/t
 export { sameTile, tileLabel, whereOf } from '../shared/tiles'
 export type { TileHit, TileRef, TileSpot }
 
-export type Tab = 'browse' | 'comments' | 'notes'
-
 export const bridge = shallowReactive({
   // ---- Set by the canvas
   open: false,
   phone: false,
-  // The pick on show, the zoom, and whether the right panel is open and how much room it takes.
+  // The pick on show, and the zoom.
   view: '',
   zoom: 1,
-  panelOpen: true,
-  reserve: 0,
   // How much of the bottom-right corner the zoom pill takes, with its gap.
   corner: 0,
   model: null as PageModel[] | null,
@@ -31,29 +26,14 @@ export const bridge = shallowReactive({
   // The pan (the zoom is above), and the Show list's rows, for the Viewer shell, which draws the pins and the panel.
   pan: { x: 0, y: 0 },
   items: [] as PickItem[],
-  // Asked of the canvas: bring a tile into view and give its point on the screen; leave the canvas.
+  // Asked of the canvas: bring a tile into view and give its point on the screen.
   reveal: null as ((spot: TileSpot, at?: { fx: number; fy: number }) => Promise<{ x: number; y: number } | null>) | null,
-  pointOf: null as ((spot: TileSpot, at: { fx: number; fy: number }) => { x: number; y: number } | null) | null,
-  // ---- Set by the toolbar
-  // On a phone, how far from the bottom the open toolbar's top edge (plus a gap) is: the Demo pill rides above it.
-  toolbarLift: 0,
-  // Where that toolbar ends sideways, so the pill lifts only when it is really in the way.
-  toolbarRight: 0,
-  // What a person may do here, and the tool picking tiles ('' while browsing).
-  canComment: false,
-  canNote: false,
+  // ---- Set by the Viewer shell's agent (runtime/agent): the panel, the toolbar and the pins are the shell's, drawn
+  // over the canvas. The tool picking tiles ('' while browsing), and where a tile clicked with it is sent.
   tool: '' as '' | 'comment' | 'note',
-  // The panel's tab. The tab and the tool follow each other.
-  tab: 'browse' as Tab,
-  counts: { comments: 0, notes: 0 },
   pick: null as ((hit: TileHit) => void) | null,
-  // The pins drawn on the tiles, and the content of each extra tab.
-  Pins: null as Component | null,
-  tabs: {} as { comments?: Component; notes?: Component },
-  // ---- Set by the Viewer shell's agent (runtime/agent): the panel and the toolbar are the shell's, drawn over the
-  // canvas. `shellReserve` is the room the shell's panel takes on the right; `onEmptyClick` hears a click on the
-  // canvas off every tile while a tool is in hand.
-  shell: false,
+  // `shellReserve` is the room the shell's panel takes on the right; `onEmptyClick` hears a click on the canvas off
+  // every tile while a tool is in hand.
   shellReserve: 312,
   onEmptyClick: null as (() => void) | null,
   // The live tile's ⋯ asks the shell for its menu, at the button's box; the shell draws it and does what is picked.
@@ -100,3 +80,8 @@ export function tileExists(model: PageModel[] | null, spot: TileSpot): boolean |
   if (kind === 'set') return !!page.sets.find((s) => s.key === groupKey)?.options.some((o) => o.value === option)
   return !!page.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
 }
+
+// The option a write has just put in place (Make default, Keep only this, or their Undo, saved by the shell): the canvas
+// rings its tile once it is drawn, so the option picked is still under the eye after the frame reloads. The shell
+// says which (`display.landed`).
+export const landed = shallowRef<{ set: string; option: string } | null>(null)

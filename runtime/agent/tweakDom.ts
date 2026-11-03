@@ -4,8 +4,8 @@
 // (runtime/shell/tweaks.ts); it sends the tweaks here only so they stay applied (`tweak:reapply`).
 //
 // Nothing here saves anything, and nothing here reads anyone's notes: the shell's list of tweaks is the person's own
-// class, prop and copy edits, which this page shows anyway. The same maths as runtime/annotate/tweak.ts, which the
-// in-frame toolbar keeps until the flag goes (plan step 7).
+// class, prop and copy edits, which this page shows anyway. The class maths is runtime/shared/tweak.ts, which the
+// shell's panel reads too.
 import * as FUI from 'frappe-ui'
 import * as FUI_LIST from 'frappe-ui/list'
 import { CANDIDATES, CAT, CATS, KNOWN, catOf, classOf, isDataFile, type Cat, type Group, type Tokens } from '../shared/tweak'

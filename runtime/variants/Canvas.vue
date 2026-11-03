@@ -8,8 +8,8 @@ import { Button, Dropdown, Popover, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Panel from './Panel.vue'
 import Tile from './Tile.vue'
-import { bridge, findTile, spotOf, tileExists } from './bridge'
-import { landed, placeToasts } from './default'
+import { bridge, findTile, landed, spotOf, tileExists } from './bridge'
+import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { layoutPick } from './layout'
 import type { PageModel, TileBox } from './layout'
@@ -100,12 +100,10 @@ const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
 
-// Desktop: a panel on the right, open or not for the whole session. Phone: the Show dropdown. In the Viewer shell the
-// panel is the shell's, drawn over this frame, and it says how much room it takes (`bridge.shellReserve`).
+// Desktop: the Show panel on the right is the Viewer shell's, drawn over this frame, and the shell says how much room it
+// takes (`bridge.shellReserve`). Phone: the Show dropdown, here.
 const PANEL_W = 312
-const panelOpen = ref(session.panel)
-const panelShown = computed(() => !phone.value && (bridge.shell ? bridge.shellReserve > 0 : panelOpen.value))
-const setPanel = (o: boolean) => (panelOpen.value = session.panel = o)
+const panelShown = computed(() => !phone.value && bridge.shellReserve > 0)
 const pickerOpen = ref(false)
 function choose(v: string) {
   pickerOpen.value = false
@@ -380,7 +378,6 @@ const prevOverflow = document.body.style.overflow
 onMounted(() => {
   bridge.open = true
   bridge.reveal = reveal
-  bridge.pointOf = pointOf
   // The shell's tile menu (Viewer shell): Open page on the tile it was opened for.
   bridge.openTile = (id) => {
     const t = layout.value.tiles.find((x) => x.id === id)
@@ -398,11 +395,9 @@ onBeforeUnmount(() => {
   landed.value = null
   bridge.open = false
   bridge.reveal = null
-  bridge.pointOf = null
   bridge.openTile = null
   bridge.model = null
   bridge.tiles = []
-  bridge.reserve = 0
   bridge.corner = 0
   document.documentElement.style.removeProperty('--sketch-panel-w')
   bridge.view = ''
@@ -500,9 +495,7 @@ watch(() => layout.value.tiles, (t) => (bridge.tiles = t), { immediate: true })
 watch(
   panelShown,
   (open) => {
-    bridge.panelOpen = open
-    bridge.reserve = open ? PANEL_W : 0
-    // Toasts stand left of the panel (default.ts): it is 12px off the right edge and PANEL_W - 24 wide.
+    // Toasts stand left of the panel (toasts.ts): it is 12px off the right edge and PANEL_W - 24 wide.
     placeToasts()
     if (open) document.documentElement.style.setProperty('--sketch-panel-w', `${PANEL_W - 12}px`)
     else document.documentElement.style.removeProperty('--sketch-panel-w')
@@ -552,11 +545,8 @@ watch(
             :app="app"
             :win="win"
             @activate="(e) => activate(t, e)"
-            @open-page="openPage(t)"
             @near="(n: boolean) => onNear(t.id, n)"
           />
-          <!-- Comment or note pins, drawn by the toolbar in the world's own coordinates, so they stay on their tile. -->
-          <component :is="bridge.Pins" v-if="bridge.Pins" :tiles="layout.tiles" :zoom="view.z" :view="pickValue" />
         </div>
 
         <div v-if="nothing" data-ui class="absolute inset-0 flex items-center justify-center text-center">
@@ -587,7 +577,7 @@ watch(
             </Button>
             </div>
           </template>
-          <Panel embedded :items="items" :selected="pickValue" style="width: calc(100vw - 24px)" @choose="choose" />
+          <Panel :items="items" :selected="pickValue" style="width: calc(100vw - 24px)" @choose="choose" />
         </Popover>
         <div v-else class="flex min-w-0 items-center gap-1.5 pl-1 pr-2">
           <span class="truncate text-base text-ink-gray-8">{{ triggerLabel }}</span>
@@ -609,18 +599,6 @@ watch(
           <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
         </Dropdown>
         <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
-      </div>
-
-      <Panel v-if="panelShown && !bridge.shell" :items="items" :selected="pickValue" @choose="choose" @hide="setPanel(false)" />
-      <!-- Where the hide button sits in the open panel, so the icon stays put when toggled. -->
-      <div
-        v-else-if="!phone && !bridge.shell"
-        data-ui
-        class="absolute right-6 top-6 z-10 rounded-[8px] bg-surface-elevation-2 shadow-sm ring-1 ring-outline-gray-2"
-      >
-        <Tooltip text="Show panel">
-          <Button variant="ghost" icon="lucide-panel-right" aria-label="Show panel" @click="setPanel(true)" />
-        </Tooltip>
       </div>
     </div>
   </div>

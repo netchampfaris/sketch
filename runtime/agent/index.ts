@@ -1,7 +1,7 @@
-// The frame's half of the Viewer shell (sketch/viewer.py SHELL_FLAG). boot.js imports it in place of the
-// toolbar when the payload says `chrome: 'shell'`. It draws nothing and holds no credential: it tells the
-// shell what the page is doing (the route, the theme, the viewport) and, in later steps, measures and picks
-// for it. Messages go to the parent alone; one from anywhere else, or of a type it does not know, is dropped.
+// The frame's half of the Viewer shell (sketch/viewer.py). boot.js imports it when the payload says
+// `chrome: 'shell'`. It draws nothing and holds no credential: it tells the shell what the page is doing (the
+// route, the theme, the viewport, the Demo and the canvas), and measures, picks and writes tweaks for it.
+// Messages go to the parent alone; one from anywhere else, or of a type it does not know, is dropped.
 import { watch } from 'vue'
 import { envelope, read, toFrame, type FromFrame, type Theme, type ToFrame } from '../shared/protocol'
 import { isOurs, pageLayerOpen, routeKey, setSourceFiles, typing } from './dom'
@@ -24,7 +24,7 @@ export type AgentStart = {
 	repaint: (hints: ToFrame['copy']) => void
 }
 
-// Same as runtime/annotate/mobileNav.ts: frappe-ui's MobileNav on a phone-width screen.
+// frappe-ui's MobileNav on a phone-width screen.
 const PHONE = '(max-width: 767px)'
 const NAV = '[data-slot="mobile-nav"]'
 // The keys the shell hears from here, with the focus in the page: Escape, and the tool shortcuts.
@@ -98,7 +98,6 @@ function postLayout() {
 // goes up at most once a frame: the pan and zoom every time, the tiles, pages and Show rows only when they changed.
 function startCanvas(variants: any) {
 	const { bridge, spotOf } = variants
-	bridge.shell = true
 	bridge.pick = (hit: any) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
 	bridge.onEmptyClick = () => post('canvas:click', {})
 	// The live tile's ⋯: the shell opens its menu at the button (runtime/shell/TileMenu.vue).

@@ -1,6 +1,6 @@
 // Picking, for the Viewer shell's Note and Comment tools. The shell draws the outline, the box, the pins and
 // the comment box; the page and its elements are here, in the frame, so the pointer is caught here. While a tool
-// picks, every pointer event aimed at the page is swallowed before the app sees it (as the in-frame toolbar did),
+// picks, every pointer event aimed at the page is swallowed before the app sees it,
 // so a page's open menu or popover stays open, and an item inside one can be picked.
 //
 // What goes to the shell is geometry and words about elements: a rect, a selector, a component name. An element

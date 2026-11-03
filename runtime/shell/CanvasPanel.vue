@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// The canvas's panel on the right, drawn by the Viewer shell over the frame's canvas (runtime/variants/Panel.vue is
-// the in-frame original, kept for the flag-off page and for the phone's Show dropdown, which stays in the frame).
-// Same look and copy. Browse is the "Show" list: search, then the groups of things to show. Next to it Comments, or
+// The canvas's panel on the right, drawn by the Viewer shell over the frame's canvas (the phone's Show dropdown stays in
+// the frame, runtime/variants/Panel.vue). Browse is the "Show" list: search, then the groups of things to show. Next to it Comments, or
 // Notes for the owner while noting; their content is the toolbar's (bridge.tabs), so this file reads no comment or note.
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button, ScrollArea, TabButtons, TextInput, Tooltip } from 'frappe-ui'

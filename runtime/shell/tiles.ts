@@ -1,7 +1,7 @@
 // What the toolbar keeps for the canvas: the hands the pins call back into, and the anchor a tile click makes.
 // Annotate.vue fills `handlers` in; the pins live in the canvas's own tree, so they cannot emit to it.
 import { reactive } from 'vue'
-import type { TileSpot } from 'sketch:variants'
+import type { TileSpot } from './variants'
 import type { Note } from './annotate'
 import type { Anchor, Thread } from './comments'
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// Numbered markers on the page, drawn by the shell over the frame (runtime/annotate/Pins.vue, by rects). Each
+// Numbered markers on the page, drawn by the shell over the frame from the rects it reports. Each
 // follows its element: the frame re-measures it on every scroll, resize, route change and (throttled) DOM change.
 // A pin whose element has gone stays where it last was, faded. Sent notes turn gray.
 import { computed, onBeforeUnmount } from 'vue'
-import { UI_ATTR, notes, type Note } from '../annotate/annotate'
+import { UI_ATTR, notes, type Note } from './annotate'
 import { rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'
 

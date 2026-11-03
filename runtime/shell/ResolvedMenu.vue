@@ -4,7 +4,7 @@
 // Its menu and dialog open in the toolbar's own layer: above the canvas, and outside the page the picking swallows.
 import { computed, ref } from 'vue'
 import { Button, Dialog, Dropdown, providePortalTarget, toast } from 'frappe-ui'
-import { menuBind } from 'sketch:variants'
+import { menuBind } from './variants'
 import { deleteResolved, resolvedCount, showResolved } from './comments'
 import { isOwner } from './host'
 

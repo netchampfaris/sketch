@@ -13,7 +13,7 @@ import { write } from './api'
 import { onFrame, post } from './frame'
 
 // How long an Undo toast stays: the frame takes a moment to reload, and the person then looks for the change before
-// reaching for Undo (runtime/variants/carry.ts UNDO_MS).
+// reaching for Undo.
 export const UNDO_MS = 10000
 
 type Answer = { file: string; set: string; option: string; label: string; sequence?: number | null; removed?: number; replaced?: boolean }
@@ -68,8 +68,8 @@ async function landed(call: () => Promise<Answer>, land?: (a: Answer) => { set: 
 	return answer
 }
 
-// Toasts sit above the pill stack and the toolbar's trigger in the corner, not over them, as in the frame
-// (runtime/variants/default.ts placeToasts): the stack's height is --sketch-variants-h, the canvas panel's room
+// Toasts sit above the pill stack and the toolbar's trigger in the corner, not over them, as the frame's do
+// (runtime/variants/toasts.ts): the stack's height is --sketch-variants-h, the canvas panel's room
 // --sketch-panel-w.
 let placed = false
 export function placeToasts() {

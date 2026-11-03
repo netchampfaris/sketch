@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// One avatar pin per thread on this page, in Comment mode only, drawn by the shell over the frame
-// (runtime/annotate/CommentPins.vue, by rects). Each follows its element as the frame re-measures it. Pins that
+// One avatar pin per thread on this page, in Comment mode only, drawn by the shell over the frame from the rects
+// it reports. Each follows its element as the frame re-measures it. Pins that
 // land on each other fan out sideways, so every one of them stays reachable by pointer; the panel lists them all
 // as well. A new comment typed and not sent stays as a Draft pin: a dashed outline and the author's avatar dimmed;
 // clicking it reopens the box with the words.
 import { computed, onBeforeUnmount } from 'vue'
-import { UI_ATTR } from '../annotate/annotate'
-import { heldDrafts, matching, openThread, plain, type HeldDraft, type Thread } from '../annotate/comments'
-import { host } from '../annotate/host'
-import AuthorAvatar from '../annotate/AuthorAvatar.vue'
-import PinShape from '../annotate/PinShape.vue'
+import { UI_ATTR } from './annotate'
+import { heldDrafts, matching, openThread, plain, type HeldDraft, type Thread } from './comments'
+import { host } from './host'
+import AuthorAvatar from './AuthorAvatar.vue'
+import PinShape from './PinShape.vue'
 import { picksShown } from './variants'
 import { rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'

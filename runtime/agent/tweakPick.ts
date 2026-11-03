@@ -1,4 +1,4 @@
-// Tweak's picking, in the Viewer shell's frame: the frame half of runtime/annotate/TweakLayer.vue. While Tweak is the
+// Tweak's picking, in the Viewer shell's frame: the frame half of runtime/shell/TweakLayer.vue. While Tweak is the
 // tool, the pointer is caught here (the page's elements are here): a click selects, Shift-click adds or takes out, \ and
 // Enter step to the parent and child, Space held peeks, Escape lets go. What the shell needs to draw (the outlines and
 // their rects, the facts its panel shows) is sent up; what the shell's panel changes comes back as class, prop and copy

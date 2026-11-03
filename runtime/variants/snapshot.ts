@@ -25,8 +25,6 @@ export const session = {
   modelKey: '',
   // The last thing shown, as it is written in the URL.
   pick: null as string | null,
-  // Whether the Show panel is open on desktop.
-  panel: true,
 }
 // The pages the canvas found, once it has looked (reactive, so the canvas button can follow it).
 export const pagesModel = shallowRef<any[] | null>(null)

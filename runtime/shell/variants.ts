@@ -1,6 +1,5 @@
-// `sketch:variants` as the Viewer shell builds it (frontend/vite.config.ts alias). The comment and note
-// components shared with the in-frame toolbar (runtime/annotate) import what they need from that module by
-// name; in the shell the Demo and the canvas are in the frame, so their answers come from what the frame
+// The shell's side of the Demo and the canvas, for the toolbar, the comment and note components and the canvas
+// layer. The Demo and the canvas are in the frame (runtime/variants), so the answers here come from what the frame
 // reported (frame.ts `page`, and the `canvas` message here), and a change goes to the frame as a message.
 //
 // The canvas's tiles, pan and zoom are the frame's; the shell draws the panel, the toolbar and the pins on the

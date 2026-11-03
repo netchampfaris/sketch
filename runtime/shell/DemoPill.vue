@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// The Demo pill at the bottom right, drawn by the Viewer shell over the frame (runtime/variants/Pills.vue is the in-frame
-// original, kept for the flag-off page). It opens a card with the app-wide states (Role), this page's states and this
+// The Demo pill at the bottom right, drawn by the Viewer shell over the frame. It opens a card with the app-wide states (Role), this page's states and this
 // page's Variants sets, one row each, as the frame reports them (demo.ts). The owner's rows also carry Make default and
-// Keep only this, which the shell saves over the session (actions.ts). Same look and copy as the original.
+// Keep only this, which the shell saves over the session (actions.ts).
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
 import { Button, Dropdown, toast } from 'frappe-ui'

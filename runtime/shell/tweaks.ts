@@ -1,5 +1,5 @@
 // Tweak in the Viewer shell: the tweaks themselves, the list's rows and the prompt (the pure half is runtime/shared/tweak.ts,
-// the same one the in-frame tool uses), and the edits the panel makes. The page is in the frame, so every edit is sent there
+// the same one the frame agent writes with), and the edits the panel makes. The page is in the frame, so every edit is sent there
 // to be written (runtime/agent/tweakPick.ts), and the frame answers with what the selected elements now are (`facts`).
 //
 // The tweaks are the person's own and are saved from here (notes.ts, sketch.viewer_api.save_annotations): only an edit made
@@ -20,8 +20,8 @@ import {
 	type TweakItem,
 } from '../shared/tweak'
 import type { ClassEdit, PropEdit, PropValue, Rect, TweakFacts, TweakSync } from '../shared/protocol'
-import { newId } from '../annotate/annotate'
-import { pageNameOf, subject } from '../annotate/host'
+import { newId } from './annotate'
+import { pageNameOf, subject } from './host'
 import { onFrame, page, post } from './frame'
 
 // ---- The tweaks -------------------------------------------------------------------------------

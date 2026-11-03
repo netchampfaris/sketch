@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// The annotate toolbar on the live page, drawn by the Viewer shell over the Prototype's frame
-// (runtime/annotate/Annotate.vue is the in-frame original, kept for the flag-off page until plan step 7).
-// Same look, copy and placement. A faint trigger sits in a corner; it opens the toolbar. Note is the owner's
+// The annotate toolbar on the live page, drawn by the Viewer shell over the Prototype's frame. A faint trigger sits in a corner; it opens the toolbar. Note is the owner's
 // (or an invited editor's own) instructions for their agent; Comment is a conversation with people. A signed-in
 // reader sees Comment only; a Guest sees "Sign in to comment".
 //
@@ -41,16 +39,16 @@ import {
 	type Anchor,
 	type Mode,
 	type Note,
-} from '../annotate/annotate'
-import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from '../annotate/comments'
-import { host, isGuest } from '../annotate/host'
-import CanvasComments from '../annotate/CanvasComments.vue'
-import CanvasNotes from '../annotate/CanvasNotes.vue'
-import CommentPopover from '../annotate/CommentPopover.vue'
-import CommentsPanel from '../annotate/CommentsPanel.vue'
-import NotePopover from '../annotate/NotePopover.vue'
-import TilePins from '../annotate/TilePins.vue'
-import { canvasUi, handlers, tileAnchor } from '../annotate/tiles'
+} from './annotate'
+import { heldDrafts, load, openCount, openThread, read, spotOfThread, startListening, status, stopListening, threadById, type Anchor as PinAnchor, type Thread } from './comments'
+import { host, isGuest } from './host'
+import CanvasComments from './CanvasComments.vue'
+import CanvasNotes from './CanvasNotes.vue'
+import CommentPopover from './CommentPopover.vue'
+import CommentsPanel from './CommentsPanel.vue'
+import NotePopover from './NotePopover.vue'
+import TilePins from './TilePins.vue'
+import { canvasUi, handlers, tileAnchor } from './tiles'
 import { tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
 import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../shared/protocol'
 import type { DemoPick } from '../shared/picks'
