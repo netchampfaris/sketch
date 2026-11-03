@@ -333,6 +333,25 @@ class TestUndoVariantDefault(IntegrationTestCase):
 		self.assertIn("the page changed since. Ask your agent instead.", str(caught.exception))
 		self.assertEqual(self.source(), later)
 
+	def version(self, sequence: int) -> str:
+		return frappe.db.get_value(versions.VERSION, {"prototype": self.doc.name, "sequence": sequence})
+
+	def test_undo_reads_the_action_not_the_wording(self):
+		sequence = self.make("bars")
+		frappe.db.set_value(versions.VERSION, self.version(sequence), "prompt", "Bars leads Spend summary now")
+
+		api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertEqual(self.source(), NESTED)
+
+	def test_a_version_saved_before_the_action_field_still_undoes(self):
+		sequence = self.make("bars")
+		frappe.db.set_value(versions.VERSION, self.version(sequence), {"action": None, "action_label": None})
+
+		api.undo_variant_default("d2t-vdundo-work", "src/App.vue", sequence, "Spend summary", "bars")
+
+		self.assertEqual(self.source(), NESTED)
+
 	def test_undo_only_undoes_a_make_default_version(self):
 		with self.assertRaises(frappe.ValidationError):
 			api.undo_variant_default("d2t-vdundo-work", "src/App.vue", 1, "Spend summary", "bars")

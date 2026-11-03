@@ -13,6 +13,8 @@
   "restored_from",
   "source",
   "author",
+  "action",
+  "action_label",
   "prompt",
   "summary",
   "changes",
@@ -71,6 +73,24 @@
    "read_only": 1
   },
   {
+   "description": "What one of the App's own actions did, so its Undo knows without reading the prompt.",
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Action",
+   "options": "\nMade Default\nKept Only\nDeleted Variant",
+   "read_only": 1
+  },
+  {
+   "description": "The option the action named, as the person saw it.",
+   "fieldname": "action_label",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "ignore_xss_filter": 1,
+   "label": "Action Label",
+   "read_only": 1
+  },
+  {
    "fieldname": "prompt",
    "fieldtype": "Long Text",
    "ignore_xss_filter": 1,
@@ -126,7 +146,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-14 15:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sketch",
  "name": "Sketch Prototype Version",

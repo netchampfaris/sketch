@@ -253,10 +253,13 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	found = adoptable(doc, host_file, set_name, option)
 	versions.commit_before(doc, "Changes before the default was changed", [found["path"]])
 	destination = move_in(doc, host_file, set_name, found)
+	label = found["meta"]["name"]
 	version = versions.commit(
 		doc,
-		f"Made “{found['meta']['name']}” the default for {set_name}",
+		f"Made “{label}” the default for {set_name}",
 		source="App",
+		action=versions.MADE_DEFAULT,
+		label=label,
 	)
 	return {
 		"file": host_file,
@@ -320,25 +323,24 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 		write_registry(doc.name, registry)
 		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED, by)
 
-	version = versions.commit(doc, f"Deleted the variant “{label}”", source="App", by=by)
+	version = versions.commit(
+		doc, f"Deleted the variant “{label}”", source="App", by=by, action=versions.DELETED_VARIANT, label=label
+	)
 	return {"option": option, "label": label, "sequence": version.sequence if version else None}
 
 
 def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
 	"""Bring a deleted variant back. An editor may undo their own deletions only."""
 	sequence = _int(sequence)
-	row = frappe.db.get_value(
-		versions.VERSION, {"prototype": doc.name, "sequence": sequence}, ["prompt", "author"], as_dict=True
-	)
-	if not row or not (row.prompt or "").startswith("Deleted the variant"):
+	done = versions.action_of(doc.name, sequence)
+	if not done or done.action != versions.DELETED_VARIANT:
 		frappe.throw(frappe._("That version did not delete a variant."), frappe.ValidationError)
 
-	if not is_owner and (row.author or "") != username:
+	if not is_owner and (done.author or "") != username:
 		frappe.throw(frappe._("You can undo your own deletions only."), frappe.PermissionError)
 
 	by = None if is_owner else username
-	label = re.sub(r"^Deleted the variant “(.*)”$", r"\1", row.prompt)
-	return versions.undo(doc, sequence, f"Undid deleting the variant “{label}”", by)
+	return versions.undo(doc, sequence, f"Undid deleting the variant “{done.label}”", by)
 
 
 def _int(value) -> int:

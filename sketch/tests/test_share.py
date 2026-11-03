@@ -735,6 +735,23 @@ class TestDeleteAndDefault(ShareCase):
 		self.undo_delete_as(self.ed, "@d2tshed/compact", done["sequence"])
 		self.assertEqual(self.tree()[self.folder + "compact.vue"], COMPACT)
 
+	def undo_delete_with(self, values):
+		"""Delete Compact, set `values` on its version, undo, and return the undo's prompt."""
+		self.add_variant()
+		done = self.delete_as(self.ed, "@d2tshed/compact")
+		row = frappe.db.get_value(versions.VERSION, {"prototype": self.doc.name, "sequence": done["sequence"]})
+		frappe.db.set_value(versions.VERSION, row, values)
+		self.undo_delete_as(self.ed, "@d2tshed/compact", done["sequence"])
+		self.assertEqual(self.tree()[self.folder + "compact.vue"], COMPACT)
+		return versions.history(self.doc.name)[0]["prompt"]
+
+	def test_undo_delete_reads_the_action_not_the_wording(self):
+		self.assertEqual(self.undo_delete_with({"prompt": "Compact is gone"}), "Undid deleting the variant “Compact”")
+
+	def test_undo_delete_of_a_version_saved_before_the_action_field(self):
+		prompt = self.undo_delete_with({"action": None, "action_label": None})
+		self.assertEqual(prompt, "Undid deleting the variant “Compact”")
+
 	def test_an_editor_cannot_delete_the_owners_or_another_editors(self):
 		self.add_variant()
 		with set_user(self.owner):

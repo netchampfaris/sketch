@@ -24,6 +24,7 @@ restored.
 """
 
 import json
+import re
 
 import frappe
 from frappe.query_builder import Order
@@ -40,6 +41,20 @@ VERSION = "Sketch Prototype Version"
 REQUEST = "Request"
 RESTORE = "Restore"
 CREATED = "Created"
+
+#: What one of the App's own actions did, in a version's `action`, for its Undo to check.
+MADE_DEFAULT = "Made Default"
+KEPT_ONLY = "Kept Only"
+DELETED_VARIANT = "Deleted Variant"
+
+#: Versions saved before `action` existed say what they did in the prompt only.
+#: Each pattern's group is the option's label. Straight quotes are what versions
+#: before the curly ones were saved with.
+_OLD_WORDING = {
+	MADE_DEFAULT: re.compile(r"Made [\u201c\"](.*)[\u201d\"] the default for "),
+	KEPT_ONLY: re.compile(r"Kept \u201c(.*)\u201d as the only option of "),
+	DELETED_VARIANT: re.compile(r"Deleted the variant \u201c(.*)\u201d$"),
+}
 
 
 def lock(name: str) -> None:
@@ -106,7 +121,13 @@ def pending_count(name: str, by: str | None = None) -> int:
 
 
 def commit(
-	doc, prompt: str, summary: str | None = None, source: str | None = None, by: str | None = None
+	doc,
+	prompt: str,
+	summary: str | None = None,
+	source: str | None = None,
+	by: str | None = None,
+	action: str | None = None,
+	label: str | None = None,
 ):
 	"""Record the pending changes as one version. Returns the version doc.
 
@@ -129,6 +150,9 @@ def commit(
 	`by` is the username of an invited editor. Their commit files their own
 	pending changes, and the version carries their name (`author`). The owner's
 	commit (`by` None) files the owner's changes and leaves an editor's alone.
+
+	`action` is one of ACTIONS, set by the App's own actions so their Undo knows
+	what the version did without reading the prompt; `label` is the option it named.
 	"""
 	if not (prompt or "").strip():
 		frappe.throw(frappe._("A version needs the user prompt"), frappe.ValidationError)
@@ -142,7 +166,16 @@ def commit(
 		return None
 
 	version = record(
-		doc, REQUEST, prompt, changes, snapshots.capture(doc.name), summary=summary, source=source, author=by
+		doc,
+		REQUEST,
+		prompt,
+		changes,
+		snapshots.capture(doc.name),
+		summary=summary,
+		source=source,
+		author=by,
+		action=action,
+		label=label,
 	)
 	_set_pending(doc.name, [r for r in pending(doc.name, everyone=True) if r.get("by") != by])
 	return version
@@ -175,6 +208,8 @@ def record(
 	summary: str | None = None,
 	source: str | None = None,
 	author: str | None = None,
+	action: str | None = None,
+	label: str | None = None,
 ):
 	"""Insert one version row. Returns the version doc.
 
@@ -189,6 +224,8 @@ def record(
 	version.restored_from = restored_from
 	version.source = source
 	version.author = author
+	version.action = action
+	version.action_label = label
 	version.prompt = prompt
 	version.summary = summary
 	version.changes = json.dumps(changes)
@@ -280,6 +317,32 @@ def restore(doc, sequence: int, dry_run: bool = False, source: str = "App") -> d
 def changes_of(name: str, sequence: int) -> list[dict]:
 	"""The {"path", "action"} rows one version recorded, or [] when there is no such version."""
 	return _parse(frappe.db.get_value(VERSION, {"prototype": name, "sequence": sequence}, "changes"))
+
+
+def action_of(name: str, sequence: int) -> frappe._dict | None:
+	"""What version `sequence` did: {"action", "label", "author"}, or None when there is no such version.
+
+	`action` is empty for a version no App action made.
+	"""
+	row = frappe.db.get_value(
+		VERSION,
+		{"prototype": name, "sequence": sequence},
+		["action", "action_label", "prompt", "author"],
+		as_dict=True,
+	)
+	if not row:
+		return None
+
+	if row.action:
+		return frappe._dict(action=row.action, label=row.action_label, author=row.author)
+
+	# Only for versions saved before `action` existed: read the prompt's words.
+	for action, wording in _OLD_WORDING.items():
+		said = wording.match(row.prompt or "")
+		if said:
+			return frappe._dict(action=action, label=said.group(1), author=row.author)
+
+	return frappe._dict(action=None, label=None, author=row.author)
 
 
 def undo(doc, sequence: int, prompt: str, by: str | None = None, only: list[str] | None = None) -> dict:

@@ -268,7 +268,14 @@ def set_default(doc, file: str, name: str, option: str) -> dict:
 		editor_variants.clear_defaults(doc.name, file, name)
 		versions.note(doc.name, "src/variants/adopted.json", versions.MODIFIED)
 
-	version = versions.commit(doc, f"Made \u201c{label_of(option)}\u201d the default for {name}", source="App")
+	label = label_of(option)
+	version = versions.commit(
+		doc,
+		f"Made \u201c{label}\u201d the default for {name}",
+		source="App",
+		action=versions.MADE_DEFAULT,
+		label=label,
+	)
 	return {"file": file, "name": name, "option": option, "sequence": version.sequence if version else None}
 
 
@@ -291,15 +298,13 @@ def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
 	except (TypeError, ValueError):
 		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
 
-	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt") or ""
-	# Straight quotes are what versions before the curly ones were saved with.
-	if not prompt.startswith(("Made \u201c", 'Made "')):
+	done = versions.action_of(doc.name, sequence)
+	if not done or done.action != versions.MADE_DEFAULT:
 		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
 
 	if any(str(change.get("path", "")).startswith("src/variants/") for change in versions.changes_of(doc.name, sequence)):
-		# The version's own words name the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
-		said = re.match(r"Made [\u201c\"](.*)[\u201d\"] the default for ", prompt)
-		label = said.group(1) if said else label_of(option)
+		# The version names the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
+		label = done.label or label_of(option)
 		result = versions.undo(doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}")
 	else:
 		result = versions.undo(
@@ -439,7 +444,13 @@ def keep_only(doc, file: str, name: str, option: str) -> dict:
 		editor_variants.write_registry(doc.name, registry)
 		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
 
-	version = versions.commit(doc, f"Kept \u201c{label}\u201d as the only option of {name}", source="App")
+	version = versions.commit(
+		doc,
+		f"Kept \u201c{label}\u201d as the only option of {name}",
+		source="App",
+		action=versions.KEPT_ONLY,
+		label=label,
+	)
 	return {
 		"file": file,
 		"name": name,
@@ -459,13 +470,12 @@ def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
 	except (TypeError, ValueError):
 		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
 
-	prompt = frappe.db.get_value(versions.VERSION, {"prototype": doc.name, "sequence": sequence}, "prompt")
-	if not (prompt or "").startswith("Kept \u201c"):
+	done = versions.action_of(doc.name, sequence)
+	if not done or done.action != versions.KEPT_ONLY:
 		frappe.throw(frappe._("That version did not keep one option."), frappe.ValidationError)
 
-	# The version's own words name the option the way the owner saw it: "KPI strip", not "adopted/kpi-strip".
-	said = re.match(r"Kept \u201c(.*)\u201d as the only option of ", prompt)
-	label = said.group(1) if said else label_of(option)
+	# The version names the option the way the owner saw it: "KPI strip", not "adopted/kpi-strip".
+	label = done.label or label_of(option)
 	return {
 		"file": file,
 		"name": name,
