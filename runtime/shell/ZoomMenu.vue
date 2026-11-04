@@ -12,6 +12,8 @@ import { menuBind } from '../shared/menus'
 import FrameAnchor from './FrameAnchor.vue'
 
 const at = ref<Rect | null>(null)
+// The menu opens in the shell's own layer, under the toolbar and over the pins and the panel, as it did in the frame.
+const host = ref<HTMLElement | null>(null)
 const bind = computed(() => menuBind('zoom'))
 const open = computed({
 	get: () => !!at.value && bind.value.open,
@@ -23,6 +25,9 @@ const open = computed({
 onBeforeUnmount(
 	onFrame('zoom:menu', (d) => {
 		if (!canvas.open) return
+		// Opened by a pointer, the menu takes the focus itself and lights no item, as it did in the frame: the shell's
+		// menus read the last input they heard, and a press in the frame is not heard here.
+		if (!d.keyboard) window.dispatchEvent(new PointerEvent('pointermove'))
 		at.value = d.rect
 		bind.value['onUpdate:open'](true)
 	}),
@@ -40,7 +45,8 @@ const items = [
 </script>
 
 <template>
-	<Dropdown v-model:open="open" :options="items">
+	<div ref="host" class="pointer-events-auto fixed left-0 top-0 z-[100] size-0" />
+	<Dropdown v-model:open="open" :portal-to="host" :options="items">
 		<template #trigger>
 			<!-- Where the frame's % is: the menu hangs from it. -->
 			<FrameAnchor :rect="at" />

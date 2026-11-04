@@ -49,15 +49,35 @@ function choose(v: string) {
 const showAt = ref<Rect | null>(null)
 const showOpen = computed({
 	get: () => !!showAt.value && canvas.open && canvas.phone,
-	set: (o: boolean) => !o && (showAt.value = null),
+	set: (o: boolean) => {
+		// A thread or note opened from the list takes the focus and the presses: the list stays open under its box.
+		if (o || document.activeElement?.closest('[data-comment-popover],[data-note-popover]')) return
+		showAt.value = null
+	},
 })
+// The list opens in the shell's own layer, under the toolbar and the comment box, as it did in the frame.
+const listHost = ref<HTMLElement | null>(null)
 onBeforeUnmount(onFrame('canvas:show', (d) => (showAt.value = d.open && canvas.open && canvas.phone ? d.rect : null)))
 onBeforeUnmount(onGone(() => (showAt.value = null)))
 watch(showOpen, (o) => post('display', { showOpen: o }))
 useEventListener(window, 'blur', () => showOpen.value && document.activeElement?.tagName === 'IFRAME' && (showOpen.value = false))
 const anchor = ref<InstanceType<typeof FrameAnchor> | null>(null)
 const list = ref<HTMLElement | null>(null)
+// With Comment (or Note) in hand, the list shows that tab's content instead, as the panel does on desktop.
+const extra = computed(() => (canvas.tab === 'browse' ? null : (canvas.tabs[canvas.tab] ?? null)))
+// Its rows open threads and its menus act, so a pointer's click counts only when its press began at least 300 ms after
+// the list opened (FrameAnchor.vue): a press aimed at the page when the frame opened the list does nothing.
+function guardExtra(e: MouseEvent) {
+	if (!extra.value || !e.detail) return
+	if (anchor.value?.take()) return
+	e.preventDefault()
+	e.stopPropagation()
+}
 let clicked: Element | null = null
+function onListClick(e: MouseEvent) {
+	clicked = e.target as Element
+	guardExtra(e)
+}
 function chooseOnPhone(v: string) {
 	const el = anchor.value?.take() ?? null
 	// A click names its row; the search's Enter names none, so the press must have been in the list.
@@ -165,13 +185,16 @@ const undoAsk = () => pendingNote.value && removeNote(pendingNote.value)
 			</Tooltip>
 		</div>
 
-		<Popover v-model:open="showOpen" trigger="manual" side="bottom" align="start" :offset="8" :collision-padding="12">
+		<div ref="listHost" class="pointer-events-auto fixed left-0 top-0 z-[100] size-0" />
+		<Popover v-model:open="showOpen" :portal-to="listHost" trigger="manual" side="bottom" align="start" :offset="8" :collision-padding="12">
 			<template #trigger>
 				<!-- Where the frame's name is: the list hangs from it. -->
 				<FrameAnchor ref="anchor" :rect="showAt" />
 			</template>
-			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="clicked = $event.target as Element" @keydown.capture="clicked = null">
+			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="onListClick" @keydown.capture="clicked = null">
+				<component :is="extra" v-if="extra" class="min-h-0 flex-1" />
 				<ShowList
+					v-else
 					:items="canvas.items"
 					:selected="canvas.view"
 					width="calc(var(--reka-popover-trigger-width) - 1rem)"

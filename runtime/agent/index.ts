@@ -179,7 +179,7 @@ function startCanvas({ bridge, canvasReport }: Variants) {
 	// The phone's title pill: the shell opens its Show list under the name (runtime/shell/CanvasLayer.vue).
 	bridge.showMenu = (rect, open) => post('canvas:show', { rect, open })
 	// The zoom pill's %: the shell opens the zoom menu at it (runtime/shell/ZoomMenu.vue).
-	bridge.zoomMenu = (rect) => post('zoom:menu', { rect })
+	bridge.zoomMenu = (rect, keyboard) => post('zoom:menu', { rect, keyboard })
 
 	const PARTS = ['tiles', 'pages', 'items'] as const
 	let sent = { tiles: '', pages: '', items: '' }

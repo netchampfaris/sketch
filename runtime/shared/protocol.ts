@@ -248,8 +248,8 @@ export type FromFrame = {
 		empty?: EmptyView | null
 	}
 	'tile:menu': { tileId: string; rect: Rect }
-	// The zoom pill's %: open its menu at the button's box.
-	'zoom:menu': { rect: Rect }
+	// The zoom pill's %: open its menu at the button's box. `keyboard`: a key pressed it, not a pointer.
+	'zoom:menu': { rect: Rect; keyboard: boolean }
 	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
 	'canvas:show': { rect: Rect; open: boolean }
 	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
@@ -580,7 +580,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 		return { ...some<typeof base & typeof parts>({ ...base, ...parts }), empty }
 	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
-	'zoom:menu': (d) => all({ rect: rect(d.rect) }),
+	'zoom:menu': (d) => all({ rect: rect(d.rect), keyboard: bool(d.keyboard ?? false) }),
 	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
 	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
 	'canvas:click': () => ({}),

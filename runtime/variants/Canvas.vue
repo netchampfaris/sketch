@@ -407,7 +407,7 @@ const pct = computed(() => Math.round(view.z * 100))
 // The zoom menu is the shell's (runtime/shell/ZoomMenu.vue), drawn over its panel: the % asks for it at its box.
 function askZoom(e: MouseEvent) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  bridge.zoomMenu?.({ x: r.left, y: r.top, w: r.width, h: r.height })
+  bridge.zoomMenu?.({ x: r.left, y: r.top, w: r.width, h: r.height }, !e.detail)
 }
 
 // ---- Keys, scroll lock, focus

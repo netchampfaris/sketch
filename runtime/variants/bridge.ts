@@ -57,7 +57,7 @@ export const bridge = shallowReactive({
   showOpen: false,
   // The zoom menu is the shell's too, so it draws over the panel: the % asks for it at its box, `zoomMenu` is whether it
   // is open, and `zoomTo` is what is picked in it.
-  zoomMenu: null as ((rect: { x: number; y: number; w: number; h: number }) => void) | null,
+  zoomMenu: null as ((rect: { x: number; y: number; w: number; h: number }, keyboard: boolean) => void) | null,
   zoomOpen: false,
   zoomTo: null as ((to: ZoomTo) => void) | null,
 })
