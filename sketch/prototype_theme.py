@@ -41,4 +41,3 @@ def write(user: str, value: str) -> str:
 
 	frappe.defaults.set_user_default(KEY, value, user)
 	return value
-

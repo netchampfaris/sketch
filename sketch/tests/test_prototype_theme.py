@@ -50,7 +50,9 @@ class TestPrototypeTheme(IntegrationTestCase):
 
 	def test_a_prototypes_switch_saves_it_on_the_readers_account(self):
 		with set_user(self.other):
-			self.assertEqual(viewer_api.save_prototype_theme(self.doc.name, "dark")["prototype_theme"], "dark")
+			self.assertEqual(
+				viewer_api.save_prototype_theme(self.doc.name, "dark")["prototype_theme"], "dark"
+			)
 		self.assertEqual(prototype_theme.read(self.other), "dark")
 		self.assertEqual(prototype_theme.read(self.owner), "system")
 
