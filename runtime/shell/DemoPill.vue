@@ -3,9 +3,9 @@
 // page's Variants sets, one row each, as the frame reports them (demo.ts). The owner's rows also carry Make default and
 // Keep only this, which the shell saves over the session (actions.ts).
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { createReusableTemplate, onClickOutside, useElementSize, useEventListener } from '@vueuse/core'
+import { createReusableTemplate, onClickOutside, useElementBounding, useElementSize, useEventListener } from '@vueuse/core'
 import { Button, Dropdown, toast } from 'frappe-ui'
-import type { ModelSet, ModelState } from '../shared/protocol'
+import type { ModelSet, ModelState, Rect } from '../shared/protocol'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { choose, demo, measure } from './demo'
 import { onFrame, page, post } from './frame'
@@ -36,18 +36,24 @@ const dot = computed(() => pageHasNew(page.path, setRows.value.flatMap(optionsOf
 const open = ref(false)
 const pill = ref<HTMLElement | null>(null)
 // The pill sat in the page, so a press on it was a press outside the page's open menu or popover: it closes, as before.
-// The menu hands the focus back to its trigger in the page, which is no press outside the card it opens: the card keeps
+// A menu hands the focus back to its trigger in the page, which is no press outside the card it opens: the card keeps
 // it.
 let pressedAt = 0
 function pressed() {
-	if (!page.pageLayerOpen) return
 	pressedAt = performance.now()
 	post('outside', {})
 }
 // A page dialog's backdrop covered the pill: it shows through the same tint, and a press on it is a press on the
-// backdrop.
+// backdrop, which is outside the card too.
 const covered = computed(() => !!page.backdrop)
-watch(covered, (on) => on && close())
+function onBackdrop() {
+	close()
+	post('outside', {})
+}
+// The dialog's panel, or a menu over it, hid the pill where it met it: the pill is not drawn then.
+const pillBox = useElementBounding(pill)
+const meets = (r: Rect) => r.x < pillBox.right.value && r.x + r.w > pillBox.left.value && r.y < pillBox.bottom.value && r.y + r.h > pillBox.top.value
+const pillUnder = computed(() => covered.value && pillBox.width.value > 0 && page.layers.some(meets))
 const focusCard = () => document.querySelector<HTMLElement>('#sketch-demo-card button')?.focus()
 const toggle = () => {
 	open.value = !open.value
@@ -263,7 +269,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			</div>
 			<Button v-if="demo.canOpen" class="mt-0.5 w-full !justify-start" variant="ghost" icon-left="lucide-layout-grid" label="Open canvas" @click="openHere" />
 		</div>
-		<div ref="pill" data-pill="demo" class="pointer-events-auto relative rounded-5 bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2">
+		<div ref="pill" data-pill="demo" :class="pillUnder ? 'invisible' : ''" class="pointer-events-auto relative rounded-5 bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2">
 			<Button variant="ghost" aria-controls="sketch-demo-card" :aria-expanded="open" :class="open ? '!bg-surface-gray-3' : ''" :inert="covered" @pointerdown="pressed" @click="toggle">
 				<span class="flex items-center gap-1.5">
 					<span class="text-p-sm text-ink-gray-8">Demo</span>
@@ -277,7 +283,7 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 				class="absolute inset-0 rounded-[inherit]"
 				:style="{ backgroundColor: page.backdrop, boxShadow: `0 0 0 1px ${page.backdrop}` }"
 				aria-hidden="true"
-				@pointerdown="post('outside', {})"
+				@pointerdown="onBackdrop"
 			/>
 		</div>
 	</div>

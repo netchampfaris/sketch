@@ -3,7 +3,7 @@
 // route, the theme, the viewport, the Demo and the canvas), and measures, picks and writes tweaks for it.
 // Messages go to the parent alone; one from anywhere else, or of a type it does not know, is dropped.
 import { watch } from 'vue'
-import { envelope, read, toFrame, type FromFrame, type Theme, type ToFrame } from '../shared/protocol'
+import { envelope, read, toFrame, type FromFrame, type Rect, type Theme, type ToFrame } from '../shared/protocol'
 import { isOurs, pageLayerOpen, routeKey, setSourceFiles, typing } from './dom'
 import { startPicking } from './pick'
 import { startTweak } from './tweakPick'
@@ -47,25 +47,49 @@ const themeNow = (): Theme => (document.documentElement.dataset.theme === 'dark'
 // A page dialog is open. The tools step aside for it: it takes Escape first.
 const dialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')].some((d) => !isOurs(d))
 
-// A modal page dialog's backdrop, by its colour ('' with none): the topmost tinted layer over the bottom-right corner,
-// where the shell's Demo pill sits, when it covers the whole viewport. A popover's panel there is no backdrop.
+// A colour's alpha, between 0 and 1 (computed colours are rgb(), rgba(), or a function with "/ alpha").
+function alphaOf(c: string): number {
+	const a = c.match(/\/\s*([\d.]+%?)\s*\)$/)?.[1] ?? c.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)?.[1]
+	if (a === undefined) return c === 'transparent' ? 0 : 1
+	return a.endsWith('%') ? parseFloat(a) / 100 : parseFloat(a)
+}
+// A modal page dialog's backdrop, by its colour ('' with none): the topmost see-through tinted layer over the
+// bottom-right corner, where the shell's Demo pill sits, that covers the whole viewport. The dialog's panel may be
+// over that corner first; a popover has no backdrop at all.
 function backdrop(): string {
 	if (!dialogOpen()) return ''
 	for (const el of document.elementsFromPoint(window.innerWidth - 24, window.innerHeight - 24)) {
 		if (isOurs(el)) continue
 		const style = getComputedStyle(el)
-		const bg = style.backgroundColor
-		if (!bg || bg === 'transparent' || /^rgba\(.*,\s*0\)$/.test(bg)) continue
+		const a = alphaOf(style.backgroundColor)
+		if (style.position !== 'fixed' || a <= 0 || a >= 1) continue
 		const r = el.getBoundingClientRect()
-		const covers = style.position === 'fixed' && r.left <= 0 && r.top <= 0 && r.right >= window.innerWidth && r.bottom >= window.innerHeight
-		return covers ? bg : ''
+		if (r.left <= 0 && r.top <= 0 && r.right >= window.innerWidth && r.bottom >= window.innerHeight) return style.backgroundColor
 	}
 	return ''
+}
+// Over a backdrop, what the page draws on top of it: the dialog's panel, and any menu or popover opened from it. Where
+// one of them meets the Demo pill, the pill is under it, as it was in the page.
+function layers(): Rect[] {
+	const els = document.querySelectorAll('[role="dialog"][data-state="open"], [data-dismissable-layer]')
+	return [...els].filter((el) => !isOurs(el)).map((el) => {
+		const r = el.getBoundingClientRect()
+		return { x: r.left, y: r.top, w: r.width, h: r.height }
+	})
 }
 
 function layout(): FromFrame['layout'] {
 	const nav = window.matchMedia(PHONE).matches ? document.querySelector<HTMLElement>(NAV) : null
-	return { vw: window.innerWidth, vh: window.innerHeight, navBottom: nav?.offsetHeight ?? 0, pageLayerOpen: pageLayerOpen(), dialogOpen: dialogOpen(), backdrop: backdrop() }
+	const tint = backdrop()
+	return {
+		vw: window.innerWidth,
+		vh: window.innerHeight,
+		navBottom: nav?.offsetHeight ?? 0,
+		pageLayerOpen: pageLayerOpen(),
+		dialogOpen: dialogOpen(),
+		backdrop: tint,
+		layers: tint ? layers() : [],
+	}
 }
 
 const modsOf = (e: KeyboardEvent) =>
@@ -96,13 +120,13 @@ function escapeInPage() {
 	}
 }
 
-// A press on the shell's Demo pill was a press outside the page's open layers in the page: they close as they did.
-// It lands on an element of ours, which the tools never pick.
+// A press on the shell's Demo pill was a press in the page, outside its open layers: they close as they did, whether
+// they listen for the press or for the click. It lands on an element of ours, which the tools never pick.
 function pressOutside() {
 	const el = document.body.appendChild(document.createElement('div'))
 	el.setAttribute('data-sketch-ui', 'press')
 	try {
-		for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup'])
+		for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
 			el.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, composed: true, button: 0 }))
 	} finally {
 		el.remove()
@@ -285,6 +309,8 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
 	window.addEventListener('resize', postLayout)
+	// A tall dialog scrolls its panel past the pill.
+	window.addEventListener('scroll', postLayout, { capture: true, passive: true })
 	// A page layer opening or closing, or the bottom bar arriving, is a change in the DOM, not in the viewport.
 	new MutationObserver(postLayout).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state'] })
 	postLayout()

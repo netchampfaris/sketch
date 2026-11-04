@@ -32,6 +32,7 @@ export const page = reactive({
 	pageLayerOpen: false,
 	dialogOpen: false,
 	backdrop: '',
+	layers: [] as Rect[],
 	demo: [] as DemoEntry[],
 })
 

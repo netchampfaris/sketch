@@ -200,9 +200,10 @@ export type FromFrame = {
 	// `key` is the route a note belongs to (runtime/agent/dom.ts routeKey); `path` the route's path alone.
 	route: { fullPath: string; path: string; key: string }
 	theme: { theme: Theme }
-	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open): the shell's Demo pill
-	// sits under it, as it did in the page.
-	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean; backdrop: string }
+	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open), and `layers` the rects of
+	// what the page draws above it (the dialog's panel, a menu from it): the shell's Demo pill sits under both, as it
+	// did in the page.
+	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean; backdrop: string; layers: Rect[] }
 	// The Demo pill's rows on this page, in page order, and whether the card's foot offers "Open canvas".
 	model: { sets: ModelSet[]; states: ModelState[]; canOpen: boolean }
 	// The element under the pointer while a tool picks, its label, and with Alt held the distances to the selection.
@@ -497,6 +498,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			dialogOpen: bool(d.dialogOpen ?? false),
 			// Only a tint: one that does not read is no tint, and the rest of the layout still holds.
 			backdrop: color(d.backdrop ?? '') ?? '',
+			layers: list(d.layers ?? [], CAPS.list, rect) ?? [],
 		}),
 	model: (d) => all({ sets: list(d.sets, CAPS.sets, modelSet), states: list(d.states, CAPS.sets, modelState), canOpen: bool(d.canOpen ?? false) }),
 	hover: (d) => {
