@@ -192,7 +192,7 @@ const undoAsk = () => pendingNote.value && removeNote(pendingNote.value)
 				<FrameAnchor ref="anchor" :rect="showAt" />
 			</template>
 			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="onListClick" @keydown.capture="clicked = null">
-				<component :is="extra" v-if="extra" class="min-h-0 flex-1" />
+				<component :is="extra" v-if="extra" class="min-h-0 flex-1" @hide="showOpen = false" />
 				<ShowList
 					v-else
 					:items="canvas.items"
