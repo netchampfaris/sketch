@@ -17,7 +17,7 @@ export { closeCanvas, openCanvas, titleOfRoute } from './state'
 export { applyPicks, currentPicks, demoEntries } from './picks'
 export { demoModel, measureDemo, setDemo } from './model'
 
-// The app-wide states' keys and options: App.vue sets up before any page does.
+// The app-wide states' keys and declarations: App.vue sets up before any page does.
 const appWide = new Map<string, string>()
 
 // A demo value (a persona, a workflow phase). The first option is the default. Options are a list, or an object of
@@ -27,10 +27,11 @@ export function useDemoState<T extends string>(name: string, input: readonly T[]
   const { options, groups } = readOptions(input)
   const of = config.of?.trim() || undefined
   const key = stateKeyOf(name, of)
-  // A page that declares an app-wide state again (Role, same options) shares it: one row, one value.
+  // A page that declares an app-wide state again (Role, written the same) shares it: one row, one value.
   let path = pageKeyOf()
-  if (!path && !of) appWide.set(key, options.join('\n'))
-  else if (appWide.get(key) === options.join('\n')) path = ''
+  const declared = JSON.stringify([name, groups ?? options])
+  if (!path && !of) appWide.set(key, declared)
+  else if (appWide.get(key) === declared) path = ''
   const id = idOf(path, key)
   const route = useRoute()
   const router = useRouter()

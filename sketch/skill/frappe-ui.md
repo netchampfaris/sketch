@@ -416,7 +416,8 @@ const phase = useDemoState('Cycle phase', ['Self', '360', 'Manager', 'Results'])
 - Declare a persona or role once, in `App.vue`, and nowhere else. A component
   that needs it reads it there (pass it down or `provide` it). Declare a phase
   in the page that uses it.
-- A page's state is that page's own: the same name on two pages is two values.
+- A page's state is that page's own: the same name on two pages is two values,
+  unless `App.vue` declares it the same way; then it is the app-wide one.
 - A demo flow can move it, for example `phase.value = '360'` on submit.
 - A long list of options goes in groups: pass an object instead of an array, and
   the pill shows a heading for each group. The first option of the first group
