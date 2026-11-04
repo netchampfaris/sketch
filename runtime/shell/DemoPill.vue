@@ -8,7 +8,7 @@ import { Button, Dropdown, toast } from 'frappe-ui'
 import type { ModelSet, ModelState } from '../shared/protocol'
 import { badges, freshIn, lookAt, pageHasNew } from './badges'
 import { choose, demo, measure } from './demo'
-import { onFrame, page } from './frame'
+import { onFrame, page, post } from './frame'
 import { isOwner, keepFailure, keepOnly, makeDefault, makeFailure, saving } from './actions'
 import LensMenu from './LensMenu.vue'
 import { canvas, showView } from './canvas'
@@ -35,6 +35,20 @@ const dot = computed(() => pageHasNew(page.path, setRows.value.flatMap(optionsOf
 
 const open = ref(false)
 const pill = ref<HTMLElement | null>(null)
+// The pill sat in the page, so a press on it was a press outside the page's open menu or popover: it closes, as before.
+// The menu hands the focus back to its trigger in the page, which is no press outside the card it opens: the card keeps
+// it.
+let pressedAt = 0
+function pressed() {
+	if (!page.pageLayerOpen) return
+	pressedAt = performance.now()
+	post('outside', {})
+}
+// A page dialog's backdrop covered the pill: it shows through the same tint, and a press on it is a press on the
+// backdrop.
+const covered = computed(() => !!page.backdrop)
+watch(covered, (on) => on && close())
+const focusCard = () => document.querySelector<HTMLElement>('#sketch-demo-card button')?.focus()
 const toggle = () => {
 	open.value = !open.value
 	if (open.value) {
@@ -43,7 +57,7 @@ const toggle = () => {
 		// The rows in page order, as the sets sit now.
 		measure()
 		// Tab then runs down the rows from the first dropdown.
-		nextTick(() => document.querySelector<HTMLElement>('#sketch-demo-card button')?.focus())
+		nextTick(focusCard)
 	}
 }
 watch(count, (n) => !n && (open.value = false))
@@ -63,7 +77,7 @@ onBeforeUnmount(onFrame('key', (k) => k.key === 'Escape' && !k.layer && !documen
 const stack = ref<HTMLElement | null>(null)
 // A menu opened from a row is portalled out of the stack; picking from it must not close the card. A press in the page
 // (the frame) is outside too.
-onClickOutside(stack, () => close(), { ignore: ['[role="menu"]'], detectIframe: true })
+onClickOutside(stack, (e) => (e.type === 'blur' && performance.now() - pressedAt < 500 ? focusCard() : close()), { ignore: ['[role="menu"]'], detectIframe: true })
 const { height } = useElementSize(stack, { width: 0, height: 0 }, { box: 'border-box' })
 const { width: pillW } = useElementSize(pill, { width: 0, height: 0 }, { box: 'border-box' })
 // On a phone the stack sits above the page's MobileNav bar, when it has one (the frame measures it), so the toolbar's
@@ -249,14 +263,22 @@ const rowLabel = (s: Row, role: boolean) => (isState(s) && !role ? 'State' : s.l
 			</div>
 			<Button v-if="demo.canOpen" class="mt-0.5 w-full !justify-start" variant="ghost" icon-left="lucide-layout-grid" label="Open canvas" @click="openHere" />
 		</div>
-		<div ref="pill" data-pill="demo" class="pointer-events-auto rounded-5 bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2">
-			<Button variant="ghost" aria-controls="sketch-demo-card" :aria-expanded="open" :class="open ? '!bg-surface-gray-3' : ''" @click="toggle">
+		<div ref="pill" data-pill="demo" class="pointer-events-auto relative rounded-5 bg-surface-elevation-2 p-1 shadow-lg ring-1 ring-outline-gray-2">
+			<Button variant="ghost" aria-controls="sketch-demo-card" :aria-expanded="open" :class="open ? '!bg-surface-gray-3' : ''" :inert="covered" @pointerdown="pressed" @click="toggle">
 				<span class="flex items-center gap-1.5">
 					<span class="text-p-sm text-ink-gray-8">Demo</span>
 					<span v-if="dot && !open" class="size-1.5 shrink-0 rounded-full bg-surface-blue-6" role="img" aria-label="New on this page" />
 					<span class="size-3.5 text-ink-gray-5" :class="open ? 'lucide-chevron-up' : 'lucide-chevron-down'" aria-hidden="true" />
 				</span>
 			</Button>
+			<!-- The backdrop's tint over the pill and its ring (the ring is a 1px shadow, so is this). -->
+			<div
+				v-if="covered"
+				class="absolute inset-0 rounded-[inherit]"
+				:style="{ backgroundColor: page.backdrop, boxShadow: `0 0 0 1px ${page.backdrop}` }"
+				aria-hidden="true"
+				@pointerdown="post('outside', {})"
+			/>
 		</div>
 	</div>
 

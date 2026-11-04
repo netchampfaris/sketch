@@ -74,6 +74,9 @@ export function record<T>(v: unknown, cap: number, item: (x: unknown) => T | nul
 	}
 	return out
 }
+// A computed CSS colour, or ''. Only colour functions and hex: nothing the shell's style could fetch.
+export const color = (v: unknown): string | null =>
+	typeof v === 'string' && /^(|transparent|#[0-9a-f]{3,8}|(rgba?|hsla?|oklch|oklab|lab|lch|color)\([a-z0-9.,%\s/+-]*\))$/i.test(v) && v.length <= 80 ? v : null
 const strings = (v: unknown, cap: number = CAPS.list, len: number = CAPS.label) => list(v, cap, (x) => str(x, len))
 
 // Every field must read, or the whole message is dropped.
@@ -197,7 +200,9 @@ export type FromFrame = {
 	// `key` is the route a note belongs to (runtime/agent/dom.ts routeKey); `path` the route's path alone.
 	route: { fullPath: string; path: string; key: string }
 	theme: { theme: Theme }
-	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean }
+	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open): the shell's Demo pill
+	// sits under it, as it did in the page.
+	layout: { vw: number; vh: number; navBottom: number; pageLayerOpen: boolean; dialogOpen: boolean; backdrop: string }
 	// The Demo pill's rows on this page, in page order, and whether the card's foot offers "Open canvas".
 	model: { sets: ModelSet[]; states: ModelState[]; canOpen: boolean }
 	// The element under the pointer while a tool picks, its label, and with Alt held the distances to the selection.
@@ -490,6 +495,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			navBottom: num(d.navBottom),
 			pageLayerOpen: bool(d.pageLayerOpen),
 			dialogOpen: bool(d.dialogOpen ?? false),
+			backdrop: color(d.backdrop ?? ''),
 		}),
 	model: (d) => all({ sets: list(d.sets, CAPS.sets, modelSet), states: list(d.states, CAPS.sets, modelState), canOpen: bool(d.canOpen ?? false) }),
 	hover: (d) => {
@@ -599,8 +605,9 @@ const pickRef = (v: unknown): PickRef | null =>
 export type ToFrame = {
 	// `active` is the tool picking in the page now: the frame catches the pointer only then.
 	tool: { mode: Mode; active: boolean }
-	// The elements of the open box (by the refs their picks carried), and its dragged box, for Alt's distances.
-	selection: { refs: string[]; box?: BoxInfo }
+	// The elements of the open box (by the refs their picks carried), and its dragged box, for Alt's distances. `drop`:
+	// the box has just closed, and the hover outline waits for the pointer to move.
+	selection: { refs: string[]; box?: BoxInfo; drop?: boolean }
 	// Parent or child of the box's first element (the \ and Enter keys). The frame answers with a `step` pick.
 	step: { dir: 'parent' | 'child'; ref: string }
 	resolve: { req: string; selectors: string[] }
@@ -640,6 +647,8 @@ export type ToFrame = {
 	scrollTo: { selector: string; smooth: boolean }
 	// Escape pressed in the shell while a page menu, popover or list is open: the page's own layer takes it.
 	escape: Obj
+	// A press on the Demo pill: the page's open menus, popovers and dialog close as on a press outside them.
+	outside: Obj
 	// Tweak's selection, which the frame holds (the page's elements are there): clear it, take every alike copy in, step
 	// to the parent or child, find a list row's tweaks (`ids`; the answer says `found`) and then select them, outline a
 	// hovered row's elements, or ask for the facts again. `keys` is Shift and Space as the shell hears them.
@@ -702,7 +711,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	tool: (d) => all({ mode: oneOf(d.mode, MODES), active: bool(d.active) }),
 	selection: (d) => {
 		const refs = strings(d.refs, CAPS.rects, 40)
-		return refs && some({ refs, box: d.box === undefined ? null : box(d.box) })
+		return refs && some({ refs, box: d.box === undefined ? null : box(d.box), drop: d.drop === undefined ? null : bool(d.drop) })
 	},
 	step: (d) => all({ dir: oneOf(d.dir, ['parent', 'child'] as const), ref: str(d.ref, 40) }),
 	resolve: (d) => all({ req: str(d.req, 40), selectors: strings(d.selectors, CAPS.rects, CAPS.selector) }),
@@ -734,6 +743,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	copy: (d) => all({ owner: bool(d.owner), reloads: bool(d.reloads) }),
 	scrollTo: (d) => all({ selector: str(d.selector, CAPS.selector), smooth: bool(d.smooth ?? false) }),
 	escape: () => ({}),
+	outside: () => ({}),
 	'tweak:inspect': (d) => {
 		const base = all({ req: str(d.req, 40), op: oneOf(d.op, TWEAK_OPS) })
 		return base && some({ ...base, ids: d.ids === undefined ? null : strings(d.ids, CAPS.alike, 40), shift: d.shift === undefined ? null : bool(d.shift), peek: d.peek === undefined ? null : bool(d.peek) })

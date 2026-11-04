@@ -31,6 +31,7 @@ export const page = reactive({
 	navBottom: 0,
 	pageLayerOpen: false,
 	dialogOpen: false,
+	backdrop: '',
 	demo: [] as DemoEntry[],
 })
 
