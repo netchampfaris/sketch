@@ -232,6 +232,8 @@ export type FromFrame = {
 		tiles?: CanvasTile[]
 		pages?: CanvasPage[]
 		items?: PickItem[]
+		// One option's states with none built: the option's own tile of its set (where its note goes), and its words.
+		empty?: EmptyView | null
 	}
 	'tile:menu': { tileId: string; rect: Rect }
 	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
@@ -338,8 +340,13 @@ export type CanvasTile = {
 // What the canvas found on a page, enough to tell whether a pinned tile still exists (sets by key with their option
 // values, states by key with their options, and the set options a component state can name, as slugs).
 export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[]; ofs: string[] }
+// An option's States view that has nothing to show (runtime/variants/Canvas.vue): the shell says so and offers Ask
+// agent, a note on `spot` that opens with the set, the option and its file.
+export type EmptyView = { spot: TileSpot; set: string; option: string; file: string }
+const emptyView = (v: unknown): EmptyView | null =>
+	isObj(v) ? all<EmptyView>({ spot: tileSpot(v.spot), set: str(v.set), option: str(v.option), file: str(v.file ?? '', CAPS.route) }) : null
 // One row of the Show list (runtime/variants/picker.ts PickItem).
-export type PickItem = { value: string; label: string; sub: string; short: string; complete: boolean; group: 'sets' | 'states' | 'pages'; options: string[] }
+export type PickItem = { value: string; label: string; sub: string; short: string; group: 'sets' | 'pages'; options: string[] }
 export type ComponentInfo = { component: string; chain: string[]; file: string }
 // One element picked in the page. `ref` names it for later messages (selection, step, track), so the frame
 // can find the same element again while it lives; `selector` is the fallback once it is gone.
@@ -426,8 +433,7 @@ const pickItem = (v: unknown): PickItem | null =>
 				label: str(v.label),
 				sub: str(v.sub ?? ''),
 				short: str(v.short, 40),
-				complete: bool(v.complete ?? true),
-				group: oneOf(v.group, ['sets', 'states', 'pages'] as const),
+				group: oneOf(v.group, ['sets', 'pages'] as const),
 				options: strings(v.options ?? [], CAPS.options),
 			})
 		: null
@@ -548,13 +554,15 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			corner: num(d.corner ?? 0),
 		})
 		if (!base) return null
+		// Unreadable, it is no empty view: the canvas still draws.
+		const empty = d.empty == null ? null : emptyView(d.empty)
 		const parts = {
 			tiles: maybe(d.tiles, (v) => list(v, CAPS.tiles, canvasTile)),
 			pages: maybe(d.pages, (v) => list(v, CAPS.list, canvasPage)),
 			items: maybe(d.items, (v) => list(v, CAPS.tiles, pickItem)),
 		}
 		if (Object.values(parts).some((x) => x === null)) return null
-		return some({ ...base, ...parts })
+		return { ...some<typeof base & typeof parts>({ ...base, ...parts }), empty }
 	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
 	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
@@ -651,8 +659,9 @@ export type ToFrame = {
 	}
 	// Sort and measure the Demo's rows again (the card opened, a row is hovered): the frame answers with `model`.
 	'model:measure': Obj
-	// The tile menu's Open page.
+	// The tile menu's Open page, and States (the option's component states).
 	'tile:open': { tileId: string }
+	'tile:states': { tileId: string }
 	// The two facts the frame's status screen (empty, did not build) words itself by. Sent only with that screen up.
 	copy: { owner: boolean; reloads: boolean }
 	scrollTo: { selector: string; smooth: boolean }
@@ -750,6 +759,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 		}),
 	'model:measure': () => ({}),
 	'tile:open': (d) => all({ tileId: str(d.tileId) }),
+	'tile:states': (d) => all({ tileId: str(d.tileId) }),
 	copy: (d) => all({ owner: bool(d.owner), reloads: bool(d.reloads) }),
 	scrollTo: (d) => all({ selector: str(d.selector, CAPS.selector), smooth: bool(d.smooth ?? false) }),
 	escape: () => ({}),

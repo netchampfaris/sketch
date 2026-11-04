@@ -9,7 +9,7 @@ import { ofOption, slugOf } from './state'
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
 import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/tiles'
-import type { CanvasPage, CanvasTile, FromFrame, PickItem as ShownItem } from '../shared/protocol'
+import type { CanvasPage, CanvasTile, EmptyView, FromFrame, PickItem as ShownItem } from '../shared/protocol'
 
 export { sameTile, tileLabel, whereOf } from '../shared/tiles'
 export type { TileHit, TileRef, TileSpot }
@@ -45,6 +45,10 @@ export const bridge = shallowReactive({
   busyTile: '',
   menuTile: '',
   openTile: null as ((tileId: string) => void) | null,
+  // The menu's States: the option's component states.
+  statesTile: null as ((tileId: string) => void) | null,
+  // One option's States view with none built, for the shell's "No states built yet" and Ask agent.
+  empty: null as EmptyView | null,
   // The phone's Show list is the shell's too: the title pill's name asks for it at its box (`open` false closes it),
   // and `showOpen` is whether it is open, for the name's pressed look.
   showMenu: null as ((rect: { x: number; y: number; w: number; h: number }, open: boolean) => void) | null,
@@ -106,11 +110,11 @@ export function tilesOf(tiles: TileBox[], view: string): CanvasTile[] {
 
 // The Show list's rows.
 export const itemsOf = (items: PickItem[]): ShownItem[] =>
-  items.map((i) => ({ value: i.value, label: i.label, sub: i.sub ?? '', short: i.short, complete: i.complete ?? true, group: i.group, options: i.options ?? [] }))
+  items.map((i) => ({ value: i.value, label: i.label, sub: i.sub ?? '', short: i.short, group: i.group, options: i.options ?? [] }))
 
 // What the canvas shows now, whole. The pages are left out until the canvas has looked: none is not an empty list.
 export function canvasReport(): FromFrame['canvas'] {
-  const at = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner }
+  const at = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner, empty: bridge.open ? bridge.empty : null }
   if (!bridge.open) return at
   const pages = pagesOf(bridge.model)
   return { ...at, tiles: tilesOf(bridge.tiles, bridge.view), items: itemsOf(bridge.items), ...(pages ? { pages } : {}) }

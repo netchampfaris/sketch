@@ -202,7 +202,7 @@ function startCanvas({ bridge, canvasReport }: Variants) {
 		post('canvas', { ...msg, ...changed })
 	}
 	watch(
-		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.tiles, bridge.model, bridge.items],
+		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.tiles, bridge.model, bridge.items, bridge.empty],
 		() => {
 			if (queued) return
 			queued = true
@@ -248,6 +248,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		'state:set': ({ id, value }) => router && variants?.setDemo(id, value, router),
 		'model:measure': () => router && variants?.measureDemo(router.currentRoute.value),
 		'tile:open': ({ tileId }) => variants?.bridge.openTile?.(tileId),
+		'tile:states': ({ tileId }) => variants?.bridge.statesTile?.(tileId),
 		// The canvas fits its tiles in the room the shell's panel leaves. The options new to this reader get their "New"
 		// badge. The tile whose action the shell saves spins, the one whose menu is open looks pressed, and the option a
 		// write landed on is ringed once drawn.

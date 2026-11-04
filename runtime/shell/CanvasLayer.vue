@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // What the Viewer shell draws over the frame's canvas: the pins on the tiles, the panel on the right (or its "Show
-// panel" button), and on a phone the Show list under the title pill's name, all in the places the in-frame canvas had
+// panel" button), an option's empty States view with Ask agent, and on a phone the Show list under the title pill's name, all in the places the in-frame canvas had
 // them (runtime/variants/Canvas.vue). The canvas itself and its title and zoom pills stay in the frame.
 //
 // The pins sit in one layer moved by the canvas's pan and zoom (a single CSS transform), each pin at its place on
 // its tile in the canvas's own coordinates, so they stay on their tiles as the frame reports each frame of a pan.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { Button, Popover, Tooltip } from 'frappe-ui'
+import { Button, Popover, Tooltip, toast } from 'frappe-ui'
 import type { Rect } from '../shared/protocol'
 import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
@@ -81,6 +81,25 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 })
 
 const inv = computed(() => 1 / canvas.zoom)
+
+// One option's States view with nothing declared: one line and a way to ask the agent for it. The note is the one the
+// Note tool makes, on the option's own tile of its set; while it waits for the agent the view says so.
+const OPENING = 'Build the states for'
+const pendingNote = computed(() => (canvas.empty ? (canvas.pendingNote?.(canvas.empty.spot, OPENING) ?? null) : null))
+const asking = ref(false)
+async function askAgent() {
+	const v = canvas.empty
+	if (!v || !canvas.addNote || asking.value) return
+	asking.value = true
+	try {
+		await canvas.addNote(v.spot, `${OPENING} ${v.set} · ${v.option}${v.file ? ` (${v.file})` : ''}. Follow the States section of the Sketch skill.`)
+	} catch (e) {
+		toast.error(`Could not add the note: ${(e as Error).message}. Try again.`)
+	} finally {
+		asking.value = false
+	}
+}
+const undoAsk = () => pendingNote.value && canvas.removeNote?.(pendingNote.value)
 </script>
 
 <template>
@@ -93,6 +112,24 @@ const inv = computed(() => 1 / canvas.zoom)
 			>
 				<component :is="canvas.Pins" v-if="canvas.Pins" :tiles="canvas.tiles" :zoom="canvas.zoom" />
 			</div>
+		</div>
+
+		<!-- An option with no states built: say so, and offer the agent. -->
+		<div
+			v-if="canvas.empty"
+			data-ui
+			class="pointer-events-none absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-2 px-6 text-center"
+			:style="{ right: panelShown ? `${PANEL_W}px` : '0' }"
+		>
+			<template v-if="pendingNote">
+				<p class="text-base text-ink-gray-8">Added to your notes for the agent.</p>
+				<p class="text-p-sm text-ink-gray-5">Tell your agent to apply your notes.</p>
+				<Button class="pointer-events-auto" variant="ghost" label="Undo" @click="undoAsk" />
+			</template>
+			<template v-else>
+				<p class="text-base text-ink-gray-8">No states built yet</p>
+				<Button v-if="canvas.canNote && canvas.addNote" class="pointer-events-auto" variant="subtle" theme="gray" label="Ask agent" :loading="asking" @click="askAgent" />
+			</template>
 		</div>
 
 		<CanvasPanel v-if="panelShown" :items="canvas.items" :selected="canvas.view" @choose="choose" @hide="canvas.panelOpen = false" />

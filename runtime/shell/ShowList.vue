@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The "Show" list: search, then the groups of things to show on the canvas. The canvas panel holds it on desktop
+// The "Show" list: search, then the groups of things to show on the canvas: variant sets, and the pages that have states. The canvas panel holds it on desktop
 // (CanvasPanel.vue), the title pill's dropdown on a phone (CanvasLayer.vue). The rows are what the frame's canvas
 // reported; a dot is the server's word that an option is new to this person (badges.ts).
 import { computed, nextTick, ref, watch } from 'vue'
@@ -12,8 +12,7 @@ const emit = defineEmits<{ choose: [value: string] }>()
 
 const GROUPS = [
 	{ key: 'sets', title: 'Variant sets' },
-	{ key: 'states', title: 'States across pages' },
-	{ key: 'pages', title: 'Pages' },
+	{ key: 'pages', title: 'States' },
 ] as const
 
 const query = ref('')
@@ -43,11 +42,9 @@ function enter() {
 	const r = rows.value[active.value < 0 ? 0 : active.value]
 	if (r) emit('choose', r.value)
 }
-// How many options of a set are new to this person and not looked at yet. Pages and states have none.
+// How many options of a set are new to this person and not looked at yet. A page's states have none.
 const freshOf = (i: PickItem) => (i.options.length ? freshIn(i.options) : 0)
-// Incomplete states stand out; everything else is quiet.
-const countClass = (i: PickItem) =>
-	i.value === props.selected ? 'text-ink-gray-7' : i.group === 'states' && !i.complete ? 'text-ink-gray-8' : 'text-ink-gray-5'
+const countClass = (i: PickItem) => (i.value === props.selected ? 'text-ink-gray-7' : 'text-ink-gray-5')
 </script>
 
 <template>
@@ -58,7 +55,7 @@ const countClass = (i: PickItem) =>
 				v-model="query"
 				class="min-w-0 flex-1 [&_input]:focus:ring-outline-gray-3"
 				placeholder="Search"
-				aria-label="Search sets, states and pages"
+				aria-label="Search variant sets and states"
 				autocomplete="off"
 				@keydown.down.prevent="move(1)"
 				@keydown.up.prevent="move(-1)"

@@ -58,7 +58,9 @@ export function setEnabled(on: boolean) {
 // the notes on tiles. Never stored: deleting a note renumbers the rest.
 export const noteNumber = (n: Note) => notes.value.filter((x) => (n.tile ? !!x.tile : !x.tile && x.route === n.route)).findIndex((x) => x.id === n.id) + 1
 export function addNote(n: Omit<Note, 'id' | 'createdAt'>) {
-  notes.value = [...notes.value, { ...n, id: newId(), createdAt: Date.now() }]
+  const id = newId()
+  notes.value = [...notes.value, { ...n, id, createdAt: Date.now() }]
+  return id
 }
 export function updateNote(id: string, note: string) {
   notes.value = notes.value.map((x) => (x.id === id ? { ...x, note } : x))

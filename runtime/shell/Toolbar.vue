@@ -48,7 +48,7 @@ import CommentsPanel from './CommentsPanel.vue'
 import NotePopover from './NotePopover.vue'
 import TilePins from './TilePins.vue'
 import { canvasUi, handlers, tileAnchor } from './tiles'
-import { tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
+import { sameTile, tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
 import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../shared/protocol'
 import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
@@ -58,7 +58,7 @@ import { buildTweakPrompt, findRow, highlight, inspect, removeTweak, resetAll, r
 import { labels, onFrame, onRefsGone, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
 import { demo } from './demo'
 import { pinHover } from './pinHover'
-import { saveState } from './notes'
+import { saveNow, saveState } from './notes'
 import { applyPicks, canvas, picksShown, pointOf, revealTile, showView } from './canvas'
 import { hasUnreadThreads } from './badges'
 
@@ -499,11 +499,12 @@ canvas.canComment = !guest
 canvas.canNote = noter
 canvas.Pins = markRaw(TilePins)
 canvas.tabs = guest ? {} : { comments: commentsTab, ...(noter ? { notes: notesTab } : {}) }
+if (noter) Object.assign(canvas, { addNote: noteOnTile, removeNote, pendingNote: pendingNoteOn })
 handlers.thread = openThreadAt
 handlers.note = openEdit
 handlers.draft = reopenDraft
 onBeforeUnmount(() => {
-	Object.assign(canvas, { canComment: false, canNote: false, tool: '', Pins: null, tabs: {}, tab: 'browse' })
+	Object.assign(canvas, { canComment: false, canNote: false, tool: '', Pins: null, tabs: {}, tab: 'browse', addNote: null, removeNote: null, pendingNote: null })
 	handlers.thread = handlers.note = handlers.draft = null
 })
 // The canvas reads the threads as it opens, and its tab shows no count until it knows both the threads and the tiles:
@@ -512,8 +513,8 @@ watch(canvasOpen, (open) => open && !guest && void load(true), { immediate: true
 const tabCount = computed(() => (canvasOpen.value && (status.value !== 'ready' || !canvas.model) ? 0 : openCount.value))
 watch([tabCount, () => notes.value.length], ([c, n]) => (canvas.counts = { comments: c, notes: n }), { immediate: true })
 
-// The canvas's Ask agent: a note on a tile, on the server before the canvas says it is there. If it cannot be saved it
-// is taken back, and the reason goes to the canvas.
+// The canvas's Ask agent (CanvasLayer.vue): a note on a tile, on the server before the canvas says it is there. If it
+// cannot be saved it is taken back, and the reason goes to the canvas.
 async function noteOnTile(spot: TileSpot, text: string) {
 	const id = addNote({ ...tileAnchor(spot, { fx: 0.5, fy: 0.5 }), note: text })
 	const why = await saveNow()

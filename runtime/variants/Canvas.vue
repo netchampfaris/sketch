@@ -323,6 +323,14 @@ const optSpot = computed<TileSpot | null>(() => {
   const tile = { kind: 'set' as const, view: setViewValue.value, page: v?.page.title ?? '', group: v?.set.label ?? '', groupKey: v?.set.key ?? '', option: v?.opt.value ?? '', optionLabel: v?.opt.label ?? '' }
   return v ? { route: v.page.path, tile } : null
 })
+watch(
+  [emptyView, optSpot],
+  ([empty, spot]) => {
+    const v = optView.value
+    bridge.empty = empty && spot && v ? { spot, set: v.set.label, option: v.opt.label, file: v.set.file ?? '' } : null
+  },
+  { immediate: true },
+)
 
 function openPage(t: TileBox) {
   nav.pushed = false
@@ -422,6 +430,10 @@ onMounted(() => {
     const t = layout.value.tiles.find((x) => x.id === id)
     if (t) openPage(t)
   }
+  bridge.statesTile = (id) => {
+    const t = layout.value.tiles.find((x) => x.id === id)
+    if (t) openStates(t)
+  }
   document.body.style.overflow = 'hidden'
   if (vp.value) detach = pz.attach(vp.value)
   root.value?.focus()
@@ -435,6 +447,8 @@ onBeforeUnmount(() => {
   bridge.open = false
   bridge.reveal = null
   bridge.openTile = null
+  bridge.statesTile = null
+  bridge.empty = null
   bridge.model = null
   bridge.tiles = []
   bridge.corner = 0
