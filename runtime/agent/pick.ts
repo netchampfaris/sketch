@@ -267,7 +267,11 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 		selection(d: ToFrame['selection']) {
 			selection = d.refs.map(elOf).filter((e): e is Element => !!e)
 			selectionBox = d.box
-			if (picking && alt) postHover()
+			// The box closed: the outline under a still pointer comes back only when it moves.
+			if (d.drop) {
+				hoverEl = null
+				postHover()
+			} else if (picking && alt) postHover()
 		},
 		step(d: ToFrame['step']) {
 			const el = elOf(d.ref)

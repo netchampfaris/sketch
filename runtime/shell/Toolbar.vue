@@ -144,7 +144,9 @@ onBeforeUnmount(
 	}),
 )
 // The selection, for Alt's distances in the frame.
-watch(draft, (d) => post('selection', { refs: (d?.els ?? []).map((e) => e.ref).filter((r): r is string => !!r), ...(d?.box ? { box: d.box } : {}) }))
+watch(draft, (d, was) =>
+	post('selection', { refs: (d?.els ?? []).map((e) => e.ref).filter((r): r is string => !!r), ...(d?.box ? { box: d.box } : {}), ...(!d && was ? { drop: true } : {}) }),
+)
 
 // The comment box rides with its pin: where the frame says the pin's element is now. A pin that fans out of a pile keeps
 // its offset from that point.
