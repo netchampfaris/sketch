@@ -13,6 +13,10 @@ import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
 import FrameAnchor from './FrameAnchor.vue'
 import { placeToasts } from './actions'
+import { addNote, notes, removeNote } from './annotate'
+import { saveNow } from './notes'
+import { tileAnchor } from './tiles'
+import { sameTile } from '../shared/tiles'
 import { onFrame, onGone, page, post } from './frame'
 import { PANEL_W, canvas, showView } from './canvas'
 
@@ -83,23 +87,32 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 const inv = computed(() => 1 / canvas.zoom)
 
 // One option's States view with nothing declared: one line and a way to ask the agent for it. The note is the one the
-// Note tool makes, on the option's own tile of its set; while it waits for the agent the view says so.
+// Note tool makes, on the option's own tile of its set; while it waits for the agent the view says so. The note is on
+// the server before the view says it is there: if it cannot be saved it is taken back, and the reason is shown.
 const OPENING = 'Build the states for'
-const pendingNote = computed(() => (canvas.empty ? (canvas.pendingNote?.(canvas.empty.spot, OPENING) ?? null) : null))
+const pendingNote = computed(() => {
+	const spot = canvas.empty?.spot
+	if (!spot) return null
+	return notes.value.find((n) => !!n.tile && !n.sent && n.note.startsWith(OPENING) && sameTile({ route: n.route, tile: n.tile }, spot))?.id ?? null
+})
 const asking = ref(false)
 async function askAgent() {
 	const v = canvas.empty
-	if (!v || !canvas.addNote || asking.value) return
+	if (!v || !canvas.canNote || asking.value) return
 	asking.value = true
 	try {
-		await canvas.addNote(v.spot, `${OPENING} ${v.set} · ${v.option}${v.file ? ` (${v.file})` : ''}. Follow the States section of the Sketch skill.`)
-	} catch (e) {
-		toast.error(`Could not add the note: ${(e as Error).message}. Try again.`)
+		const note = `${OPENING} ${v.set} · ${v.option}${v.file ? ` (${v.file})` : ''}. Follow the States section of the Sketch skill.`
+		const id = addNote({ ...tileAnchor(v.spot, { fx: 0.5, fy: 0.5 }), note })
+		const why = await saveNow()
+		if (why) {
+			removeNote(id)
+			toast.error(`Could not add the note: ${why}. Try again.`)
+		}
 	} finally {
 		asking.value = false
 	}
 }
-const undoAsk = () => pendingNote.value && canvas.removeNote?.(pendingNote.value)
+const undoAsk = () => pendingNote.value && removeNote(pendingNote.value)
 </script>
 
 <template>
@@ -128,7 +141,7 @@ const undoAsk = () => pendingNote.value && canvas.removeNote?.(pendingNote.value
 			</template>
 			<template v-else>
 				<p class="text-base text-ink-gray-8">No states built yet</p>
-				<Button v-if="canvas.canNote && canvas.addNote" class="pointer-events-auto" variant="subtle" theme="gray" label="Ask agent" :loading="asking" @click="askAgent" />
+				<Button v-if="canvas.canNote" class="pointer-events-auto" variant="subtle" theme="gray" label="Ask agent" :loading="asking" @click="askAgent" />
 			</template>
 		</div>
 

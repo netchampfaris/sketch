@@ -61,12 +61,6 @@ export const canvas = shallowReactive({
 	// The pins drawn on the tiles, and the content of each extra tab, registered by the toolbar.
 	Pins: null as Component | null,
 	tabs: {} as { comments?: Component; notes?: Component },
-	// Registered by the toolbar for the owner and an invited editor: put a note for the agent on a tile (rejects with the
-	// reason it could not be saved), take one back, and find the one on a tile that was added with these opening words
-	// and is still waiting for the agent.
-	addNote: null as ((spot: TileSpot, text: string) => Promise<string>) | null,
-	removeNote: null as ((id: string) => void) | null,
-	pendingNote: null as ((spot: TileSpot, opening: string) => string | null) | null,
 })
 
 onFrame('canvas', (d) => {
