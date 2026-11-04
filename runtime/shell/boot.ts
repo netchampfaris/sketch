@@ -18,6 +18,8 @@ export type ShellBoot = {
 	csrf_token: string
 	prototype_theme: string | null
 	frame_src: string
+	// The owner's notice that a retired Runtime moved this Prototype, else null (sketch/viewer.py shell_payload).
+	moved: { from: string; to: string } | null
 }
 
 export function readBoot(): ShellBoot {

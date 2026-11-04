@@ -19,8 +19,10 @@ Runtime.
 The source in this folder is shared by every version. A change to it must
 build and render on every version in `versions/`.
 
-Do not remove a version while a Prototype pins it. A fresh server rebuilds
-every Runtime from `versions/`.
+A fresh server rebuilds every Runtime from `versions/`. To retire a
+version, delete its folder and add a patch that moves its Prototypes to a
+version that stays (see `sketch/patches/v1_0/retire_old_runtimes.py`).
+`build-all.sh` then removes the retired version's output.
 
 ## Build it
 

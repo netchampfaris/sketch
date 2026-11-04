@@ -280,7 +280,8 @@ height is `:row-height`. Sorting is your code: a header cell only draws the
 ### `frappe-ui/charts`
 
 `BarChart`, `LineChart`, `AreaChart`, `DonutChart`, `FunnelChart`,
-`HeatmapChart`, `ScatterChart`, `SankeyChart`, `NumberCard`, plus `ChartCard`,
+`PercentageBarChart`, `HeatmapChart`, `CalendarHeatmapChart`, `ScatterChart`,
+`SankeyChart`, `NumberCard`, plus `ChartCard`,
 `ChartContainer`, `ChartLegend`, `ChartTooltip`, `useChart`, `paletteColors`.
 
 Props are flat and name the columns of your rows:
@@ -812,7 +813,8 @@ away. A wrong type is silent. A syntax error is fatal.
 on reload. The theme is the exception: `useColorScheme` saves it. See rule 10.
 
 **There is no `frappe-ui/experimental`.** `Accordion`, `Calendar`,
-`FloatingWindow`, `MultiEmailInput` and `CodeEditor` are not available.
+`FloatingWindow`, `MultiEmailInput`, `Stepper` and `CodeEditor` are not
+available.
 
 ## 9. Adding a variant to someone else's prototype
 

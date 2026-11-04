@@ -6,7 +6,7 @@
     "@vitejs/plugin-vue": "6.0.8",
     "autoprefixer": "10.5.4",
     "esbuild": "0.28.2",
-    "frappe-ui": "1.0.0",
+    "frappe-ui": "1.1.0",
     "postcss": "8.5.26",
     "sucrase": "3.35.1",
     "tailwindcss": "3.4.19",
