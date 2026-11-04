@@ -18,6 +18,7 @@ class SketchPrototype(Document):
 		annotations_epoch: DF.Int
 		is_public: DF.Check
 		pending_changes: DF.LongText | None
+		moved_from_pin: DF.Data | None
 		pin: DF.Data
 		slug: DF.Data
 		title: DF.Data

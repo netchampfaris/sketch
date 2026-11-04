@@ -80,6 +80,7 @@ CALLS = {
 	"comments_delete_resolved": {},
 	"comment_note_draft": {"comment": "x"},
 	"seen_mark": {"variants": "[]", "threads": "[]"},
+	"dismiss_moved_notice": {},
 }
 
 

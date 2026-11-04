@@ -192,6 +192,23 @@ def seen_mark(name: str, variants: str = "", threads: str = "") -> dict:
 	return {"marked": badges.mark(name, user, json_list(variants), json_list(threads))}
 
 
+# --------------------------------------------------------------- moved notice
+
+
+@frappe.whitelist(methods=["POST"])
+def dismiss_moved_notice(name: str) -> dict:
+	"""Clear `moved_from_pin`, so the owner's "Moved to frappe-ui …" notice never shows again.
+
+	The owner's alone: anyone else gets 404, as if there were no notice. The Pin stays as the patch
+	that moved it left it (sketch/patches/v1_0/retire_old_runtimes.py).
+	"""
+	if not _actor(name).is_owner:
+		raise frappe.DoesNotExistError
+
+	frappe.db.set_value("Sketch Prototype", name, "moved_from_pin", None, update_modified=False)
+	return {"moved_from_pin": None}
+
+
 # ---------------------------------------------------------------------- theme
 
 

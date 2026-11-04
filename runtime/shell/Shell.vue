@@ -4,9 +4,9 @@
 // Everything that acts as the reader, or shows a person's data, is drawn here, on Sketch's origin, over the
 // frame, and every write goes over the session (api.ts). The shell never scrolls; the frame's rects are the
 // shell's coordinates.
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { FrappeUIProvider } from 'frappe-ui'
+import { FrappeUIProvider, toast } from 'frappe-ui'
 import { fromFrame, read, type FromFrame, type Theme } from '../shared/protocol'
 import { host, type Role } from './host'
 import type { ShellBoot } from './boot'
@@ -19,6 +19,7 @@ import { frameGone, page, post, receive, setFrameWindow } from './frame'
 import { restoreNotes, startSaving } from './notes'
 import CanvasLayer from './CanvasLayer.vue'
 import DemoPill from './DemoPill.vue'
+import MovedNotice from './MovedNotice.vue'
 import TileMenu from './TileMenu.vue'
 import ZoomMenu from './ZoomMenu.vue'
 import Toolbar from './Toolbar.vue'
@@ -149,6 +150,14 @@ onMounted(() => {
 	window.addEventListener('hashchange', onHashChange)
 	// Only the owner has an agent writing to the tree, and only the owner's page carries a baseline.
 	if (props.boot.role === 'owner' && props.boot.rev) live = startLiveReload(props.boot.slug, props.boot.rev, reloadFrame)
+	// Only the owner's boot carries `moved`. It stays until they dismiss it (MovedNotice.vue).
+	if (boot.moved)
+		toast.custom(markRaw(MovedNotice), {
+			id: 'sketch-moved',
+			duration: Infinity,
+			dismissible: false,
+			componentProps: { toastId: 'sketch-moved', name: boot.name, slug: boot.slug, ...boot.moved },
+		})
 })
 onBeforeUnmount(() => {
 	window.removeEventListener('message', onMessage)

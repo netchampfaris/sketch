@@ -478,6 +478,10 @@ class SketchViewerRenderer(BaseRenderer):
 			# keeps theirs for the visit, in the shell.
 			"prototype_theme": prototype_theme.read(frappe.session.user) if signed_in else None,
 			"frame_src": f"/u/{self.username}/{self.doc.slug}?frame=1",
+			# The owner's one-time notice that a retired Runtime moved this Prototype (viewer_api.dismiss_moved_notice).
+			"moved": {"from": self.doc.moved_from_pin, "to": self.doc.pin}
+			if role == "owner" and signed_in and self.doc.moved_from_pin
+			else None,
 		}
 
 

@@ -816,7 +816,8 @@ def fork_prototype(username: str, slug: str) -> dict:
 	  its own address under the caller's own username.
 	- The Pin is the source's, not `newest_pin()`. The tree was written against
 	  that Runtime, and a fork that renders differently from the card it was
-	  taken from is not a copy.
+	  taken from is not a copy. A source Pin this server no longer builds is
+	  not copied: the fork keeps `newest_pin()`, so it always opens.
 	- `is_public` is 0. Publishing is the new owner's decision, never inherited.
 	- Version 1 is recorded (kind Created), so the fork can be restored to how
 	  it began. No thumbnail: the first `check` writes it.
@@ -833,7 +834,7 @@ def fork_prototype(username: str, slug: str) -> dict:
 	}
 
 	doc = prototype.create(source.title)
-	if source.pin and source.pin != doc.pin:
+	if source.pin and source.pin != doc.pin and source.pin in prototype.available_pins():
 		doc.pin = source.pin
 		doc.save()
 
