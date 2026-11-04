@@ -37,12 +37,12 @@ export const isOwner = () => ctx.role === 'owner'
 export const canDelete = (option: string, author: string) =>
 	!!author && !!option && (isOwner() || (ctx.role === 'editor' && !!ctx.me && option.startsWith(`@${ctx.me}/`)))
 
-// The row or tile whose write is in flight: its button spins until the frame comes back. One write at a time.
-export const saving = ref<string | null>(null)
-function busy(key: string | null, tileId = '') {
-	if (key) placeToasts()
-	saving.value = key
-	post('display', { busyTile: tileId })
+// The tile whose write is in flight: its button spins until the frame comes back. One write at a time.
+const saving = ref<string | null>(null)
+function busy(tileId: string | null) {
+	if (tileId) placeToasts()
+	saving.value = tileId
+	post('display', { busyTile: tileId ?? '' })
 }
 // The option a write has just put in place: the frame's canvas rings its tile once it has reloaded and drawn it.
 let landing: { set: string; option: string } | null = null
@@ -93,16 +93,16 @@ function withUndo(message: string, undo: (() => Promise<void>) | null) {
 }
 
 // ---- Make default --------------------------------------------------------------------------
-// `first` is the set's default before the change: where Undo lands, for the canvas's ring.
-type Defaultable = { name: string; file: string; first?: { value: string } }
+// `was` is the set's default before the change: where Undo lands, for the canvas's ring.
+type Defaultable = { name: string; file: string; was?: { value: string } }
 
 export const makeFailure = (e: Error) =>
 	e instanceof TypeError ? "Couldn't make it the default. Check your connection and try again." : `Couldn't make it the default. ${e.message}`
 
 // Records `option` as the set's default, where it sits, and saves a version. Rejects with an error fit for `makeFailure`.
-export async function makeDefault(set: Defaultable, option: string, key: string, tileId = '') {
+export async function makeDefault(set: Defaultable, option: string, tileId: string) {
 	if (saving.value) return
-	busy(key, tileId)
+	busy(tileId)
 	let done: Answer
 	try {
 		done = await landed(
@@ -111,14 +111,14 @@ export async function makeDefault(set: Defaultable, option: string, key: string,
 		)
 	} catch (e) {
 		busy(null)
-		// The source already has this default: this tab is stale. The frame reloads so the row tells the truth.
+		// The source already has this default: this tab is stale. The frame reloads so the tile tells the truth.
 		if (/already the default/.test((e as Error).message)) {
 			toast.error(`Couldn't make it the default. ${(e as Error).message}`)
 			return ctx.reload()
 		}
 		throw e
 	}
-	const back = set.first
+	const back = set.was
 	const sequence = done.sequence
 	withUndo(
 		`${done.label} is now the default for ${done.set}`,
@@ -142,9 +142,9 @@ const others = (n = 0) => (n ? `, removed ${n} other${n === 1 ? '' : 's'}` : '')
 
 // Cuts every other option of the set (a teammate's too) and saves a version. A teammate's option is adopted first: the
 // server answers with the option's new name.
-export async function keepOnly(set: { name: string; file: string }, option: string, key: string, tileId = '') {
+export async function keepOnly(set: { name: string; file: string }, option: string, tileId: string) {
 	if (saving.value) return
-	busy(key, tileId)
+	busy(tileId)
 	let done: Answer
 	try {
 		done = await landed(
@@ -174,9 +174,9 @@ export async function keepOnly(set: { name: string; file: string }, option: stri
 export const deleteFailure = (e: Error) =>
 	e instanceof TypeError ? "Couldn't delete the variant. Check your connection and try again." : `Couldn't delete the variant. ${e.message}`
 
-export async function deleteVariant(option: string, key: string, tileId = '') {
+export async function deleteVariant(option: string, tileId: string) {
 	if (saving.value) return
-	busy(key, tileId)
+	busy(tileId)
 	let done: Answer
 	try {
 		done = await landed(() => write('sketch.viewer_api.delete_variant', { name: ctx.name, option }))

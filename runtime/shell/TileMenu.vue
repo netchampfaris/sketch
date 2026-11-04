@@ -59,7 +59,7 @@ function guarded(label: string, run: () => void) {
 }
 
 // The set's default tile on the canvas now, for where Make default's Undo lands.
-const firstOf = (t: ShellTile) => {
+const wasOf = (t: ShellTile) => {
 	const d = canvas.tiles.find((x) => x.isDefault && x.spot.route === t.spot.route && x.spot.tile.kind === 'set' && x.spot.tile.groupKey === t.spot.tile.groupKey)
 	return d ? { value: d.spot.tile.option } : undefined
 }
@@ -80,15 +80,15 @@ const items = computed(() => {
 	const owner = isOwner() && !canvas.tool
 	return [
 		...(set && owner && !t.isDefault
-			? [{ label: 'Make default', icon: 'lucide-star', onClick: guarded('Make default', () => act(() => makeDefault({ name: t.setName, file: t.setFile, first: firstOf(t) }, option, t.id, t.id), makeFailure)) }]
+			? [{ label: 'Make default', icon: 'lucide-star', onClick: guarded('Make default', () => act(() => makeDefault({ name: t.setName, file: t.setFile, was: wasOf(t) }, option, t.id), makeFailure)) }]
 			: []),
 		{ label: 'Open page', icon: 'lucide-arrow-up-right', onClick: guarded('Open page', () => post('tile:open', { tileId: t.id })) },
 		...(kind === 'set' && option ? [{ label: 'States', icon: 'lucide-layers', onClick: guarded('States', () => post('tile:states', { tileId: t.id })) }] : []),
 		...(set && owner && t.setCount > 1
-			? [{ label: 'Keep only this', icon: 'lucide-check', onClick: guarded('Keep only this', () => act(() => keepOnly({ name: t.setName, file: t.setFile }, option, t.id, t.id), keepFailure)) }]
+			? [{ label: 'Keep only this', icon: 'lucide-check', onClick: guarded('Keep only this', () => act(() => keepOnly({ name: t.setName, file: t.setFile }, option, t.id), keepFailure)) }]
 			: []),
 		...(canDelete(option, t.author)
-			? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: guarded('Delete variant', () => act(() => deleteVariant(option, t.id, t.id), deleteFailure)) }]
+			? [{ label: 'Delete variant', icon: 'lucide-trash-2', onClick: guarded('Delete variant', () => act(() => deleteVariant(option, t.id), deleteFailure)) }]
 			: []),
 	]
 })
