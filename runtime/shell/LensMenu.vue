@@ -21,7 +21,7 @@ const options = computed(() =>
 </script>
 
 <template>
-	<Dropdown v-bind="menuBind(`lens:${state.label}`)" :options="options">
+	<Dropdown v-bind="menuBind(`lens:${state.id}`)" :options="options">
 		<Button variant="ghost" :class="fill ? 'w-full [&>span]:w-full' : ''" :aria-label="`${state.label}: ${state.value}`">
 			<span class="flex items-center gap-1.5" :class="fill ? 'w-full min-w-0' : ''">
 				<span v-if="showName" class="text-p-sm text-ink-gray-5">{{ state.label }}</span>

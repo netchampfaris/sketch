@@ -146,7 +146,6 @@ function openHere() {
 	const first = setRows.value.find((s) => s.path !== '')
 	go(first ? first.view : pageStateRows.value.length ? `page:${pageStateRows.value[0].path}` : 'auto')
 }
-const rowLabel = (s: Row) => (isState(s) && s.path !== '' ? 'State' : s.label)
 
 </script>
 
@@ -159,7 +158,7 @@ const rowLabel = (s: Row) => (isState(s) && s.path !== '' ? 'State' : s.label)
 			@mouseleave="hover(null)"
 		>
 			<span class="flex min-w-0 items-center pl-2 text-p-sm text-ink-gray-5 max-md:max-w-[7rem]">
-				<span class="whitespace-nowrap max-md:whitespace-normal">{{ rowLabel(s) }}</span>
+				<span class="whitespace-nowrap max-md:whitespace-normal">{{ s.label }}</span>
 				<span
 					v-if="freshOf(s)"
 					class="ml-1.5 size-1.5 shrink-0 rounded-full bg-surface-blue-6"
@@ -171,7 +170,7 @@ const rowLabel = (s: Row) => (isState(s) && s.path !== '' ? 'State' : s.label)
 			<!-- Pickers fill their column, so every chevron sits on the same right edge. -->
 			<div v-if="isState(s)" class="min-w-0"><LensMenu :state="s" :show-name="false" fill /></div>
 			<div v-else class="min-w-0">
-				<Dropdown v-bind="menuBind(`pill:${s.label}`, () => lookAt((s as ModelSet).key))" :options="menuOf(s as ModelSet)">
+				<Dropdown v-bind="menuBind(`pill:${s.id}`, () => lookAt((s as ModelSet).key))" :options="menuOf(s as ModelSet)">
 					<Button class="w-full [&>span]:w-full" variant="ghost" :aria-label="`${s.label}: ${labelOf(s as ModelSet)}`">
 						<span class="flex w-full min-w-0 items-center justify-between gap-1.5">
 							<span class="max-w-[16rem] truncate text-p-sm text-ink-gray-8 max-md:max-w-[9rem]" :title="labelOf(s as ModelSet)">{{ labelOf(s as ModelSet) }}</span>

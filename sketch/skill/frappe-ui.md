@@ -394,6 +394,16 @@ Personas, roles, workflow phases and data states (empty, full, error) are not
 variants. Use `useDemoState`, which returns a writable ref of the chosen label.
 The first option is the default.
 
+A demo state is a condition of the product, never a design choice. When the
+options are different designs of one thing (a layout, a style, a card's look,
+its footer), they are a `<Variants>` set in the component that draws it.
+
+```ts
+// Wrong: design options as a demo state
+const footer = useDemoState('Course card footer', ['Icons', 'Text', 'Price right'])
+// Right: <Variants name="Course card footer"> with #icons, #text, #price-right
+```
+
 ```vue
 <script setup>
 import { useDemoState } from 'sketch:variants'
@@ -403,8 +413,10 @@ const phase = useDemoState('Cycle phase', ['Self', '360', 'Manager', 'Results'])
 
 - Never build a switcher, a persona menu or a phase pill. Sketch shows the
   states in a pill of their own, stacked under the Variants pill.
-- Declare a persona in `App.vue`. Declare a phase in the page that uses it.
-- The value is global by name: the same name in two components shares one value.
+- Declare a persona or role once, in `App.vue`, and nowhere else. A component
+  that needs it reads it there (pass it down or `provide` it). Declare a phase
+  in the page that uses it.
+- A page's state is that page's own: the same name on two pages is two values.
 - A demo flow can move it, for example `phase.value = '360'` on submit.
 - A long list of options goes in groups: pass an object instead of an array, and
   the pill shows a heading for each group. The first option of the first group
