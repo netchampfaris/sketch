@@ -94,6 +94,8 @@ const lift = computed(() => {
 	const inTheWay = demo.toolbarLift > 0 && demo.toolbarRight + 8 > page.vw - 12 - pillW.value
 	return Math.max(bar, inTheWay ? demo.toolbarLift - 12 : 0)
 })
+// The pill rides with the stack: where a page panel meets it is measured from where it is now.
+watch(lift, () => nextTick(pillBox.update), { flush: 'post' })
 const shown = computed(() => count.value > 0 && !canvas.open)
 watch(
 	[height, shown, lift],

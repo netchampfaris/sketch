@@ -309,8 +309,8 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
 	window.addEventListener('resize', postLayout)
-	// A tall dialog scrolls its panel past the pill.
-	window.addEventListener('scroll', postLayout, { capture: true, passive: true })
+	// A tall dialog scrolls its panel past the pill, and a panel is where it is drawn once it has slid or scaled in.
+	for (const type of ['scroll', 'animationend', 'transitionend']) window.addEventListener(type, postLayout, { capture: true, passive: true })
 	// A page layer opening or closing, or the bottom bar arriving, is a change in the DOM, not in the viewport.
 	new MutationObserver(postLayout).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state'] })
 	postLayout()
