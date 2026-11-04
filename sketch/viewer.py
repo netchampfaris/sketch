@@ -473,7 +473,6 @@ class SketchViewerRenderer(BaseRenderer):
 			else 0,
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"csrf_token": csrf_token,
-			"theme": url_theme(),
 			# The theme this person's prototypes open in (`sketch.prototype_theme`), apart from Sketch's own UI theme. The
 			# shell hands it to the frame in its URL, and saves the Prototype's own switch over the session. A Guest
 			# keeps theirs for the visit, in the shell.
