@@ -3,11 +3,8 @@
 // their account, `boot.prototype_theme`; a Guest's lives for the visit in this tab's sessionStorage), then system.
 // The shell hands the parameter and the preference to the frame in its URL; the frame paints the Prototype and reports
 // the theme it shows, and the shell's chrome follows it, as it did inside the page.
-import { THEMES, type Theme } from '../shared/protocol'
+import { CHOICES, THEMES, type Choice, type Theme } from '../shared/protocol'
 import { call } from './api'
-
-export const CHOICES = [...THEMES, 'system'] as const
-export type Choice = (typeof CHOICES)[number]
 
 const pick = (v: unknown): Theme | null => ((THEMES as readonly unknown[]).includes(v) ? (v as Theme) : null)
 const choice = (v: unknown): Choice | null => ((CHOICES as readonly unknown[]).includes(v) ? (v as Choice) : null)

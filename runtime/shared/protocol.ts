@@ -93,6 +93,8 @@ function some<T extends Obj>(out: Obj): T {
 // ---- Shared shapes --------------------------------------------------------------------------
 export const THEMES = ['light', 'dark'] as const
 export type Theme = (typeof THEMES)[number]
+export const CHOICES = [...THEMES, 'system'] as const
+export type Choice = (typeof CHOICES)[number]
 export const MODES = ['note', 'tweak', 'comment'] as const
 export type Mode = (typeof MODES)[number]
 
@@ -203,7 +205,7 @@ export type FromFrame = {
 	theme: { theme: Theme }
 	// The Prototype's own theme switch chose light, dark or system (runtime/viewer/boot.js): the shell saves it, only
 	// on the person's own click or key (runtime/shell/theme.ts).
-	'theme:choose': { theme: Theme | 'system' }
+	'theme:choose': { theme: Choice }
 	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open), and `layers` the rects of
 	// what the page draws above it (the dialog's panel, a menu from it): the shell's Demo pill sits under both, as it
 	// did in the page.
@@ -503,7 +505,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 	ready: (d) => all({ status: str(d.status, 40), routes: strings(d.routes, CAPS.list, CAPS.route), pages: list(d.pages ?? [], CAPS.list, page) }),
 	route: (d) => all({ fullPath: str(d.fullPath, CAPS.route), path: str(d.path, CAPS.route), key: str(d.key, CAPS.route) }),
 	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
-	'theme:choose': (d) => all({ theme: oneOf(d.theme, [...THEMES, 'system'] as const) }),
+	'theme:choose': (d) => all({ theme: oneOf(d.theme, CHOICES) }),
 	layout: (d) =>
 		all({
 			vw: num(d.vw),
