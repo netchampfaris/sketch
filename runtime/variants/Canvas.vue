@@ -630,7 +630,8 @@ watch(
         <Tooltip text="Back (Esc)">
           <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="optView ? goUp() : closeCanvas(router)" />
         </Tooltip>
-        <!-- One option's states: "Supplier card › Compact › States". The set goes back up; on a phone only the option and what it shows. -->
+        <!-- One option's states: "Supplier card › Compact › States". The set goes back up; on a phone only the option
+             and what it shows. -->
         <div v-if="optView" data-canvas-crumbs class="flex min-w-0 items-center gap-1 pl-1 pr-2 text-base">
           <template v-if="!phone">
             <button type="button" class="min-w-0 truncate text-ink-gray-5 hover:text-ink-gray-8" :title="optView.set.label" @click="goUp">{{ optView.set.label }}</button>
@@ -664,7 +665,7 @@ watch(
         </div>
       </div>
 
-      <!-- Bottom right: zoom, left of the panel when it is open. Title and zoom wear the notes toolbar's surface: elevation 2, border, shadow-lg, 40px tall. -->
+      <!-- Bottom right: zoom, left of the panel when it is open. Title and zoom match the notes toolbar's surface. -->
       <div
         ref="zoomPill"
         data-ui

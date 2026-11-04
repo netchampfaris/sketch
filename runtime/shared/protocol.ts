@@ -7,7 +7,8 @@
 //
 // No message can cause a write, but one: `theme:choose`, the Prototype's own theme switch, which the shell saves only
 // as one of three values on the reader's own display preference, and only right after the person's own click or key.
-// Every other write starts from a click or key on a shell element; a message can only move what the shell draws. Strings from the frame are shown as text, never as HTML.
+// Every other write starts from a click or key on a shell element; a message can only move what the shell draws.
+// Strings from the frame are shown as text, never as HTML.
 //
 // The shell posts to the frame with targetOrigin '*' (an opaque origin has no name to target), so
 // nothing it sends is ever secret: never comment or note text, never people's data, never a token.

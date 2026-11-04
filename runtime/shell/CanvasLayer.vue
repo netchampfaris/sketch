@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // What the Viewer shell draws over the frame's canvas: the pins on the tiles, the panel on the right (or its "Show
-// panel" button), an option's empty States view with Ask agent, and on a phone the Show list under the title pill's name, all in the places the in-frame canvas had
-// them (runtime/variants/Canvas.vue). The canvas itself and its title and zoom pills stay in the frame.
+// panel" button), an option's empty States view with Ask agent, and on a phone the Show list under the title pill's
+// name, all in the places the in-frame canvas had them (runtime/variants/Canvas.vue). The canvas itself and its title
+// and zoom pills stay in the frame.
 //
 // The pins sit in one layer moved by the canvas's pan and zoom (a single CSS transform), each pin at its place on
 // its tile in the canvas's own coordinates, so they stay on their tiles as the frame reports each frame of a pan.

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// The "Show" list: search, then the groups of things to show on the canvas: variant sets, and the pages that have states. The canvas panel holds it on desktop
-// (CanvasPanel.vue), the title pill's dropdown on a phone (CanvasLayer.vue). The rows are what the frame's canvas
-// reported; a dot is the server's word that an option is new to this person (badges.ts).
+// The "Show" list: search, then the groups of things to show on the canvas: variant sets, and the pages that have
+// states. The canvas panel holds it on desktop (CanvasPanel.vue), the title pill's dropdown on a phone (CanvasLayer.vue).
+// The rows are what the frame's canvas reported; a dot is the server's word that an option is new to this person
+// (badges.ts).
 import { computed, nextTick, ref, watch } from 'vue'
 import { ScrollArea, TextInput, Tooltip } from 'frappe-ui'
 import type { PickItem } from '../shared/protocol'
