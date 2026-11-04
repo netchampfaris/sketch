@@ -59,8 +59,6 @@ export const setId = (s: { path: string; key: string }) => idOf(s.path, s.key)
 export const ofOption = (setLabel: string, optLabel: string) => `${setLabel}/${optLabel}`
 // A state's key. One declared with `of` ends in it: "state@supplier-card-compact".
 export const stateKeyOf = (name: string, of?: string) => (of ? `${slugOf(name)}@${slugOf(of)}` : slugOf(name))
-// The `of` a state's key ends in, as a slug, or '' for a page state.
-export const ofOfKey = (key: string) => (key.includes('@') ? key.slice(key.indexOf('@') + 1) : '')
 // True when `of` (as written, or as the slug in a key) names this option of this set.
 export const belongsTo = (of: string, set: { label: string }, opt: { label: string }) =>
   !!of && slugOf(of) === slugOf(ofOption(set.label, opt.label))
