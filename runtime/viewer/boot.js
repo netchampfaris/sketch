@@ -122,8 +122,8 @@ function applyTheme(data) {
   paintTheme()
 }
 
-// The Prototype chose a theme. The shell saves it and takes the link's theme out of its own URL (runtime/shell/theme.ts):
-// this frame holds no credential.
+// The Prototype chose a theme. The shell saves it and takes the link's theme out of its own URL
+// (runtime/shell/theme.ts): this frame holds no credential.
 function saveTheme(value) {
   const next = choice(value)
   // frappe-ui writes back what it read when it starts: that is no choice.
