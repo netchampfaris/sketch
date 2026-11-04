@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// "Role Approver" with a menu of the state's options, in the shell's Demo pill. The shell's copy of
-// runtime/variants/LensMenu.vue: the state is what the frame reported, and a pick goes back to it.
+// "Role Approver" with a menu of the state's options: a state's picker in the shell's Demo pill. The state is what the
+// frame reported, and a pick goes back to it.
 // `fill` stretches it to its column, chevron at the right edge (the Demo pill).
 import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
