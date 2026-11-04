@@ -158,7 +158,11 @@ class TestBuildAllCleanup(IntegrationTestCase):
 		"""Runs the real build-all.sh in a copy of the layout, with build.sh stubbed out."""
 		src = os.path.join(frappe.get_app_path("sketch"), "..", "runtime", "build-all.sh")
 		with tempfile.TemporaryDirectory() as root:
-			os.makedirs(os.path.join(root, "runtime", "versions", "1.1.0"))
+			versions = os.path.join(root, "runtime", "versions")
+			os.makedirs(os.path.join(versions, "1.1.0"))
+			open(os.path.join(versions, "1.1.0", "yarn.lock"), "w").close()
+			# What git leaves of a retired version on a server: untracked files, no yarn.lock.
+			os.makedirs(os.path.join(versions, "1.0.0-rc.2", "node_modules"))
 			shutil.copy(src, os.path.join(root, "runtime", "build-all.sh"))
 			with open(os.path.join(root, "runtime", "build.sh"), "w") as f:
 				f.write('echo "built $1"\n')
@@ -175,5 +179,6 @@ class TestBuildAllCleanup(IntegrationTestCase):
 			)
 
 			self.assertIn("built 1.1.0", run.stdout)
+			self.assertNotIn("built 1.0.0-rc.2", run.stdout)
 			self.assertEqual(sorted(os.listdir(out)), [".1.1.0.building", "1.1.0", "9.9.9", "stray.txt"])
 			self.assertTrue(os.path.isdir(elsewhere))
