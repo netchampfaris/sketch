@@ -11,7 +11,7 @@
 import { computed, ref, useId, watch } from 'vue'
 import { Dialog, FormControl, LoadingText, toast, useCall } from 'frappe-ui'
 import { List, ListCell, ListRow } from 'frappe-ui/list'
-import { method, recipes } from '../store'
+import { method, recipes, errorText } from '../store'
 import type { Prototype } from '../types'
 
 /**
@@ -63,7 +63,7 @@ const create = useCall<Prototype, { title: string; recipe: string }>({
     open.value = false
     emit('created', data)
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 watch(open, (value) => {

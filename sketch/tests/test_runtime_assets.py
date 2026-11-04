@@ -43,7 +43,8 @@ class TestRuntimeAssetUrls(IntegrationTestCase):
 		cls.username = utils.username_of(cls.user)
 		cls.doc = utils.make_prototype(cls.user, "d2t-rtasset", files=FILES, is_public=True)
 		cls.addClassCleanup(utils.drop_prototype, cls.doc.name)
-		cls.path = f"/u/{cls.username}/d2t-rtasset"
+		cls.path = f"/u/{cls.username}/d2t-rtasset?frame=1"
+		cls.shell = f"/u/{cls.username}/d2t-rtasset"
 
 	def setUp(self):
 		utils.require_webserver()
@@ -70,8 +71,9 @@ class TestRuntimeAssetUrls(IntegrationTestCase):
 		Access-Control-Allow-Origin, so boot.js would be CORS-blocked.
 		"""
 		response = utils.request("GET", self.path, headers=utils.api_auth_header(self.user))
+		shell = utils.request("GET", self.shell, headers=utils.api_auth_header(self.user))
 
-		self.assertTrue(utils.data_slot(response.text)["is_owner"], "the request must be the owner's")
+		self.assertEqual(utils.shell_slot(shell.text)["role"], "owner", "the request must be the owner's")
 		self.assertIn(runtime_assets.url_prefix(self.doc.pin), response.text)
 		self.assertNotIn(self.assets_prefix(), response.text)
 

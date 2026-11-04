@@ -3,8 +3,16 @@
 
 """The Viewer page_renderer on /u/<username>/<slug>.
 
-There is no files endpoint. This renderer is the only door, and it carries the
-Prototype source tree inside the page.
+The Viewer is two documents. /u/<username>/<slug> is the shell: Sketch's own
+page on Sketch's origin, with the reader's session, drawing the toolbar,
+comments, notes, the Demo pill and the tile menus. It holds no Prototype
+source. It frames the same URL with ?frame=1, which is the Prototype itself,
+sandboxed into an opaque origin and holding nothing that can act as anyone.
+`check` opens the frame's document directly, with a short-lived signed URL
+(?exp&sig), because it comes in as a Guest.
+
+There is no files endpoint. The frame's document is the only door, and it
+carries the Prototype source tree inside the page.
 
 It reads the pinned Runtime's own viewer.html from disk and substitutes one
 slot (spec 6.1), plus the static <title> for the link preview tags. It does not rebuild the document from manifest.json: that
@@ -21,8 +29,20 @@ import os
 import frappe
 from frappe.utils import escape_html
 from frappe.website.page_renderers.base_renderer import BaseRenderer
+from frappe.website.page_renderers.template_page import TemplatePage
 
-from sketch import annotations, prototype, prototype_files, runtime_assets, signature, thumbnail, thumbnails
+from sketch import (
+	annotations,
+	badges,
+	comments,
+	prototype,
+	prototype_files,
+	runtime_assets,
+	sharing,
+	signature,
+	thumbnail,
+	thumbnails,
+)
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
 SLOT = "SKETCH_DATA"
@@ -63,15 +83,22 @@ SANDBOX = "sandbox allow-scripts allow-forms allow-popups"
 #: not including the Pin. `sandboxed_document` moves them off it.
 ASSET_PREFIX = "/assets/sketch/runtimes/"
 
-#: How long the owner's live reload credential lasts.
-#:
-#: The page holds it for as long as the tab is open, and a working session runs
-#: for hours, so the 60 second `check` signature would leave the tab dead after
-#: a minute. It buys one thing: the revision number of the Prototype the same
-#: page already carries in full (`sketch.api.signed_revision`).
-LIVE_TTL_SECONDS = 12 * 60 * 60
-
 THEMES = ("light", "dark")
+
+#: The shell runs Sketch's own code on Sketch's origin with the reader's session, so it is never
+#: sandboxed and never framed. It may frame one thing: the Prototype, from this origin.
+SHELL_HEADERS = {
+	"Cache-Control": "no-store",
+	"Content-Security-Policy": "frame-ancestors 'none'; frame-src 'self'; object-src 'none'; base-uri 'self'",
+	"Content-Type": "text/html; charset=utf-8",
+}
+
+#: The shell's page, as the frontend build writes it (frontend/viewer.html). It sits beside the SPA's
+#: bundle in public/frontend, because that folder ships in prebuilt assets and a templates path does not.
+SHELL_HTML = ("public", "frontend", "viewer.html")
+
+#: The literal frontend/viewer.html carries once, for the shell's boot JSON.
+SHELL_SLOT = "SKETCH_SHELL"
 
 
 def to_json(payload) -> str:
@@ -116,12 +143,19 @@ class SketchViewerRenderer(BaseRenderer):
 	    path does not resolve to a Prototype  -> False, so Frappe answers 404
 	    is_public                             -> serve
 	    caller is the owner                   -> serve
-	    valid unexpired signature             -> serve
+	    caller is an invited editor           -> serve
+	    valid unexpired `check` signature     -> serve
+	    signed in, commented here before it
+	      was made private                    -> a short page saying so (403)
 	    otherwise                             -> False, so Frappe answers 404
+
+	The same ladder runs for the shell and for its frame (?frame=1), so the
+	frame's own request is checked again with the reader's cookie.
 
 	A bad or expired signature is not an error. It falls through, so a stale
 	link to a public Prototype still works and a private one still answers 404.
-	The answer is always 404, never 403: a 403 confirms the URL exists.
+	The answer is 404, never 403, for everyone but a former commenter: a 403
+	confirms the URL exists, and that person has already seen it (decision 46).
 	"""
 
 	def __init__(self, path=None, http_status_code=None):
@@ -129,6 +163,20 @@ class SketchViewerRenderer(BaseRenderer):
 		self.doc = None
 		self.username = ""
 		self.is_owner = False
+		self.former_commenter = False
+		self.mode = "shell"
+
+	def request_mode(self) -> str:
+		"""Which response this request gets.
+
+		check  the Guest `check` request (?exp&sig): the Prototype's document, with no chrome
+		frame  ?frame=1, the shell's iframe: the Prototype and nothing that can act as anyone
+		shell  everything else: Sketch's page around the iframe
+		"""
+		if frappe.form_dict.get("sig"):
+			return "check"
+
+		return "frame" if frappe.form_dict.get("frame") == "1" else "shell"
 
 	def can_render(self) -> bool:
 		"""True only when this path is a Prototype the caller may see."""
@@ -146,10 +194,24 @@ class SketchViewerRenderer(BaseRenderer):
 
 		self.username = parts[1]
 		self.is_owner = frappe.session.user == self.doc.owner
-		if self.doc.is_public or self.is_owner:
+		self.mode = self.request_mode()
+		if sharing.can_view(self.doc.name, frappe.session.user):
 			return True
 
-		return signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig"))
+		if signature.verify(self.doc.name, frappe.form_dict.get("exp"), frappe.form_dict.get("sig")):
+			return True
+
+		# The frame is never a person's page: the shell around it has already said "made private".
+		self.former_commenter = self.mode != "frame" and self.is_former_commenter()
+		return self.former_commenter
+
+	def is_former_commenter(self) -> bool:
+		"""True for a signed-in person who commented here while it was public and cannot open it now."""
+		if frappe.session.user == "Guest" or self.doc.is_public:
+			return False
+
+		username = sharing.username_of(frappe.session.user)
+		return bool(username) and bool(frappe.db.exists(comments.COMMENT, {"prototype": self.doc.name, "author": username}))
 
 	def response_headers(self) -> dict:
 		"""The response headers for this caller. can_render() ran first.
@@ -157,17 +219,15 @@ class SketchViewerRenderer(BaseRenderer):
 		Not `headers`: BaseRenderer.__init__ sets `self.headers = None`, and an
 		instance attribute shadows a method of the same name.
 
-		Every caller gets the sandbox, the owner as well. Ownership says who
-		holds the tree, never who wrote the code in it:
-		`sketch.api.fork_prototype` copies another user's public tree, word for
-		word, into a Prototype the caller owns. An owner exemption therefore
-		hands a stranger's JavaScript the app origin and the reader's session,
-		which is the whole attack the sandbox exists to stop. One rule for
-		every caller is one rule to check.
+		This is the Prototype's document (the frame, and `check`). Every
+		caller gets the sandbox, the owner as well. Ownership says who holds
+		the tree, never who wrote the code in it: `sketch.api.fork_prototype`
+		copies another user's public tree, word for word, into a Prototype the
+		caller owns. An owner exemption therefore hands a stranger's JavaScript
+		the app origin and the reader's session, which is the whole attack the
+		sandbox exists to stop. One rule for every caller is one rule to check.
 
-		The owner keeps live reload. The poller authenticates with the
-		signature `payload` mints, not with the cookie an opaque origin will
-		not send (`sketch.api.signed_revision`).
+		The shell around it is Sketch's own code and takes SHELL_HEADERS instead.
 		"""
 		headers = dict(HEADERS)
 		headers["Content-Security-Policy"] = f"{SANDBOX}; {HEADERS['Content-Security-Policy']}"
@@ -192,7 +252,14 @@ class SketchViewerRenderer(BaseRenderer):
 		)
 
 	def render(self):
-		"""The pinned Runtime document, with the tree in the data slot."""
+		"""The shell, or the pinned Runtime document with the tree in the data slot."""
+		if self.former_commenter:
+			# No Prototype source here, so no sandbox: the page loads core's own styles and font.
+			return self.build_response(private_html(self.doc.owner), 403, dict(HEADERS))
+
+		if self.mode == "shell":
+			return self.render_shell()
+
 		# The two error branches below carry no Prototype source and run no
 		# script, so the sandbox changes nothing a reader sees. They still take
 		# the same headers as the document: one rule for the whole renderer is
@@ -212,19 +279,54 @@ class SketchViewerRenderer(BaseRenderer):
 			return self.build_response(bad_slot_html(self.doc.pin, count), 500, self.response_headers())
 
 		document = document.replace(TITLE, self.head_html(), 1)
-		body = self.sandboxed_document(document.replace(SLOT, to_json(self.payload()), 1))
-		# Only the served document counts as an open. The two branches above
-		# are a broken install, not a reader.
-		#
-		# The `sig` test comes first, and it has to. A check arrives as a Guest
-		# carrying the signature, so `is_owner` is false for it, and without
-		# this test every check would be counted as a stranger reading a public
-		# link. Sketch drives that browser itself.
+		body = self.sandboxed_document(document.replace(SLOT, to_json(self.frame_payload()), 1))
+		if self.mode == "check":
+			# Sketch drives that browser itself: an event for the counts, and no reader's badges.
+			self.count_open()
+
+		# The frame is not counted: the shell counted this open, and the frame is the same reader a moment later.
+		return self.build_response(body, 200, self.response_headers())
+
+	def count_open(self) -> None:
+		"""Record one open of this Prototype: the reader's badges and the Viewer event.
+
+		The `sig` test comes first, and it has to. A check arrives as a Guest
+		carrying the signature, so `is_owner` is false for it, and without this
+		test every check would be counted as a stranger reading a public link.
+		"""
 		from sketch import events
+
+		if not frappe.form_dict.get("sig"):
+			# An invited editor who opens it has seen the invitation and any default made of their variant.
+			badges.opened(self.doc.name, frappe.session.user)
+			# A page load is a GET, which Frappe never commits. Without this the mark is rolled back and the
+			# invitation stays news for ever.
+			frappe.db.commit()
 
 		who = "check" if frappe.form_dict.get("sig") else ("owner" if self.is_owner else "public")
 		events.record(events.VIEWER_OPEN, prototype=self.doc.name, detail=who)
-		return self.build_response(body, 200, self.response_headers())
+
+	def render_shell(self):
+		"""Sketch's own page around the Prototype's iframe.
+
+		It carries no Prototype source, so it needs no Runtime and no sandbox: everything in it is
+		Sketch's code. The iframe loads this URL with ?frame=1, which `can_render` checks again.
+		"""
+		path = frappe.get_app_path("sketch", *SHELL_HTML)
+		if not os.path.isfile(path):
+			return self.build_response(missing_shell_html(), 500, dict(SHELL_HEADERS))
+
+		with open(path, encoding="utf-8") as handle:
+			document = handle.read()
+
+		count = document.count(SHELL_SLOT)
+		if count != 1:
+			return self.build_response(bad_shell_html(count), 500, dict(SHELL_HEADERS))
+
+		document = document.replace(TITLE, self.head_html(), 1)
+		body = document.replace(SHELL_SLOT, to_json(self.shell_payload()), 1)
+		self.count_open()
+		return self.build_response(body, 200, dict(SHELL_HEADERS))
 
 	def head_html(self) -> str:
 		"""The <title> and the Open Graph tags a link preview reads.
@@ -270,82 +372,104 @@ class SketchViewerRenderer(BaseRenderer):
 		return f"{prototype.site_url()}{path}"
 
 	def is_live(self) -> bool:
-		"""True when this page may poll sketch.api.signed_revision.
+		"""True when the shell reloads the frame as the agent writes: the owner, signed in.
 
-		"May", not "does". The renderer cannot tell a top-level tab from the
-		gallery's card iframe, so the last word belongs to the page: only a
-		top-level document starts the poller, and only it prints the line that
-		promises a reload (runtime/viewer/boot.js, reloadsItself).
-
-		Only the owner, in a real browser session, gets that far. Two other
-		callers reach the same document and must not poll:
-
-		- `check`. It comes in as Guest with the signature `can_render` reads
-		  from form_dict, so the `sig` parameter marks it. Its report carries
-		  every console error the page raised, and a poll would add noise to
-		  every check.
-		- a Guest on a public Prototype. A reader who does not own the tree has
-		  nothing to wait for: no agent is writing to it.
-
-		Only a live page is minted a credential, so only a live page can poll
-		at all (`payload`).
+		A reader who does not own the tree has nothing to wait for: no agent is
+		writing to it. The shell polls `sketch.api.prototype_revision` with the
+		session, and `shell_payload` reads the baseline `rev` for it.
 		"""
-		if not self.is_owner or frappe.session.user == "Guest":
-			return False
+		return self.is_owner and frappe.session.user != "Guest"
 
-		return not frappe.form_dict.get("sig")
+	def commenter(self) -> str:
+		"""The username of a signed-in person who may comment here, else "".
 
-	def payload(self) -> dict:
-		"""The data slot contents (contract 4).
-
-		`rev` is the poller's baseline, read here rather than at the first
-		poll. The first poll lands about two seconds after the page loads, and
-		a write inside that window used to become the baseline, so the page
-		never reloaded. That window is exactly when the agent writes.
-
-		It is a stat walk, so only a live page pays for it. A Guest and a
-		`check` request get "" and never call revision(). The owner's own card
-		preview still pays for a baseline its iframe never polls with, which is
-		one stat walk per card and the price of one honest `live` flag here.
-
-		`exp` and `sig` are how the poller authenticates. The document sits in
-		an opaque origin, so its requests carry no session cookie, and the
-		signature takes the cookie's place for this one read
-		(`sketch.api.signed_revision`). Its scope is REVISION, so it opens the
-		number and never this document.
-
-		The page runs a stranger's code whenever the tree was forked, and that
-		code reads the payload. It learns the revision counter of a tree it
-		already holds in full, one line above. Nothing else: the signature
-		covers this hash id, so it says nothing about any other Prototype.
-
-		`annotations`, `annotations_epoch`, `annotate_exp` and `annotate_sig` feed the owner's
-		toolbar and follow the same rule: live owner pages only, so a Guest and
-		a `check` request carry none (sketch/annotations.py).
+		The owner, or anyone signed in who may see the Prototype. A Guest has
+		nobody to sign the comment.
 		"""
-		live = self.is_live()
-		stamp = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.REVISION) if live else {}
-		# The toolbar's own credential, for the same page and the same TTL. A
-		# separate scope, so the poll signature cannot write annotations and
-		# this one cannot read the revision (sketch/signature.py).
-		mark = signature.mint(self.doc.name, LIVE_TTL_SECONDS, signature.ANNOTATE) if live else {}
+		if frappe.session.user == "Guest":
+			return ""
+
+		if not comments.can_see(self.doc.name, frappe.session.user):
+			return ""
+
+		return frappe.db.get_value("User", frappe.session.user, "username") or ""
+
+	def offers_sign_in(self) -> bool:
+		"""True when a signed-out visitor to a public Prototype is shown "Sign in to comment"."""
+		return frappe.session.user == "Guest" and bool(self.doc.is_public)
+
+	def frame_payload(self) -> dict:
+		"""The data slot (contract 4) of the shell's iframe and of `check`: the Prototype and nothing else.
+
+		The frame runs the Prototype's code, which may be a stranger's (a fork), so it holds nothing
+		that can act as anyone or say who is reading: no signature of any scope, no notes, no
+		badges, no role and no revision. Everything that acts or shows a person's data lives in the
+		shell (`shell_payload`), on Sketch's origin, behind the session.
+
+		`chrome` is "shell" in the shell's frame, where the agent talks to the shell, and "off" for
+		`check`, which shows the design alone.
+		"""
+		tree = prototype_files.read_tree(self.doc.name)
+		adopted = sharing.read_adopted(tree)
 		return {
-			"files": prototype_files.read_tree(self.doc.name),
+			"files": tree,
 			"name": self.doc.name,
 			"title": self.doc.title,
 			"slug": self.doc.slug,
 			"pin": self.doc.pin,
-			"is_public": bool(self.doc.is_public),
-			"is_owner": self.is_owner,
-			"live": live,
-			"rev": prototype_files.revision(self.doc.name) if live else "",
-			"exp": stamp.get("exp", ""),
-			"sig": stamp.get("sig", ""),
-			"annotations": annotations.read(self.doc.name) if live else None,
-			"annotations_epoch": annotations.epoch(self.doc.name) if live else 0,
-			"annotate_exp": mark.get("exp", ""),
-			"annotate_sig": mark.get("sig", ""),
+			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
 			"theme": url_theme(),
+			"chrome": "off" if self.mode == "check" else "shell",
+		}
+
+	def shell_payload(self) -> dict:
+		"""The shell's boot JSON: who is reading and what their chrome needs. Never the tree.
+
+		The shell is Sketch's page on Sketch's origin, so it holds the reader's session and the
+		CSRF token its writes send. The owner's poller reads `rev` as its baseline and asks
+		`sketch.api.prototype_revision` with the session from then on. It is read here rather than
+		at the first poll: the first poll lands about two seconds after the page loads, a write
+		inside that window used to become the baseline, and that window is exactly when the agent
+		writes.
+
+		`annotations` are the owner's own notes and tweaks, or an invited editor's own; nobody
+		else gets any (sketch/annotations.py). The two never mix (decision 29).
+		"""
+		role = sharing.role_of(self.doc.name, frappe.session.user)
+		signed_in = frappe.session.user != "Guest"
+		commenter = self.commenter()
+		noting = bool(commenter) and role == "editor"
+		live = self.is_live()
+		csrf_token = frappe.sessions.get_csrf_token() if signed_in else ""
+		if signed_in:
+			# A GET is never committed, and a token that is not saved fails the first write.
+			frappe.db.commit()
+
+		return {
+			"name": self.doc.name,
+			"title": self.doc.title,
+			"slug": self.doc.slug,
+			"owner_username": self.username,
+			"role": role,
+			"me": sharing.person(frappe.session.user) if signed_in else None,
+			"is_public": bool(self.doc.is_public),
+			"sign_in": self.offers_sign_in(),
+			"comments_open": comments.open_count(self.doc.name) if commenter else 0,
+			"badges": badges.page(self.doc.name, frappe.session.user) if commenter else None,
+			"annotations": annotations.read(self.doc.name, editor=frappe.session.user)
+			if noting
+			else annotations.read(self.doc.name)
+			if live
+			else None,
+			"annotations_epoch": annotations.epoch(self.doc.name, frappe.session.user)
+			if noting
+			else annotations.epoch(self.doc.name)
+			if live
+			else 0,
+			"rev": prototype_files.revision(self.doc.name) if live else "",
+			"csrf_token": csrf_token,
+			"theme": url_theme(),
+			"frame_src": f"/u/{self.username}/{self.doc.slug}?frame=1",
 		}
 
 
@@ -374,8 +498,64 @@ def bad_slot_html(pin: str, count: int) -> str:
 	)
 
 
-def _error_html(title: str, detail: str, action: str) -> str:
+def missing_shell_html() -> str:
+	"""The readable 500 body when the frontend build has not written the shell's page."""
+	return _error_html(
+		"Viewer shell not built",
+		"The page that holds a prototype is not built on this server.",
+		"Build the frontend.",
+	)
+
+
+def bad_shell_html(count: int) -> str:
+	"""The readable 500 body for a shell page with a broken boot slot."""
+	return _error_html(
+		"Viewer shell slot is broken",
+		f"viewer.html holds the shell slot {count} times. It must hold it once.",
+		"Rebuild the frontend.",
+	)
+
+
+def private_html(owner: str) -> str:
+	"""What a person who commented before the owner made the Prototype private is shown instead of a bare 404."""
+	name = (frappe.db.get_value("User", owner, "full_name") or "").split()
+	who = name[0] if name else sharing.username_of(owner) or "The owner"
+	page = PrivatePage(f"{who} made this prototype private", f"Ask {who} for access if you need it.")
+	return page.get_html()
+
+
+class PrivatePage(TemplatePage):
+	"""Core's "Page not found" look for the made-private page: the same template shell, with its own words.
+
+	The template sits in `sketch/templates`, outside `www` and `templates/pages`, so no URL reaches it.
+	"""
+
+	def __init__(self, heading: str, detail: str):
+		super().__init__(path="private-prototype", http_status_code=403)
+		self.heading = heading
+		self.detail = detail
+
+	def set_template_path(self):
+		self.app = "sketch"
+		self.app_path = frappe.get_app_path("sketch")
+		self.file_dir = "templates"
+		self.template_path = os.path.join("templates", "private_prototype.html")
+		self.basepath = os.path.join(self.app_path, "templates")
+		self.filename = os.path.basename(self.template_path)
+		self.name = "private_prototype"
+		self.basename = os.path.join(self.basepath, self.name)
+
+	def init_context(self):
+		super().init_context()
+		# Not `title`: core stamps the site name onto that one.
+		self.context.heading = self.heading
+		self.context.detail = self.detail
+		self.context.no_cache = 1
+
+
+def _error_html(title: str, detail: str, action: str = "") -> str:
 	"""A plain page a person can read. No Runtime, so no Runtime assets."""
+	note = f"<p style='margin:0;color:#666'>{action}</p>" if action else ""
 	return (
 		"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
 		"<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -383,6 +563,6 @@ def _error_html(title: str, detail: str, action: str) -> str:
 		'<body style="margin:0;padding:2rem;font:14px/1.6 ui-sans-serif,system-ui,sans-serif">'
 		f"<h1 style='font-size:1rem;margin:0 0 .5rem'>{title}</h1>"
 		f"<p style='margin:0 0 .5rem'>{detail}</p>"
-		f"<p style='margin:0;color:#666'>{action}</p>"
+		f"{note}"
 		"</body></html>"
 	)

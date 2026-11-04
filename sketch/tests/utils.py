@@ -50,8 +50,11 @@ def webserver_port() -> int:
 
 	site_config wins over common_site_config, so each site can have its own
 	port. That keeps a test run on one site off another site's server.
+
+	`SKETCH_TEST_PORT` points a run at a server of its own, for a worktree whose
+	code the site's usual server does not run.
 	"""
-	return int(frappe.get_conf().get("webserver_port") or 8000)
+	return int(os.environ.get("SKETCH_TEST_PORT") or frappe.get_conf().get("webserver_port") or 8000)
 
 
 def base_url() -> str:
@@ -317,6 +320,39 @@ def data_slot(html: str) -> dict:
 		raise AssertionError("the sketch-data slot is never closed")
 
 	return json.loads(html[start:end])
+
+
+def shell_slot(html: str) -> dict:
+	"""Parse the Viewer shell's boot JSON (`sketch-shell`) out of a served shell page, read the way `data_slot` reads."""
+	opening = '<script id="sketch-shell" type="application/json">'
+	start = html.find(opening)
+	if start < 0:
+		raise AssertionError("the served page has no sketch-shell slot")
+
+	start += len(opening)
+	end = html.find("</script", start)
+	if end < 0:
+		raise AssertionError("the sketch-shell slot is never closed")
+
+	return json.loads(html[start:end])
+
+
+def credential_keys(value, path: str = "") -> list[str]:
+	"""Every key, at any depth, that names a credential: a signature or its expiry, a ticket, a CSRF token.
+
+	The frame's payload is read by the Prototype's own code, so it must hold none (sketch/viewer.py frame_payload).
+	"""
+	found = []
+	if isinstance(value, dict):
+		for key, item in value.items():
+			name = str(key).lower()
+			if name in ("exp", "sig") or name.endswith(("_sig", "_exp")) or "ticket" in name or "csrf" in name:
+				found.append(f"{path}{key}")
+			found += credential_keys(item, f"{path}{key}.")
+	elif isinstance(value, list):
+		for index, item in enumerate(value):
+			found += credential_keys(item, f"{path}{index}.")
+	return found
 
 
 def api_auth_header(user: str) -> dict:

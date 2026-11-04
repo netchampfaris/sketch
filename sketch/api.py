@@ -18,14 +18,16 @@ import frappe
 from frappe.utils import cint, convert_utc_to_system_timezone, pretty_date
 
 from sketch import (
-	annotations,
+	badges,
 	checkd,
+	comments,
 	prototype,
 	prototype_files,
-	signature,
+	sharing,
 	snapshots,
 	thumbnail,
 	thumbnails,
+	variant_default,
 	versions,
 )
 from sketch.sketch.doctype.sketch_token import sketch_token
@@ -225,8 +227,11 @@ def _username() -> str:
 	return frappe.db.get_value("User", frappe.session.user, "username") or ""
 
 
-def _row(doc_or_dict) -> dict:
+def _row(doc_or_dict, username: str | None = None, new_for: str = "") -> dict:
 	"""One gallery item.
+
+	`username` is the owner's handle when the row is a Prototype shared with the
+	caller; it defaults to the caller's own.
 
 	`file_count`, the description and the timestamp all come off disk, because
 	no field stores them and a stored copy drifts (spec 2).
@@ -244,7 +249,17 @@ def _row(doc_or_dict) -> dict:
 	owner = doc_or_dict.get("owner")
 	files = prototype_files.list_files(name)
 	count = len(files)
-	username = _username()
+	# A row the caller owns carries who it is shared with, for the card's avatar stack. A shared
+	# row is somebody else's, and the people it is shared with are the owner's to know.
+	editors = (
+		[]
+		if username
+		else [
+			{key: person[key] for key in ("username", "full_name", "user_image")}
+			for person in sharing.editors(name)
+		]
+	)
+	username = username or _username()
 	# Falls back to `creation`, never to `modified`. `modified` is the field
 	# that moves on a visibility toggle, which is the jump this stamp exists to
 	# stop, and an empty tree has no mtime of its own to report.
@@ -266,10 +281,12 @@ def _row(doc_or_dict) -> dict:
 		# a new user nothing they could act on (review 5.8). It stays in the
 		# `pin` field above, for the surfaces that print a build detail.
 		"description": f"{count} {'file' if count == 1 else 'files'}",
+		"editors": editors,
 		"modified": updated_at,
 		"updated": pretty_date(updated_at) if updated_at else "",
 		"viewer_path": f"/u/{username}/{slug}",
 		"public_url": f"{_public_base()}/u/{username}/{slug}",
+		**({"new": badges.card(name, new_for, files)} if new_for else {}),
 	}
 
 
@@ -325,7 +342,7 @@ def list_prototypes() -> list[dict]:
 		order_by="creation desc",
 		limit_page_length=0,
 	)
-	items = [_row(row) for row in rows]
+	items = [_row(row, new_for=frappe.session.user) for row in rows]
 	# Python's sort is stable, so the SQL order above survives as the tiebreak
 	# between two Prototypes whose newest file carries the same second.
 	items.sort(key=lambda item: item["modified"], reverse=True)
@@ -489,12 +506,22 @@ def list_versions(slug: str) -> list[dict]:
 				"restored_from": row.get("restored_from") or None,
 				"source": row.get("source") or None,
 				"restorable": bool(row.get("restorable")),
+				"author": _author(row.get("author")),
 				"creation": str(row.get("creation") or ""),
 				"created": pretty_date(row.get("creation")) if row.get("creation") else "",
 			}
 		)
 
 	return rows
+
+
+def _author(username: str | None) -> dict | None:
+	"""The invited editor behind a version, or None for the owner's own."""
+	if not username:
+		return None
+
+	who = sharing.people({username}).get(username)
+	return {"username": username, "full_name": who["name"] if who else username}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -511,6 +538,46 @@ def restore_version(slug: str, sequence: int, dry_run: int = 0) -> dict:
 		frappe.throw(frappe._("sequence must be a version number, 1 or more"), frappe.ValidationError)
 
 	return versions.restore(doc, sequence, bool(cint(dry_run)), source="App")
+
+
+@frappe.whitelist(methods=["POST"])
+def set_variant_default(slug: str, file: str, name: str, option: str) -> dict:
+	"""Make `option` the first slot of `<Variants name="{name}">` in `file`.
+
+	`resolve_owned` is the permission check, so only the owner may rewrite the
+	source. Saves a version, so the change can be undone. See
+	`variant_default.move_slot` for what is refused.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.set_default(doc, file, name, option)
+
+
+@frappe.whitelist(methods=["POST"])
+def undo_variant_default(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
+	"""Put `file` back exactly as it was before version `sequence` made `option` the default.
+
+	`resolve_owned` is the permission check. Refused when the file changed
+	since, so a later write is never clobbered. See `variant_default.undo_default`.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.undo_default(doc, file, sequence, name, option)
+
+
+@frappe.whitelist(methods=["POST"])
+def keep_variant(slug: str, file: str, name: str, option: str) -> dict:
+	"""Keep `option` as the only option of the set `name`: the owner's other options and every variant an editor added go.
+
+	`resolve_owned` is the permission check. See `variant_default.keep_only`.
+	"""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.keep_only(doc, file, name, option)
+
+
+@frappe.whitelist(methods=["POST"])
+def undo_keep_variant(slug: str, file: str, sequence: int, name: str, option: str) -> dict:
+	"""Bring back what version `sequence` removed. Refused when any of it changed since."""
+	doc = prototype.resolve_owned(slug)
+	return variant_default.undo_keep(doc, file, sequence, name, option)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -537,78 +604,31 @@ def prototype_revision(slug: str) -> dict:
 
 	`resolve_owned` is the permission check, so only the owner may read it.
 
-	The Viewer does not call this. Its document is sandboxed into an opaque
-	origin, which sends no cookie, so it calls `signed_revision` below. This
-	stays for the Sketch UI, which is a plain same-origin page with a session.
+	The Viewer's shell polls it for the owner's live reload (runtime/shell/liveReload.ts):
+	the shell is Sketch's own page and sends the session. The Prototype's frame
+	sends no cookie and cannot call it.
 	"""
 	doc = prototype.resolve_owned(slug)
 	return {"rev": prototype_files.revision(doc.name)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
-def signed_revision(name: str, exp: str = "", sig: str = "") -> dict:
-	"""The current revision of one Prototype's tree, for the Viewer's poller.
+def sign_in_to_comment(back: str = "/") -> None:
+	"""Send a signed-out visitor to the login page and bring them back to `back`.
 
-	The Viewer serves every Prototype from an opaque origin (`sketch/viewer.py`
-	SANDBOX), because a Prototype is JavaScript one user wrote and a fork puts
-	a stranger's code inside the reader's own tree. An opaque origin sends no
-	session cookie, so `prototype_revision` above cannot answer the owner's own
-	tab. This one takes the short-lived signature the Viewer minted into the
-	page instead, and `allow_guest` follows from that: there is no session to
-	read.
-
-	The signature is not a session. It authenticates this read and nothing
-	else:
-
-	- the scope is REVISION, which is inside the HMAC message, so the same
-	  string opens no Viewer document (`sketch/signature.py`);
-	- it covers one Prototype hash id, so it cannot be replayed against
-	  another Prototype;
-	- it expires;
-	- the answer is the revision string and nothing else. No title, no owner,
-	  no file.
-
-	A bad or expired signature answers 404, which is the Viewer's own answer
-	to the same question. A named error would confirm which hash ids exist.
-
-	`Access-Control-Allow-Origin: *` because the caller's origin is "null" and
-	matches no allowlist. No `Access-Control-Allow-Credentials`: the signature
-	is the whole authentication, and a cookie must never widen it.
+	The Viewer's "Sign in to comment" button comes here, so the path to come
+	back to is checked and remembered on the server, in the same
+	`sketch_after_login` cookie login reads (sketch/www/sketch.py). Only a path
+	into a Prototype is remembered; anything else is dropped and the visitor
+	lands where login normally sends them.
 	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.REVISION):
-		raise frappe.DoesNotExistError
+	from sketch.www import sketch as sketch_page
 
-	return {"rev": prototype_files.revision(name)}
+	if back.startswith("/u/") and sketch_page.is_safe_path(back):
+		sketch_page._remember_path(back)
 
-
-@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
-def save_annotations(name: str, exp: str = "", sig: str = "", data: str = "", epoch: str = "") -> dict:
-	"""Save the owner's notes and tweaks from the Viewer's toolbar.
-
-	The same door as `signed_revision`, for the same reason: the Viewer is in an
-	opaque origin and sends no cookie, so the signature minted into the page is
-	the whole authentication, and `allow_guest` follows from that. Its scope is
-	ANNOTATE, so a revision signature cannot write and this one reads nothing.
-
-	A bad or expired signature answers 404, as `signed_revision` does. The body
-	is size-capped at 256 KB (413) and shape-checked before it is stored
-	(`sketch.annotations.parse`), because the page that sends it may be running a
-	forked stranger's code and the rows reach the owner's agent. `epoch` is the
-	one the page loaded with; a page from before the agent's last clear gets 409.
-
-	`Access-Control-Allow-Origin: *` for the opaque origin, and no credentials.
-
-	`xss_safe`: Frappe strips HTML from a Guest's form data, which turned a note
-	like "use <Badge>" into "use ". The body is stored as JSON, shown only as
-	escaped text by the toolbar and handed to the agent as data, never as HTML.
-	"""
-	frappe.local.response_headers["Access-Control-Allow-Origin"] = "*"
-	if not signature.verify(name, exp, sig, signature.ANNOTATE):
-		raise frappe.DoesNotExistError
-
-	saved = annotations.save(name, data, frappe.utils.cint(epoch))
-	return {"updated": saved["updated"]}
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = sketch_page.LOGIN_PATH
 
 
 @frappe.whitelist(allow_guest=True)
@@ -757,7 +777,12 @@ def fork_prototype(username: str, slug: str) -> dict:
 	"""
 	username = (username or "").strip()
 	source = prototype.resolve_readable(slug, username)
-	tree = prototype_files.read_tree(source.name)
+	# What other people added to the source stays with its owner: a fork is a copy of their work.
+	tree = {
+		path: content
+		for path, content in prototype_files.read_tree(source.name).items()
+		if not sharing.is_editor_path(path)
+	}
 
 	doc = prototype.create(source.title)
 	if source.pin and source.pin != doc.pin:
@@ -818,6 +843,88 @@ def set_public(slug: str, is_public: bool) -> dict:
 	doc.is_public = 1 if is_public else 0
 	doc.save()
 	return _row(doc.as_dict())
+
+
+# --------------------------------------------------------------------- sharing
+
+
+def _share_state(doc) -> dict:
+	"""Everything the Share dialog draws, for the owner."""
+	return {
+		"is_public": bool(doc.is_public),
+		"public_url": prototype.public_url(doc),
+		"owner": sharing.person(doc.owner),
+		"editors": sharing.editors(doc.name),
+		# People who commented and are not invited: they keep their access only while the link is public.
+		"commenters": comments.outsiders(doc.name),
+	}
+
+
+@frappe.whitelist()
+def share_info(slug: str) -> dict:
+	"""Who a Prototype is shared with. Owner only: `resolve_owned` is the permission check."""
+	return _share_state(prototype.resolve_owned(slug))
+
+
+@frappe.whitelist(methods=["POST"])
+def invite_editor(slug: str, username: str) -> dict:
+	"""Invite a person by their exact Sketch username. Owner only.
+
+	No search and no listing of users: the answer to a name is the person it
+	names or a refusal that says so. Returns the Share dialog's state.
+	"""
+	doc = prototype.resolve_owned(slug)
+	sharing.invite(doc, username)
+	return _share_state(doc)
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_editor(slug: str, username: str) -> dict:
+	"""Take an editor off a Prototype. Owner only. Their variants stay. Returns the Share dialog's state."""
+	doc = prototype.resolve_owned(slug)
+	sharing.remove(doc, username)
+	return _share_state(doc)
+
+
+def _shared_row(name: str, user: str) -> dict | None:
+	"""A Prototype somebody else owns, as a card of the caller's: the gallery row with its owner added."""
+	doc = frappe.db.get_value(
+		"Sketch Prototype",
+		name,
+		["name", "title", "slug", "pin", "is_public", "creation", "owner"],
+		as_dict=True,
+	)
+	if not doc:
+		return None
+
+	owner = sharing.person(doc.owner)
+	row = _row(doc, owner["username"], new_for=user)
+	row["owner"] = {k: owner[k] for k in ("username", "full_name", "user_image")}
+	return row
+
+
+@frappe.whitelist()
+def shared_prototypes() -> list[dict]:
+	"""Every Prototype somebody invited this user to, newest invitation first.
+
+	The rows are the gallery's own (`_row`), with the owner added, and the
+	address is the owner's. `modified` orders nothing here: an invitation is
+	the order a person thinks in.
+	"""
+	rows = (_shared_row(name, frappe.session.user) for name in sharing.shared_with(frappe.session.user))
+	return [row for row in rows if row]
+
+
+@frappe.whitelist()
+def conversations() -> list[dict]:
+	"""Every Prototype this user commented on or was mentioned in and neither owns nor edits, newest talk first.
+
+	The same card as "Shared with me", with the same news line, so a reply to someone who is not an
+	editor still reaches them (decision 43). A Prototype made private since is not listed: they can no longer open it.
+	"""
+	user = frappe.session.user
+	rows = (_shared_row(name, user) for name in comments.conversations(_username(), user))
+	return [row for row in rows if row]
 
 
 @frappe.whitelist(methods=["POST"])

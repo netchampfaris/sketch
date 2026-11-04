@@ -37,7 +37,7 @@ MAX_BATCH_FILES = 100
 MAX_FILE_BYTES = 1_000_000
 
 #: The most files one tree may hold. Every reader loads the whole tree
-#: (`viewer.payload`, `api.export_prototype`), so the tree is the reader's cost.
+#: (`viewer.SketchViewerRenderer.frame_payload`, `api.export_prototype`), so the tree is the reader's cost.
 MAX_TREE_FILES = 500
 
 #: The most bytes one tree may hold. Same reason as MAX_TREE_FILES, and it is
@@ -435,6 +435,37 @@ def edit_files(name: str, edits: list[dict]) -> list[str]:
 	Repeated paths build on earlier edits in this batch. Stage replacements and
 	backups outside the tree so a failed replacement can restore earlier files.
 	"""
+	planned = _plan_edits(name, edits)
+	preflight(name, list(planned.values()))
+
+	with tempfile.TemporaryDirectory(dir=os.path.dirname(prototype_dir(name))) as staging:
+		staged = []
+		for index, entry in enumerate(planned.values()):
+			updated = os.path.join(staging, f"{index}.new")
+			backup = os.path.join(staging, f"{index}.old")
+			shutil.copy2(entry["absolute"], backup)
+			with open(updated, "w", encoding="utf-8") as handle:
+				handle.write(entry["content"])
+			staged.append((entry["absolute"], updated, backup))
+		applied = []
+		try:
+			for absolute, updated, backup in staged:
+				os.replace(updated, absolute)
+				applied.append((absolute, backup))
+		except OSError:
+			for absolute, backup in reversed(applied):
+				os.replace(backup, absolute)
+			raise
+	return [entry["path"] for entry in planned.values()]
+
+
+def edited(name: str, edits: list[dict]) -> list[dict]:
+	"""What the files would hold after these edits, as {"path", "content"}. Writes nothing."""
+	return [{"path": e["path"], "content": e["content"]} for e in _plan_edits(name, edits).values()]
+
+
+def _plan_edits(name: str, edits: list[dict]) -> dict:
+	"""Every edited file's new content, keyed by absolute path. Raises on any edit that cannot apply."""
 	if not edits or len(edits) > MAX_BATCH_FILES:
 		frappe.throw(f"edits must contain between 1 and {MAX_BATCH_FILES} replacements")
 	planned = {}
@@ -461,27 +492,7 @@ def edit_files(name: str, edits: list[dict]) -> list[str]:
 			)
 		entry["content"] = source.replace(old, edit["new_string"], 1)
 		entry["bytes"] = len(entry["content"].encode("utf-8"))
-	preflight(name, list(planned.values()))
-
-	with tempfile.TemporaryDirectory(dir=os.path.dirname(prototype_dir(name))) as staging:
-		staged = []
-		for index, entry in enumerate(planned.values()):
-			updated = os.path.join(staging, f"{index}.new")
-			backup = os.path.join(staging, f"{index}.old")
-			shutil.copy2(entry["absolute"], backup)
-			with open(updated, "w", encoding="utf-8") as handle:
-				handle.write(entry["content"])
-			staged.append((entry["absolute"], updated, backup))
-		applied = []
-		try:
-			for absolute, updated, backup in staged:
-				os.replace(updated, absolute)
-				applied.append((absolute, backup))
-		except OSError:
-			for absolute, backup in reversed(applied):
-				os.replace(backup, absolute)
-			raise
-	return [entry["path"] for entry in planned.values()]
+	return planned
 
 
 def delete_file(name: str, path: str) -> None:

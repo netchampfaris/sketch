@@ -22,7 +22,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Button, PageHeader, dialog, toast, useCall } from 'frappe-ui'
 import { usePoll } from '../poll'
-import { agentToken, copyText, method, session } from '../store'
+import { agentToken, copyText, method, session, errorText } from '../store'
 import type { AgentToken } from '../types'
 
 /**
@@ -76,7 +76,7 @@ const regenerate = useCall<AgentToken>({
     session.reload()
     toast.success('Token regenerated')
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 const token = computed(() => agentToken.data?.token ?? '')

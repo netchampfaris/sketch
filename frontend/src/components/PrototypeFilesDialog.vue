@@ -27,7 +27,7 @@
  */
 import { computed, ref, shallowRef, watch } from 'vue'
 import { Dialog, ErrorMessage, LoadingText, useCall } from 'frappe-ui'
-import { method } from '../store'
+import { method, errorText } from '../store'
 import type { PrototypeFile, PrototypeFileSource } from '../types'
 
 /**
@@ -278,7 +278,7 @@ function formatSize(bytes: number): string {
       <div class="h-[70vh] min-h-96">
         <LoadingText v-if="files.loading && !files.data?.length" />
 
-        <ErrorMessage v-else-if="files.error" :message="files.error.message" />
+        <ErrorMessage v-else-if="files.error" :message="errorText(files.error)" />
 
         <!--
           The app's one empty-state recipe: 48px circle, 24px glyph, `gap-3`.

@@ -16,10 +16,10 @@
  * the card.
  */
 import { computed, ref } from 'vue'
-import { Avatar, Button, Dropdown, Tooltip, toast, useCall } from 'frappe-ui'
+import { Avatar, Button, Dropdown, toast, useCall } from 'frappe-ui'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypePreview from './PrototypePreview.vue'
-import { copyText, downloadPrototypeZip, method, prototypes, signedIn } from '../store'
+import { copyText, downloadPrototypeZip, method, prototypes, signedIn, errorText } from '../store'
 import type { Prototype, PublicPrototype } from '../types'
 
 const props = defineProps<{ prototype: PublicPrototype }>()
@@ -44,22 +44,11 @@ const fork = useCall<Prototype, { username: string; slug: string }>({
     prototypes.reload()
     toast.success(`Forked ${row.title}. It is private, in your prototypes.`)
   },
-  onError: (error) => toast.error(error.message),
+  onError: (error) => toast.error(errorText(error)),
 })
 
 const busy = computed(() => fork.loading || exporting.value)
 
-/**
- * A Prototype always opens in a new tab, so the feed stays where it was.
- *
- * `noopener` matters more here than in the gallery: the Viewer runs code a
- * stranger's agent wrote, and without it that page holds a live
- * `window.opener` handle to Sketch. It implies `noreferrer` in every current
- * browser, so the one token is enough.
- */
-function openViewer(): void {
-  window.open(props.prototype.viewer_path, '_blank', 'noopener')
-}
 
 async function copyLink(): Promise<void> {
   try {
@@ -142,17 +131,9 @@ const menuOptions = computed(() => [
         >
       </h2>
       <!--
-        No Badge. Every card on this page is public, so a row of green "Public"
-        chips would say one thing twenty times.
+        No Badge: every card on this page is public. No Open button: the
+        preview and the name are the links in.
       -->
-      <Tooltip text="Open prototype">
-        <Button
-          aria-label="Open prototype"
-          icon="lucide-external-link"
-          variant="ghost"
-          @click="openViewer"
-        />
-      </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>

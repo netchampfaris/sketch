@@ -5,9 +5,16 @@ export default {
   presets: [frappeUIPreset],
   content: [
     './index.html',
+    './viewer.html',
     './src/**/*.{vue,js,ts,jsx,tsx}',
+    // The Viewer shell's UI (frontend/src/viewer).
+    '../runtime/shell/**/*.{vue,ts}',
+    // Tweak's pure half, which names the list rows' icons.
+    '../runtime/shared/**/*.ts',
     // Tailwind v3 ignores `content` declared in presets, so scan frappe-ui's
     // source for its components' utilities.
     './node_modules/frappe-ui/src/**/*.{vue,js,ts,jsx,tsx}',
   ],
+  // Tweak's swatches (the token lists and the tweak list's rows) name colour tokens at run time, so no scan can find them.
+  safelist: [{ pattern: /^(text-ink|bg-surface|border-outline)-/ }],
 }

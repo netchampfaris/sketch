@@ -1,6 +1,8 @@
-// The Viewer's boot script. Runs inside the iframe. Reads a Prototype's source
-// tree out of the page, compiles it in the browser, links it, mounts it, and
-// reports what happened.
+// The Viewer's boot script. Runs inside the Viewer shell's sandboxed iframe, or
+// alone for a `check` run. Reads a Prototype's source tree out of the page,
+// compiles it in the browser, links it, mounts it, and reports what happened.
+// Nothing here acts as anyone: the page holds no credential, and the chrome that
+// writes is the shell's (runtime/shell), on Sketch's own origin.
 import { createApp, h } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { FrappeUI, FrappeUIProvider } from 'frappe-ui'
@@ -145,27 +147,20 @@ function setTitle(data) {
   if (title) document.title = title
 }
 
-// The gallery embeds one Viewer per card in a same-origin iframe
-// (frontend/src/components/PrototypePreview.vue). A framed Viewer is a picture
-// of the Prototype: no poller.
-const framed = window.top !== window.self
+// The Viewer shell's frame: the renderer marks its payload `chrome: 'shell'`, and `check`'s `chrome: 'off'`
+// (sketch/viewer.py frame_payload).
+const inShell = (data) => data.chrome === 'shell'
 
-// A framed Viewer and a `check` run (the Guest request that carries `sig` in its URL) show the design
-// alone: Variants reads this and leaves its pill out.
-if (framed || new URLSearchParams(location.search).has('sig')) document.documentElement.dataset.sketchChrome = 'off'
+// A `check` run (the Guest request that carries `sig` in its URL) shows the design alone: Variants reads this and
+// draws no canvas, and no agent starts.
+const chromeOff = (data) => data.chrome === 'off' || new URLSearchParams(location.search).has('sig')
 
-// The one answer to "does this tab reload itself". startLiveReload and the
-// status copy both read it, so the promise can never outlive the poller. The
-// copy used to read `data.live` alone, so a card preview of the owner's own
-// empty Prototype promised a reload that startLiveReload never started.
-//
-// `data.sig` is the credential the poll needs. The document is sandboxed into
-// an opaque origin, so a cookie cannot authenticate the request and the
-// renderer mints a signature into the page instead. A document served before
-// that change carries none, and it must promise nothing.
-function reloadsItself(data) {
-  return Boolean(data.live) && Boolean(data.name) && Boolean(data.sig) && !framed
-}
+// The payload says nothing about who is reading, so the status copy takes its two facts from the shell (the
+// agent's `copy` message): is this the owner, and does the shell reload the frame as the agent writes. Until it
+// says, and for `check`, the copy is a reader's.
+let copyHints = null
+const ownerCopy = () => Boolean(copyHints?.owner)
+const reloadCopy = () => Boolean(copyHints?.reloads)
 
 // The statuses that leave the page empty. `ok` and `errors` both mounted the
 // Prototype, so their paint is the Prototype's own and this must not replace it.
@@ -199,22 +194,22 @@ function errorWhere(error) {
   return where
 }
 
-function emptyScreen(box, data, name) {
-  const owner = Boolean(data.is_owner)
+function emptyScreen(box, name) {
+  const owner = ownerCopy()
   box.append(el('p', 'text-base-medium text-ink-gray-8', owner ? 'Waiting for your agent' : 'Nothing to show yet'))
 
   const lines = [`${name} has no files yet.`]
   lines.push(owner ? 'Ask your agent to build a page.' : 'The owner has not built a page yet.')
   // Only a page with a poller behind it may promise a reload.
-  if (reloadsItself(data)) lines.push('This tab reloads itself when the files arrive.')
+  if (reloadCopy()) lines.push('This tab reloads itself when the files arrive.')
   box.append(el('p', 'sk-status-body text-p-sm text-ink-gray-5', lines.join(' ')))
 }
 
-function failedScreen(box, data, status) {
+function failedScreen(box, status) {
   box.append(el('p', 'text-base-medium text-ink-gray-8', FAILED_HEADING[status]))
 
-  const lead = data.is_owner
-    ? reloadsItself(data)
+  const lead = ownerCopy()
+    ? reloadCopy()
       ? 'Send these errors to your agent. This tab reloads itself after the fix.'
       : 'Send these errors to your agent.'
     : 'The owner has to fix these errors.'
@@ -253,95 +248,12 @@ function paintStatus(status, data) {
   glyph.append(icon(shape === 'empty' ? 'lucide-file-plus' : 'lucide-triangle-alert', 'size-6'))
   box.append(glyph)
 
-  if (shape === 'empty') emptyScreen(box, data, name)
-  else failedScreen(box, data, status)
+  if (shape === 'empty') emptyScreen(box, name)
+  else failedScreen(box, status)
 
   const screen = el('div', 'sk-status')
   screen.append(box)
   root.append(screen)
-}
-
-// -------------------------------------------------------------- live reload
-// The owner's own tab polls one revision string and reloads when it moves.
-// Socket.io is not an option here: Frappe's realtime auth compares the request
-// Host against the browser Origin, and the tunnel rewrites Host.
-//
-// The renderer sends `live: false` for everything except the owner reading
-// this Prototype in a session. `check` and a Guest on a public link therefore
-// make no request at all. A framed Viewer drops out too, in reloadsItself
-// above: twenty cards in iframes would make ten requests a second, and the
-// gallery already polls once for the whole grid
-// (frontend/src/pages/PrototypesScreen.vue, POLL_MS 4000).
-//
-// The poll cannot use the session. This document is sandboxed into an opaque
-// origin (sketch/viewer.py SANDBOX), so it sends no cookie and it holds no
-// csrf_token. It sends the signature the renderer minted into the payload
-// instead. That signature reads one revision number for one Prototype and
-// opens nothing else (sketch/api.py signed_revision).
-const POLL_MS = 2000 // one poll every two seconds: a stat walk, cheap to answer
-const POLL_MAX_MS = 30000 // the ceiling the backoff climbs to after failures
-
-function startLiveReload(data) {
-  if (!reloadsItself(data)) return
-
-  const url =
-    '/api/method/sketch.api.signed_revision?name=' +
-    encodeURIComponent(data.name) +
-    '&exp=' +
-    encodeURIComponent(data.exp) +
-    '&sig=' +
-    encodeURIComponent(data.sig)
-  // The renderer read the revision while it built this page, so the baseline
-  // covers the two seconds before the first poll. A write inside that window
-  // used to become the baseline, and the page never reloaded. An older served
-  // document carries no `rev`, so that one still adopts the first poll.
-  let first = typeof data.rev === 'string' && data.rev ? data.rev : null
-  let wait = POLL_MS
-  let timer = null
-
-  const stop = () => {
-    clearTimeout(timer)
-    timer = null
-  }
-
-  const schedule = () => {
-    stop()
-    // A background tab must not poll. visibilitychange restarts it.
-    if (document.hidden) return
-    timer = setTimeout(poll, wait)
-  }
-
-  async function poll() {
-    try {
-      // `omit`, not `same-origin`. An opaque origin has no same origin, and
-      // `include` would need Access-Control-Allow-Credentials, which the
-      // endpoint deliberately does not send.
-      const response = await fetch(url, { cache: 'no-store', credentials: 'omit' })
-      if (!response.ok) throw new Error(String(response.status))
-      const rev = (await response.json())?.message?.rev
-      if (typeof rev !== 'string' || !rev) throw new Error('no revision')
-      wait = POLL_MS // a good answer clears the backoff
-      if (first === null) first = rev
-      else if (rev !== first) {
-        stop()
-        // The router is hash mode (createWebHashHistory below), so the current
-        // page is in location.hash and a reload lands back on it.
-        location.reload()
-        return
-      }
-    } catch {
-      // Every failure is silent. A dead endpoint must leave the Viewer exactly
-      // as it is today, so back off and keep the page working.
-      wait = Math.min(wait * 2, POLL_MAX_MS)
-    }
-    schedule()
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stop()
-    else if (!timer) schedule()
-  })
-  schedule()
 }
 
 // -------------------------------------------------------------- module link
@@ -396,7 +308,7 @@ function namedImports(code) {
 // Each module runs once, into its own exports object, and that object is
 // registered before the body runs. An import cycle therefore sees the partly
 // filled exports, the way Node and a bundler resolve one.
-function makeRegistry(files, factories, bare) {
+function makeRegistry(files, factories, bare, wrap) {
   const modules = new Map()
   const styles = new Map()
 
@@ -429,24 +341,70 @@ function makeRegistry(files, factories, bare) {
     if (!hit) throw new Error(`Cannot resolve "${spec}" from ${from}`)
     if (hit.endsWith('.css')) return inject(hit)
     if (!factories[hit]) throw new Error(`Cannot import "${spec}" from ${from}: not a module`)
-    return load(hit)
+    return wrap ? wrap(hit, load(hit)) : load(hit)
   }
 
   return load
+}
+
+// ------------------------------------------------------- teammates' variants
+// src/variants/@name/ is a teammate's folder, written only by that person's agent. src/variants/adopted/ holds the
+// ones the owner made the default; src/variants/adopted.json says who made each and which one leads its set.
+const GUEST = /^src\/variants\/@[a-z0-9-]+\//
+const ADOPTED = /^src\/variants\/adopted\/.+\.vue$/
+const REGISTRY = 'src/variants/adopted.json'
+const authorOf = (path) => path.split('/')[2].slice(1)
+
+function adoptedRows(files) {
+  try {
+    const rows = JSON.parse(files[REGISTRY] || '{}')
+    return rows && typeof rows === 'object' ? rows : {}
+  } catch {
+    return {}
+  }
+}
+
+// `<variant set="KPI strip" name="Compact" />` or `<variant component="src/components/KpiStrip.vue" name="Compact" />`.
+// The author is the folder the file is in, never a word in the file.
+function variantsOf(data, compiled, blocks, skip, loader) {
+  const adopted = adoptedRows(data.files || {})
+  const out = []
+  for (const path of Object.keys(compiled)) {
+    if (!path.endsWith('.vue')) continue
+    let author = ''
+    let lead = false
+    if (GUEST.test(path)) author = authorOf(path)
+    else if (ADOPTED.test(path)) {
+      author = String(adopted[path]?.author || '')
+      lead = Boolean(adopted[path]?.default)
+      if (!data.authors?.[author]) continue
+    } else continue
+
+    const tag = (blocks[path] || []).find((b) => b.type === 'variant')
+    if (!tag) continue
+    const text = (k) => (typeof tag.attrs[k] === 'string' ? tag.attrs[k].trim() : '')
+    const [name, set, component] = [text('name'), text('set'), text('component')]
+    if (!name || Boolean(set) === Boolean(component)) {
+      skip(path, '<variant> needs name="…" and exactly one of set="…" or component="…".')
+      continue
+    }
+    if (component && (!component.endsWith('.vue') || compiled[component] === undefined || GUEST.test(component))) {
+      skip(path, `${component} is not a component of this prototype.`)
+      continue
+    }
+    out.push({ value: path.slice('src/variants/'.length, -'.vue'.length), label: name, author, set, component, lead, load: () => loader(path) })
+  }
+  return out
 }
 
 // ------------------------------------------------------------------- run it
 async function run() {
   const data = readData()
   payload = data
+  // Chrome.vue reads this: in the shell's frame the Demo pill is the shell's to draw (runtime/shell/DemoPill.vue).
+  document.documentElement.dataset.sketchChrome = chromeOff(data) ? 'off' : 'shell'
   applyTheme(data.theme)
   setTitle(data)
-  // Before the early returns below: an empty or broken tree must reload too.
-  try {
-    startLiveReload(data)
-  } catch {
-    // The poller is never worth failing the boot for.
-  }
   const files = data.files || {}
 
   // A brand-new Prototype has no files until a recipe or the agent writes one.
@@ -466,22 +424,48 @@ async function run() {
     })
   if (errors.length) return report('link-failed')
 
-  // 1. compile every file
+  // 1. compile every file. A teammate's file (src/variants/@name/) is compiled apart: a mistake in it is a warning
+  //    and the file is skipped, so it can never fail the owner's page. Its styles are dropped.
   t.compileStart = performance.now()
   const compiled = {}
+  const blocks = {}
+  const view = { ...files }
   let css = ''
+  const guests = new Set(Object.keys(files).filter((p) => GUEST.test(p)))
+  const skip = (path, message) => {
+    delete compiled[path]
+    delete view[path]
+    warnings.push({ kind: 'variant-skipped', file: path, message: `Skipped, so it is not an option. ${message}` })
+  }
+  const said = (list) => list.map((e) => (Number.isFinite(e.line) ? `Line ${e.line}: ` : '') + e.message).join(' ')
   for (const [path, source] of Object.entries(files)) {
+    const guest = guests.has(path)
+    if (guest && !data.authors?.[authorOf(path)]) {
+      skip(path, `${authorOf(path)} is not a Sketch user.`)
+      continue
+    }
     if (path.endsWith('.vue')) {
       const r = await compileSFC(path, source)
+      if (guest && r.errors.length) {
+        skip(path, said(r.errors))
+        continue
+      }
       errors.push(...r.errors.map((e) => ({ kind: 'compile', ...e })))
       for (const m of (r.code || '').matchAll(/_resolveComponent\(\s*"([^"]+)"/g))
         candidates.push({ file: path, tag: m[1] })
       compiled[path] = r.code
-      css += r.css
+      blocks[path] = r.blocks || []
+      if (!guest) css += r.css
     } else if (path.endsWith('.ts') || path.endsWith('.js')) {
       const r = compileTS(path, source)
+      if (guest && r.errors.length) {
+        skip(path, said(r.errors))
+        continue
+      }
       errors.push(...r.errors.map((e) => ({ kind: 'compile', ...e })))
       compiled[path] = r.code
+    } else if (guest) {
+      delete view[path]
     }
   }
   t.compileEnd = performance.now()
@@ -490,18 +474,22 @@ async function run() {
   // 2. link. Relative specifiers resolve inside the tree; bare ones load
   //    through the import map, once, before any module body runs.
   const bare = new Map()
-  for (const spec of bareSpecifiers(compiled)) {
+  const load1 = async (spec) => {
+    // A namespace object carries no __esModule, so sucrase's default-import
+    // interop would wrap it again. Copy it and mark it.
+    bare.set(spec, Object.freeze({ ...(await import(spec)), __esModule: true }))
+  }
+  const owned = Object.fromEntries(Object.entries(compiled).filter(([p]) => !guests.has(p)))
+  for (const spec of bareSpecifiers(owned)) {
     try {
-      // A namespace object carries no __esModule, so sucrase's default-import
-      // interop would wrap it again. Copy it and mark it.
-      bare.set(spec, Object.freeze({ ...(await import(spec)), __esModule: true }))
+      await load1(spec)
     } catch (e) {
       errors.push({ kind: 'resolve', message: `Cannot resolve "${spec}". ${String(e?.message || e)}` })
     }
   }
-  for (const [path, code] of Object.entries(compiled)) {
+  for (const [path, code] of Object.entries(owned)) {
     for (const m of code.matchAll(SPEC))
-      if (m[3].startsWith('.') && !resolve(files, path, m[3]))
+      if (m[3].startsWith('.') && !resolve(view, path, m[3]))
         errors.push({ kind: 'resolve', file: path, message: `Cannot resolve "${m[3]}"` })
     for (const { specifier, name } of namedImports(code)) {
       const ns = bare.get(specifier)
@@ -511,15 +499,81 @@ async function run() {
   }
   if (errors.length) return report('link-failed')
 
+  // A teammate's files link the same way, and the ones that do not are skipped, one at a time and then whatever
+  // imported them.
+  const badBare = new Set()
+  const guestCode = () => Object.fromEntries(Object.entries(compiled).filter(([p]) => guests.has(p)))
+  for (const spec of bareSpecifiers(guestCode()))
+    if (!bare.has(spec))
+      try {
+        await load1(spec)
+      } catch {
+        badBare.add(spec)
+      }
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const [path, code] of Object.entries(guestCode())) {
+      let why = ''
+      for (const m of code.matchAll(SPEC)) {
+        const bad = m[3].startsWith('.') ? !resolve(view, path, m[3]) : badBare.has(m[3])
+        if (bad) why = `Cannot resolve "${m[3]}".`
+      }
+      for (const { specifier, name } of namedImports(code)) {
+        const ns = bare.get(specifier)
+        if (ns && !(name in ns)) why = `"${specifier}" has no export named "${name}".`
+      }
+      if (why) {
+        skip(path, why)
+        changed = true
+      }
+    }
+  }
+
   const factories = {}
   for (const [path, code] of Object.entries(compiled)) {
     const cjs = toCJS(path, code)
+    if (guests.has(path) && cjs.errors.length) {
+      skip(path, said(cjs.errors))
+      continue
+    }
     errors.push(...cjs.errors.map((e) => ({ kind: 'compile', ...e })))
     if (cjs.errors.length) continue
     factories[path] = new Function('exports', 'require', 'module', `${cjs.code}\n//# sourceURL=${path}`)
   }
   if (errors.length) return report('link-failed')
-  const load = makeRegistry(files, factories, bare)
+
+  // The variants teammates made, and the ones the owner adopted: options of the set each one names. They
+  // load on first use, inside a boundary (runtime/variants/Variants.vue).
+  const extras = variantsOf(data, compiled, blocks, skip, (path) => load(path).default)
+  if (extras.length && !bare.has('sketch:variants')) {
+    try {
+      await load1('sketch:variants')
+    } catch (e) {
+      extras.length = 0
+      warnings.push({ kind: 'variant-skipped', message: `The variants could not load. ${String(e?.message || e)}` })
+    }
+  }
+  const targets = new Set(extras.map((e) => e.component).filter(Boolean))
+  const wrapped = new Map()
+  // A component a teammate made a variant for becomes a set whose first option is the component itself.
+  const wrap = (path, mod) => {
+    if (!targets.has(path) || !mod.default) return mod
+    if (!wrapped.has(path))
+      wrapped.set(
+        path,
+        Object.freeze({ ...mod, __esModule: true, default: bare.get('sketch:variants').wrapComponent(mod.default, path) }),
+      )
+    return wrapped.get(path)
+  }
+  const load = makeRegistry(view, factories, bare, wrap)
+  if (extras.length)
+    bare.get('sketch:variants').registerExtras(extras, data.authors || {}, (extra, err) =>
+      warnings.push({
+        kind: 'variant-failed',
+        file: `src/variants/${extra.value}.vue`,
+        message: `This option did not load. ${String(err?.message || err)}`,
+      }),
+    )
 
   // 3. styles before mount, so first paint is styled
   if (css) {
@@ -539,7 +593,10 @@ async function run() {
   // it `dialog.confirm()` and `toast.success()` do nothing and report no
   // error, so the Runtime mounts it rather than trusting every Prototype to.
   // It renders no wrapper element of its own.
-  const app = createApp(() => h(FrappeUIProvider, null, { default: () => h(App) }))
+  // A Prototype that imports `sketch:variants` gets the Demo pill and the canvas beside its App. The canvas draws
+  // that App in frames, so it is handed the component. It is inside the provider, so its toasts and dialogs work.
+  const Chrome = bare.get('sketch:variants')?.Chrome
+  const app = createApp(() => h(FrappeUIProvider, null, { default: () => [h(App), Chrome && h(Chrome, { shell: App })] }))
   app.config.errorHandler = (err, _i, info) =>
     errors.push({ kind: 'vue', message: String(err?.message || err), info })
   app.use(router).use(FrappeUI)
@@ -575,21 +632,28 @@ async function run() {
   t.twDone = performance.now()
 
   report('ok')
-  startAnnotate(data)
 }
 
-// The comment and tweak toolbar, for the owner's own live tab only. A Guest, a `check` request and
-// a framed gallery card never download it: it is a separate module, loaded after the Prototype
-// has mounted, so it cannot slow or break the first paint. A Prototype never imports it, and the
-// import map names it for this file alone. A toolbar that fails to load is never the Prototype's
-// error, so the failure is a warning and nothing more.
-async function startAnnotate(data) {
-  if (!data.is_owner || !data.live || framed || !data.annotate_sig) return
+// The shell's frame talks to the shell through the agent, whatever the status: an empty or broken tree
+// still needs its route, theme and status copy. It is a separate module, loaded after the first paint, so
+// it cannot slow or break it, and a failure to load it is a warning and nothing more. A Prototype never
+// imports it, and the import map names it for this file alone.
+async function startShellAgent(status) {
   try {
-    const { mountAnnotate } = await import('sketch:annotate')
-    mountAnnotate(data)
+    const { startAgent } = await import('sketch:agent')
+    startAgent({
+      status,
+      routes: router ? [...new Set(router.getRoutes().map((r) => r.path))] : [],
+      router,
+      files: (payload && payload.files) || {},
+      repaint: (hints) => {
+        copyHints = hints
+        document.querySelector('.sk-status')?.remove()
+        paintStatus(status, payload || {})
+      },
+    })
   } catch (e) {
-    console.warn('[sketch] the annotate toolbar did not load:', e)
+    console.warn('[sketch] the shell agent did not load:', e)
   }
 }
 
@@ -627,6 +691,7 @@ function report(status) {
     // into it above. A DOM failure must take down neither.
   }
   parent.postMessage({ type: 'sketch:check', result }, '*')
+  if (payload && inShell(payload) && !chromeOff(payload)) startShellAgent(status)
   return result
 }
 

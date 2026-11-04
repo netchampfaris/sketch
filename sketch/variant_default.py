@@ -1,0 +1,495 @@
+# Copyright (c) 2026, Faris Ansari and contributors
+# For license information, please see license.txt
+
+"""Make one slot of a `<Variants name="…">` set the default, by moving it first.
+
+The first slot of a Variants set is the default (runtime/variants/Variants.vue).
+The owner picks a new default in the Viewer, and this module rewrites the
+source so the agent never has to be asked.
+
+`move_slot` is pure text in, text out. It walks the template's tags with a
+small tokenizer that skips quoted attribute values, comments and CDATA, so a
+`>` inside `:class="a > b"` or a nested `<template v-if>` inside a slot cannot
+end a slot early. Everything outside the moved slot stays byte for byte: the
+slot is swapped with the text from the first slot up to it, so the whitespace
+that separated slots keeps its place.
+"""
+
+import json
+import re
+
+import frappe
+
+from sketch import editor_variants, prototype_files, sharing, versions
+
+#: HTML elements with no closing tag, so they never open a depth.
+VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
+
+TAG_NAME = re.compile(r"[A-Za-z][\w:.-]*")
+SLOT_ATTR = re.compile(r"""(?:^|\s)(?:#|v-slot:)([^\s=/>"']+)""")
+NAME_ATTR = re.compile(r"""(?:^|\s)name\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+
+
+class Tag:
+	__slots__ = ("attrs", "closing", "end", "name", "self_closing", "start")
+
+	def __init__(self, start, end, name, closing, self_closing, attrs):
+		self.start = start
+		self.end = end
+		self.name = name
+		self.closing = closing
+		self.self_closing = self_closing
+		self.attrs = attrs
+
+
+def tags(source: str):
+	"""Every element tag in `source`, in order. Comments are skipped."""
+	i = 0
+	n = len(source)
+	while i < n:
+		i = source.find("<", i)
+		if i < 0:
+			return
+
+		if source.startswith("<!--", i):
+			stop = source.find("-->", i + 4)
+			i = n if stop < 0 else stop + 3
+			continue
+
+		if source.startswith("<![CDATA[", i):
+			stop = source.find("]]>", i + 9)
+			i = n if stop < 0 else stop + 3
+			continue
+
+		closing = source.startswith("</", i)
+		match = TAG_NAME.match(source, i + (2 if closing else 1))
+		if not match:
+			i += 1
+			continue
+
+		# Scan to the `>` that ends the tag, not one inside a quoted value.
+		j = match.end()
+		quote = ""
+		while j < n:
+			c = source[j]
+			if quote:
+				if c == quote:
+					quote = ""
+			elif c in "\"'":
+				quote = c
+			elif c == ">":
+				break
+			j += 1
+		else:
+			return
+
+		inner = source[match.end() : j]
+		self_closing = not closing and inner.rstrip().endswith("/")
+		yield Tag(i, j + 1, match.group(0), closing, self_closing, inner)
+		i = j + 1
+
+
+def top_template(source: str) -> tuple[int, int]:
+	"""The span inside the SFC's top-level `<template>`, or the whole text."""
+	depth = 0
+	start = None
+	for tag in tags(source):
+		if tag.name.lower() in VOID or tag.self_closing:
+			continue
+
+		if tag.closing:
+			depth -= 1
+			if depth == 0 and tag.name == "template" and start is not None:
+				return start, tag.start
+		else:
+			if depth == 0 and tag.name == "template" and start is None:
+				start = tag.end
+			depth += 1
+
+	return 0, len(source)
+
+
+def find_sets(source: str, name: str) -> list[dict]:
+	"""Each `<Variants name="{name}">` in the template, with its direct slots.
+
+	A slot is {"key", "start", "end"}: `<template #key>` through its own
+	`</template>`.
+	"""
+	lo, hi = top_template(source)
+	found = []
+	stack = []  # open elements: (lower-case name, set, slot or None)
+	for tag in tags(source[lo:hi]):
+		tag.start += lo
+		tag.end += lo
+		lower = tag.name.lower()
+		if lower in VOID:
+			continue
+
+		if not tag.closing:
+			if tag.self_closing:
+				continue
+
+			if lower == "variants":
+				attr = NAME_ATTR.search(tag.attrs)
+				label = None
+				if attr:
+					label = attr.group(1) if attr.group(1) is not None else attr.group(2)
+
+				entry = {"label": label, "slots": []}
+				stack.append((lower, entry, None))
+				if label == name:
+					found.append(entry)
+				continue
+
+			slot = None
+			parent = stack[-1] if stack else None
+			if lower == "template" and parent and parent[0] == "variants":
+				attr = SLOT_ATTR.search(tag.attrs)
+				if attr and not attr.group(1).startswith("["):
+					slot = {"key": attr.group(1), "start": tag.start, "end": None}
+					parent[1]["slots"].append(slot)
+
+			stack.append((lower, None, slot))
+			continue
+
+		# A closing tag pops back to its opener, so a stray unclosed tag
+		# cannot swallow the rest of the file.
+		for k in range(len(stack) - 1, -1, -1):
+			if stack[k][0] == lower:
+				if stack[k][2]:
+					stack[k][2]["end"] = tag.end
+				del stack[k:]
+				break
+
+	return found
+
+
+def move_slot(source: str, name: str, option: str) -> str:
+	"""`source` with the `option` slot of the set `name` moved to the front.
+
+	Raises frappe.ValidationError, with a message the owner can read, when the
+	set is missing or repeated, the option is not in it, or it is already first.
+	"""
+	sets = find_sets(source, name)
+	if not sets:
+		frappe.throw(
+			frappe._('There is no <Variants name="{0}"> in this file.').format(name),
+			frappe.ValidationError,
+		)
+
+	if len(sets) > 1:
+		frappe.throw(
+			frappe._('<Variants name="{0}"> appears {1} times in this file. Names must be unique.').format(
+				name, len(sets)
+			),
+			frappe.ValidationError,
+		)
+
+	slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
+	matches = [s for s in slots if s["key"] == option]
+	if not matches:
+		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+	if len(matches) > 1:
+		frappe.throw(
+			frappe._('"{0}" lists the option "{1}" more than once.').format(name, option),
+			frappe.ValidationError,
+		)
+
+	target = matches[0]
+	first = slots[0]
+	if target is first:
+		frappe.throw(
+			frappe._('"{0}" is already the default for {1}.').format(label_of(option), name),
+			frappe.ValidationError,
+		)
+
+	# [first … previous slot] [gap] [target]  ->  [target] [gap] [first … previous slot]
+	previous = max((s for s in slots if s["end"] <= target["start"]), key=lambda s: s["end"])
+	gap = source[previous["end"] : target["start"]]
+	return (
+		source[: first["start"]]
+		+ source[target["start"] : target["end"]]
+		+ gap
+		+ source[first["start"] : previous["end"]]
+		+ source[target["end"] :]
+	)
+
+
+def label_of(option: str) -> str:
+	"""The option's name as the pill prints it: `budgetBars` and `budget-bars` read "Budget bars"."""
+	text = re.sub(r"([a-z])([A-Z])", r"\1 \2", option)
+	text = re.sub(r"[-_]+", " ", text).lower()
+	return text[:1].upper() + text[1:]
+
+
+def set_default(doc, file: str, name: str, option: str) -> dict:
+	"""Rewrite `file` of the Prototype and save a version. The caller has checked ownership."""
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+	if editor_variants.is_extra(option):
+		# An invited editor's option: Sketch copies it into the owner's files.
+		return editor_variants.adopt(doc, file, name, option)
+
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	try:
+		with open(absolute, encoding="utf-8", newline="") as handle:
+			source = handle.read()
+	except FileNotFoundError:
+		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
+
+	# An editor's option the owner made the default leads this set until one of
+	# the owner's own options takes the lead back. The order in the source is
+	# then what already leads, so the source may not change at all.
+	leading = editor_variants.leaders(doc.name, file, name)
+	sets = find_sets(source, name)
+	slots = [s for s in (sets[0]["slots"] if len(sets) == 1 else []) if s["key"] != "default" and s["end"] is not None]
+	if leading and not sets:
+		if option != "original":
+			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+		changed = source
+	elif leading and slots and slots[0]["key"] == option:
+		changed = source
+	else:
+		changed = move_slot(source, name, option)
+
+	# What the agent wrote and has not committed goes in its own version
+	# first, so the next version holds the reorder and nothing else.
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the default was changed", source="App")
+
+	if changed != source:
+		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
+		versions.note(doc.name, file, versions.MODIFIED)
+
+	if leading:
+		editor_variants.clear_defaults(doc.name, file, name)
+		versions.note(doc.name, "src/variants/adopted.json", versions.MODIFIED)
+
+	label = label_of(option)
+	version = versions.commit(
+		doc,
+		f"Made \u201c{label}\u201d the default for {name}",
+		source="App",
+		action=versions.MADE_DEFAULT,
+		label=label,
+	)
+	return {
+		"file": file,
+		"name": name,
+		"set": name,
+		"option": option,
+		"label": label,
+		"sequence": version.sequence if version else None,
+	}
+
+
+def undo_default(doc, file: str, sequence, name: str, option: str) -> dict:
+	"""Put `file` back exactly as it was before version `sequence` made `option` the default.
+
+	Only that one file is restored, from the version before. It is refused when
+	the file is not as that version left it, so a later write is never
+	clobbered. The caller has checked ownership.
+
+	A default that touched the variants folder (an editor's option made the
+	default, or the owner's option taking the lead back) restores every file it
+	changed, under the same refusal (`versions.undo`).
+	"""
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+	try:
+		sequence = int(sequence)
+	except (TypeError, ValueError):
+		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+
+	done = versions.action_of(doc.name, sequence)
+	if not done or done.action != versions.MADE_DEFAULT:
+		frappe.throw(frappe._("That version did not change a default."), frappe.ValidationError)
+
+	if any(str(change.get("path", "")).startswith("src/variants/") for change in versions.changes_of(doc.name, sequence)):
+		# The version names the option the way the owner saw it, "KPI strip" and not "@arohi/kpi-strip".
+		label = done.label or label_of(option)
+		result = versions.undo(doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}")
+	else:
+		label = label_of(option)
+		result = versions.undo(
+			doc, sequence, f"Undid making \u201c{label}\u201d the default for {name}", only=[file]
+		)
+
+	return {"file": file, "name": name, "set": name, "option": option, "label": label, **result}
+
+
+# ---------------------------------------------------------------- keep only this
+
+
+def drop_slots(source: str, slots: list[dict]) -> str:
+	"""`source` without these slots, and without the line break and indent that led each one."""
+	for slot in sorted(slots, key=lambda s: s["start"], reverse=True):
+		start = slot["start"]
+		while start > 0 and source[start - 1] in " \t":
+			start -= 1
+
+		if start > 0 and source[start - 1] == "\n":
+			start -= 1
+			if start > 0 and source[start - 1] == "\r":
+				start -= 1
+
+		source = source[:start] + source[slot["end"] :]
+
+	return source
+
+
+def keep_only(doc, file: str, name: str, option: str) -> dict:
+	"""Keep `option` as the only option of the set `name` in `file`. The caller has checked ownership.
+
+	The set's other slots are cut from the source. Every variant an invited editor
+	added to the set, and every one the owner adopted from them, is deleted with its
+	registry row. One version records all of it, so `undo_keep` can put it back.
+
+	`option` may be an invited editor's variant or an adopted one: an editor's is
+	adopted first (moved into the owner's files, in the same version), then kept, and
+	every slot of the owner's goes. The `<Variants>` wrapper stays, with the kept
+	option as its only one, so an editor can add to it again.
+
+	A wrapped component's only own option is `original`; its extras are all that goes.
+	Keeping an extra of a wrapped component replaces `original`: the extra's source is
+	written into the component's own file, its `<variant>` tag dropped, and every variant
+	file of the component goes with its registry row. No set is left. `removed` counts the
+	component's own version among the options that went.
+
+	Returns `removed`, how many options went.
+	"""
+	if not isinstance(file, str) or not file.endswith(".vue"):
+		frappe.throw(frappe._("The file must be a .vue page or component."), frappe.ValidationError)
+
+	absolute = prototype_files.safe_join(doc.name, file)
+	versions.lock(doc.name)
+	try:
+		with open(absolute, encoding="utf-8", newline="") as handle:
+			source = handle.read()
+	except FileNotFoundError:
+		frappe.throw(frappe._("No such file: {0}").format(file), frappe.ValidationError)
+
+	extra = editor_variants.is_extra(option)
+	sets = find_sets(source, name)
+	label = label_of(option)
+	changed = source
+	dropped = 0
+	if sets:
+		if len(sets) > 1:
+			frappe.throw(
+				frappe._('<Variants name="{0}"> appears {1} times in this file. Names must be unique.').format(
+					name, len(sets)
+				),
+				frappe.ValidationError,
+			)
+
+		slots = [s for s in sets[0]["slots"] if s["key"] != "default" and s["end"] is not None]
+		if extra:
+			# The owner's own slots all go: the kept option is an extra.
+			gone = slots
+		else:
+			if [s["key"] for s in slots].count(option) != 1:
+				frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+			gone = [s for s in slots if s["key"] != option]
+
+		changed = drop_slots(source, gone)
+		dropped = len(gone)
+	elif not extra and option != "original":
+		frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+	extras = editor_variants.targeting(doc.name, file, name)
+	found = None
+	kept_path = None
+	# A person's option of a component with no `<Variants>` of its own replaces the component: it moves into the
+	# component's file and no set is left around it.
+	replaced = None
+	if extra:
+		kept_path = editor_variants.path_of(option)
+		if kept_path not in extras:
+			frappe.throw(frappe._('"{0}" has no option "{1}".').format(name, option), frappe.ValidationError)
+
+		if not sets:
+			replaced = editor_variants.replacement(doc, file, name, option)
+			label = replaced["label"]
+			changed = replaced["source"]
+		elif sharing.is_editor_path(kept_path):
+			found = editor_variants.adoptable(doc, file, name, option)
+			label = found["meta"]["name"]
+		else:
+			label = editor_variants.label_at(doc.name, kept_path)
+
+	others = [path for path in extras if path != kept_path]
+	leads = bool(extra and found is None and not replaced and not editor_variants.read_registry(doc.name).get(kept_path, {}).get("default"))
+	if changed == source and not others and not found and not leads and not replaced:
+		frappe.throw(frappe._("{0} is already the only option.").format(label), frappe.ValidationError)
+
+	versions.commit_before(doc, "Changes before the other options were removed", [file, *extras])
+
+	if changed != source:
+		prototype_files.write_files(doc.name, [{"path": file, "content": changed}])
+		versions.note(doc.name, file, versions.MODIFIED)
+
+	if found:
+		kept_path = editor_variants.move_in(doc, file, name, found)
+
+	registry = editor_variants.read_registry(doc.name)
+	before = json.dumps(registry, sort_keys=True)
+	# Replacing the component takes the kept variant's file away too: its source now lives in the component.
+	for path in [*others, kept_path] if replaced else others:
+		prototype_files.delete_file(doc.name, path)
+		versions.note(doc.name, path, versions.DELETED)
+		registry.pop(path, None)
+
+	if kept_path and kept_path in registry and not replaced:
+		registry[kept_path]["default"] = True
+
+	if json.dumps(registry, sort_keys=True) != before:
+		editor_variants.write_registry(doc.name, registry)
+		versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+
+	version = versions.commit(
+		doc,
+		f"Kept \u201c{label}\u201d as the only option of {name}",
+		source="App",
+		action=versions.KEPT_ONLY,
+		label=label,
+	)
+	return {
+		"file": file,
+		"name": name,
+		"set": name,
+		"option": "original" if replaced else editor_variants.option_of(kept_path) if kept_path else option,
+		"label": label,
+		# The component's own version goes too, when a person's replaced it.
+		"removed": dropped + len(others) + (1 if replaced else 0),
+		"replaced": bool(replaced),
+		"sequence": version.sequence if version else None,
+	}
+
+
+def undo_keep(doc, file: str, sequence, name: str, option: str) -> dict:
+	"""Bring back everything version `sequence` removed. Refused when any of it changed since."""
+	try:
+		sequence = int(sequence)
+	except (TypeError, ValueError):
+		frappe.throw(frappe._("sequence must be a version number"), frappe.ValidationError)
+
+	done = versions.action_of(doc.name, sequence)
+	if not done or done.action != versions.KEPT_ONLY:
+		frappe.throw(frappe._("That version did not keep one option."), frappe.ValidationError)
+
+	# The version names the option the way the owner saw it: "KPI strip", not "adopted/kpi-strip".
+	label = done.label or label_of(option)
+	return {
+		"file": file,
+		"name": name,
+		"set": name,
+		"option": option,
+		"label": label,
+		**versions.undo(doc, sequence, f"Undid keeping only \u201c{label}\u201d in {name}"),
+	}

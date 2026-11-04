@@ -17,7 +17,10 @@ Sketch owns this instead of `frappe.utils.verified_command` for two reasons
 The signature covers the hash id, not the URL. Rename a slug or a username and
 an old signature signs nothing.
 
-It also covers a scope, so one signature opens one thing.
+It opens one thing: the Prototype's document for `check`, which comes in as a
+Guest (sketch/checkd.py). Nothing a person uses carries one. The Viewer's shell
+acts with the reader's session (sketch/viewer_api.py), and the Prototype's
+frame holds no credential at all.
 """
 
 import hashlib
@@ -28,31 +31,17 @@ from frappe.utils.verified_command import get_secret
 
 DEFAULT_TTL = 60
 
-#: What a signature opens. The scope is inside the HMAC message, so a
-#: signature minted for one scope verifies under no other one.
-#:
-#: - VIEW opens the whole Viewer document, which carries the source tree. Only
-#:   `check` mints it, and it lives for `DEFAULT_TTL` seconds.
-#: - REVISION opens one number, `sketch.api.signed_revision`, and nothing
-#:   else. The Viewer mints it into the page, where the Prototype's own
-#:   JavaScript reads it, so it must never open the document as well: a
-#:   forked tree runs a stranger's code, and that code would hold a link to
-#:   the reader's own Prototype for as long as the signature lasts.
-#: - ANNOTATE writes the owner's notes and tweaks for one Prototype
-#:   (`sketch.api.save_annotations`). Like REVISION it is minted into the page
-#:   and read by the Prototype's own JavaScript, so it must open nothing else.
-#:   What it can do is put rows in front of the owner's agent, which is why the
-#:   save is size- and shape-checked and the MCP tool tells the agent to treat
-#:   the rows as requests to check, never as orders.
+#: The one scope. It is inside the HMAC message, so a signature minted for
+#: anything else, by an older build, verifies as nothing here. VIEW opens the
+#: whole Viewer document, which carries the source tree. Only `check` mints
+#: it, and it lives for `DEFAULT_TTL` seconds.
 VIEW = "view"
-REVISION = "revision"
-ANNOTATE = "annotate"
 
 
-def _digest(prototype_name: str, exp: int, scope: str = VIEW) -> str:
-	"""The hex HMAC-SHA256 over "<scope>:<name>:<exp>" with the site secret."""
+def _digest(prototype_name: str, exp: int) -> str:
+	"""The hex HMAC-SHA256 over "view:<name>:<exp>" with the site secret."""
 	secret = get_secret()
-	message = f"{scope}:{prototype_name}:{exp}"
+	message = f"{VIEW}:{prototype_name}:{exp}"
 	return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
@@ -61,17 +50,17 @@ def _now() -> int:
 	return int(time.time())
 
 
-def mint(prototype_name: str, ttl_seconds: int = DEFAULT_TTL, scope: str = VIEW) -> dict:
-	"""Sign this Prototype, for this scope, for the next ttl_seconds.
+def mint(prototype_name: str, ttl_seconds: int = DEFAULT_TTL) -> dict:
+	"""Sign this Prototype for the next ttl_seconds.
 
 	Returns {"exp": <int unix seconds>, "sig": <hex str>}.
 	"""
 	exp = _now() + int(ttl_seconds)
-	return {"exp": exp, "sig": _digest(prototype_name, exp, scope)}
+	return {"exp": exp, "sig": _digest(prototype_name, exp)}
 
 
-def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
-	"""True only for an unexpired signature over this hash id and this scope.
+def verify(prototype_name: str, exp, sig) -> bool:
+	"""True only for an unexpired signature over this hash id.
 
 	Never raises. A malformed exp or sig is False, not an error.
 	"""
@@ -88,6 +77,6 @@ def verify(prototype_name: str, exp, sig, scope: str = VIEW) -> bool:
 		return False
 
 	try:
-		return hmac.compare_digest(given, _digest(prototype_name, expiry, scope))
+		return hmac.compare_digest(given, _digest(prototype_name, expiry))
 	except (TypeError, ValueError):
 		return False
