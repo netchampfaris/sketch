@@ -157,7 +157,7 @@ def _walk(name: str):
 		return
 
 	for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
-		dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
+		dirnames[:] = sorted(d for d in dirnames if not os.path.islink(os.path.join(dirpath, d)))
 		for filename in sorted(filenames):
 			absolute = os.path.join(dirpath, filename)
 			if os.path.islink(absolute) or not os.path.isfile(absolute):

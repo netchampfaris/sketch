@@ -821,7 +821,33 @@ class TestDeleteAndDefault(ShareCase):
 
 		registry = json.loads(self.tree()["src/variants/adopted.json"])
 		self.assertFalse(registry["src/variants/adopted/compact.vue"]["default"])
-		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME, "wide was already first in the source")
+		# The owner's pick is recorded on the tag, even for the first slot: no slot moves.
+		self.assertEqual(self.tree()["src/pages/Home.vue"], HOME.replace('name="KPI strip"', 'name="KPI strip" default="wide"'))
+
+	def test_an_adopted_option_leads_again_and_that_undoes(self):
+		self.add_variant()
+		with set_user(self.owner):
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
+			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "wide")
+			done = api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "adopted/compact")
+
+		registry = json.loads(self.tree()["src/variants/adopted.json"])
+		self.assertTrue(registry["src/variants/adopted/compact.vue"]["default"])
+		# Stored on the version, not read back from the prompt's wording.
+		row = {"prototype": self.doc.name, "sequence": done["sequence"]}
+		stored = frappe.db.get_value(versions.VERSION, row, ["action", "action_label"])
+		self.assertEqual(tuple(stored), (versions.MADE_DEFAULT, "Compact"))
+
+		with set_user(self.owner):
+			api.undo_variant_default(
+				self.doc.slug, "src/pages/Home.vue", done["sequence"], "KPI strip", "adopted/compact"
+			)
+
+		registry = json.loads(self.tree()["src/variants/adopted.json"])
+		self.assertFalse(registry["src/variants/adopted/compact.vue"]["default"])
+		self.assertEqual(
+			versions.history(self.doc.name)[0]["prompt"], "Undid making “Compact” the default for KPI strip"
+		)
 
 	def test_make_default_on_a_component_variant_and_back_to_the_original(self):
 		self.add_variant(WRAP, "dense.vue")

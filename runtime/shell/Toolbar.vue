@@ -6,7 +6,8 @@
 // The page and its elements live in the frame, so picking does too (runtime/agent/pick.ts): while a tool
 // picks, the frame swallows the pointer and reports hovers and picks; the shell draws the outlines, pins and
 // boxes from the rects it reports (frame.ts). Words and people never go to the frame, and nothing the frame
-// says can save anything: notes and comments are written from this file's own buttons and keys.
+// says can save anything: notes and comments are written from the shell's own buttons and keys (here, and
+// the canvas's Ask agent in CanvasLayer.vue).
 //
 // Tweak draws here too (TweakLayer.vue): the frame picks and writes, the shell holds the tweaks, their list and the prompt.
 // Over the frame's canvas this is the canvas's toolbar, as in the frame: its tiles take the pins (CanvasLayer.vue draws

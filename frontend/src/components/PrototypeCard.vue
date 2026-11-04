@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * One gallery item: preview, then two rows, two controls (decision 60).
+ * One gallery item: preview, then two rows, two controls (decisions 60, 70).
  *
  * Row one is the name, a gray "Private" Badge only when it is private (public
  * is the default, so it goes unsaid), the editors' stack, then the overflow
- * menu. Row two is one line: what is new, or the meta when nothing is
- * (`NewLine.vue`). The preview and the name are the ways in, both real links,
- * so there is no Open button.
+ * menu. Row two is "Updated 2 hours ago" and nothing else. What is new is a
+ * pill on the preview's corner (`PrototypeMarker.vue`). The preview and the
+ * name are the ways in, both real links, so there is no Open button.
  *
  * Public/Private is set in the Share dialog, never on the card. Share has one
  * home, "Share…" in the menu, and "Copy link" sits right after it while there
@@ -18,15 +18,15 @@
  * Export takes it away, History reads when it was written. Delete uses the
  * destructive confirm preset.
  *
- * Both rows are `h-7`, the height of a `sm` Button, so no state change moves
- * the card.
+ * Row one is `h-7`, the height of a `sm` Button; row two is `h-5`, one line of
+ * text, so it sits close under the title. No state change moves the card.
  */
 import { computed, ref } from 'vue'
 import { Avatar, Badge, Button, Dropdown, Tooltip, dialog, toast, useCall } from 'frappe-ui'
 import { avatarTheme } from '../../../runtime/shared/avatarTheme'
-import NewLine from './NewLine.vue'
 import PrototypeFilesDialog from './PrototypeFilesDialog.vue'
 import PrototypeHistoryDialog from './PrototypeHistoryDialog.vue'
+import PrototypeMarker from './PrototypeMarker.vue'
 import PrototypePreview from './PrototypePreview.vue'
 import ShareDialog from './ShareDialog.vue'
 import { copyText, downloadPrototypeZip, method, errorText } from '../store'
@@ -108,18 +108,6 @@ const busy = computed(
     refresh.loading ||
     exporting.value,
 )
-
-/**
- * The line under the name. `description` is derived on the server and its
- * wording is the server's to change (`sketch/api.py` `_row`), so the card
- * never parses it. The count is the fallback for a reply that carries no
- * description at all, which keeps the row filled and its height honest.
- */
-const subtitle = computed(() => {
-  if (props.prototype.description) return props.prototype.description
-  const count = props.prototype.file_count
-  return `${count} ${count === 1 ? 'file' : 'files'}`
-})
 
 async function copyPublicUrl(): Promise<void> {
   try {
@@ -220,11 +208,14 @@ const menuOptions = computed(() => [
 
 <template>
   <article class="flex min-w-0 flex-col">
-    <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+    <div class="relative">
+      <PrototypePreview :href="prototype.viewer_path" :thumbnail="prototype.thumbnail" />
+      <PrototypeMarker :news="prototype.new" :href="prototype.viewer_path" />
+    </div>
 
     <!--
-      Two rows under the preview. `h-7` on both is the height of a `sm` Button
-      (`Button.vue:209`), so neither row changes height when its contents change.
+      Two rows under the preview: `h-7`, the height of a `sm` Button (`Button.vue:209`),
+      then `h-5` for the line of text. Neither changes height when its contents change.
     -->
     <div class="mt-3 flex h-7 items-center gap-2">
       <!--
@@ -248,36 +239,39 @@ const menuOptions = computed(() => [
         <template #prefix><span class="lucide-lock size-3" aria-hidden="true" /></template>
       </Badge>
       <!--
-        Status, not a second Share button: who it is shared with, up to three faces and then +n.
-        It opens the dialog the menu opens. The ring gives the pale fill an edge.
+        Status: who it is shared with, up to three faces and then +n. A click opens the share dialog the menu opens,
+        but it draws as faces, not as a Button: no box, no hover fill. The ring is the page's own surface colour
+        (`--surface-base`; Tailwind has no `ring-surface-*`), so it cuts each face from the next.
       -->
       <Tooltip v-if="sharedWith.length" :text="sharedWith.text">
-        <Button variant="ghost" :aria-label="sharedWith.text" @click="shareOpen = true">
-          <span class="flex items-center">
-            <span class="flex -space-x-1">
+        <button
+          type="button"
+          class="flex items-center rounded-full focus-visible:ring-0 focus-visible:focus-ring"
+          :aria-label="sharedWith.text"
+          @click="shareOpen = true"
+        >
+            <span class="flex -space-x-1.5">
               <Avatar
                 v-for="person in sharedWith.shown"
                 :key="person.username"
-                class="ring-1 ring-outline-gray-2"
-                size="xs"
+                class="ring-2 ring-[color:var(--surface-base)]"
+                size="sm"
                 :theme="avatarTheme(person.username)"
                 :image="person.user_image"
                 :label="person.full_name"
               />
             </span>
             <span v-if="sharedWith.more" class="ml-1 text-xs tabular-nums text-ink-gray-5">+{{ sharedWith.more }}</span>
-          </span>
-        </Button>
+        </button>
       </Tooltip>
       <Dropdown align="end" :options="menuOptions">
         <Button aria-label="Prototype actions" icon="lucide-more-horizontal" variant="ghost" />
       </Dropdown>
     </div>
 
-    <!-- One line: what is new, or how big it is and when the agent last touched it. -->
-    <NewLine :news="prototype.new" :href="prototype.viewer_path">
-      <span class="min-w-0 truncate">{{ subtitle }} &middot; Updated {{ prototype.updated }}</span>
-    </NewLine>
+    <div class="flex h-5 items-center text-xs text-ink-gray-5">
+      <span class="min-w-0 truncate">Updated {{ prototype.updated }}</span>
+    </div>
 
     <ShareDialog v-model:open="shareOpen" :prototype="prototype" @changed="emit('changed')" />
     <PrototypeFilesDialog

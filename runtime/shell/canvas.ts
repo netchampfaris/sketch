@@ -9,7 +9,7 @@ import { lookAt } from './badges'
 import { onFrame, onGone, page, post } from './frame'
 import { picksShownIn, reachableIn, type DemoPick } from '../shared/picks'
 import { sameTile, type TileSpot } from '../shared/tiles'
-import type { CanvasPage, PickItem } from '../shared/protocol'
+import type { CanvasPage, EmptyView, PickItem, Pill } from '../shared/protocol'
 
 export type Tab = 'browse' | 'comments' | 'notes'
 // A tile as the shell holds it: its box before pan and zoom, and the spot it is.
@@ -40,11 +40,15 @@ export const canvas = shallowReactive({
 	view: '',
 	zoom: 1,
 	pan: { x: 0, y: 0 },
-	// How much of the bottom-right corner the zoom pill takes, with its gap.
+	// How much of the bottom-right corner the zoom pill takes, with its gap, and the title and zoom pills' boxes, which
+	// the pins go under (CanvasLayer.vue).
 	corner: 0,
+	pills: [] as Pill[],
 	model: null as CanvasPage[] | null,
 	tiles: [] as ShellTile[],
 	items: [] as PickItem[],
+	// One option's States view with none built (CanvasLayer.vue says so and offers Ask agent).
+	empty: null as EmptyView | null,
 	// ---- The shell's own
 	// Whether the panel is open on desktop, for the whole visit, and how much room it takes from the right edge.
 	panelOpen: true,
@@ -63,20 +67,20 @@ export const canvas = shallowReactive({
 
 onFrame('canvas', (d) => {
 	const was = canvas.open
-	Object.assign(canvas, { open: d.open, phone: d.phone, view: d.view, zoom: d.zoom, pan: d.pan, corner: d.corner })
+	Object.assign(canvas, { open: d.open, phone: d.phone, view: d.view, zoom: d.zoom, pan: d.pan, corner: d.corner, pills: d.pills, empty: d.empty ?? null })
 	if (d.tiles)
 		canvas.tiles = d.tiles.map(({ rect, route, tile, ...t }) => ({ ...t, ...rect, spot: { route, tile } }))
 	if (d.pages) canvas.model = d.pages
 	if (d.items) canvas.items = d.items
 	// Closed, the canvas has no tiles: a pin list or a count must not read the last ones.
 	if (was && !d.open) {
-		Object.assign(canvas, { tiles: [], model: null, items: [], view: '' })
+		Object.assign(canvas, { tiles: [], model: null, items: [], view: '', empty: null })
 		chosen = ''
 	}
 })
 // A reloaded frame says everything again.
 onGone(() => {
-	Object.assign(canvas, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0 })
+	Object.assign(canvas, { open: false, phone: false, view: '', tiles: [], model: null, items: [], corner: 0, pills: [], empty: null })
 	chosen = ''
 })
 

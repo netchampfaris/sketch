@@ -1,25 +1,24 @@
 <script setup lang="ts">
-// The canvas: one collection at a time (a variant set, a state across pages, or a page), picked in "Show".
+// The canvas: one collection at a time (a variant set, a page's states, or one option's component states), picked in "Show".
 // The grid is laid out once per view (see layout.ts); zoom and pan only transform it.
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
-import { Button, Dropdown, Tooltip } from 'frappe-ui'
+import { useElementBounding, useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
+import { Button, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
 import { tileExists } from '../shared/tiles'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
-import { layoutPick } from './layout'
-import type { PageModel, TileBox } from './layout'
-import { menuHost } from './menus'
-import { menuBind } from '../shared/menus'
+import { fullOptionId, layoutPick } from './layout'
+import type { PageModel, StateInfo, TileBox } from './layout'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
+  belongsTo,
   choices,
   closeCanvas,
   idOf,
@@ -62,11 +61,7 @@ const pickValue = computed(() => (pick.value ? valueOfPick(pick.value) : ''))
 watch(
   [model, raw],
   () => {
-    if (!model.value) return
-    if (pick.value) {
-      session.pick = valueOfPick(pick.value)
-      return
-    }
+    if (!model.value || pick.value) return
     const next = fallbackPick(model.value, openedOn)
     if (next) router.replace({ query: { ...route.query, canvas: next } })
   },
@@ -78,7 +73,7 @@ watch(raw, (r) => {
   const next = m.map((p) => ({ ...p, sets: p.sets.filter((s) => !isLone(s) || r === `set:${p.slug}/${s.key}`) }))
   model.value = session.model = pagesModel.value = next
 })
-const summary = computed(() => (pick.value && model.value ? pickSummary(pick.value, model.value) : ''))
+const summary = computed(() => (pick.value ? pickSummary(pick.value) : ''))
 // Beside the name in the top-left pill: a set's option count ("12 options"), without the page it is on; else the summary.
 const countText = computed(() => {
   const p = pick.value
@@ -86,6 +81,15 @@ const countText = computed(() => {
   const n = p.page.sets.find((s) => s.key === p.key)?.options.length ?? 0
   return `${n} ${n === 1 ? 'option' : 'options'}`
 })
+// One option's component states: the set and the option its states name with `of`.
+const optView = computed(() => {
+  const p = pick.value
+  if (p?.kind !== 'opt') return null
+  const set = p.page.sets.find((s) => s.key === p.key)
+  const opt = set?.options.find((o) => o.value === p.value)
+  return set && opt ? { page: p.page, set, opt, cacheId: fullOptionId(p.page.path, set.key, opt.value) } : null
+})
+const setViewValue = computed(() => (optView.value ? `set:${optView.value.page.slug}/${optView.value.set.key}` : ''))
 const triggerLabel = computed(() => (pick.value ? pickLabel(pick.value) : model.value ? 'Choose' : 'Loading'))
 const nothing = computed(() => !!model.value && !pickItems(model.value).length)
 const items = computed(() => (model.value ? pickItems(model.value) : []))
@@ -112,16 +116,31 @@ const fullSize = ref({ w: win.w, h: win.h })
 useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
+// The live tile's set as it is now, while it differs from its drawing: the grid follows it, and goes back when it closes.
+const liveSize = reactive<Record<string, { w: number; h: number }>>({})
+const onResize = (t: TileBox, size: { w: number; h: number } | null) => {
+  if (size) liveSize[t.cacheId] = size
+  else delete liveSize[t.cacheId]
+}
 const vpSize = computed(() => ({ w: fullSize.value.w - (panelShown.value ? PANEL_W : 0), h: fullSize.value.h }))
+// The states a drawn option declared with `of` naming it: null until it is drawn.
+function statesOfOption(cacheId: string): StateInfo[] | 'error' | null {
+  const v = optView.value
+  const snap = cache[keyOf(cacheId)]
+  if (!v || !snap) return null
+  if (snap.error) return 'error'
+  return snap.reg.states.filter((s) => s.path === v.page.path && !!s.of && belongsTo(s.of, v.set, v.opt))
+}
 const layout = computed(() =>
-  layoutPick(pick.value, model.value ?? [], {
+  layoutPick(pick.value, {
     win,
     vp: vpSize.value,
     phone: phone.value,
     sizeOf: (id, key) => {
-      const r = cache[keyOf(id)]?.sets.find((s) => s.key === key)
+      const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
       return r ? { w: r.w, h: r.h } : null
     },
+    statesOf: statesOfOption,
   }),
 )
 const pz = usePanZoom(() => vp.value)
@@ -129,12 +148,23 @@ const pz = usePanZoom(() => vp.value)
 const zoomPill = ref<HTMLElement | null>(null)
 const { width: zoomW } = useElementSize(zoomPill, { width: 0, height: 0 }, { box: 'border-box' })
 watch(zoomW, (w) => (bridge.corner = w ? w + 8 : 0), { immediate: true })
+// The shell draws the pins over this frame, so it leaves them out of the title and zoom pills' boxes: the pills stay on
+// top, to the eye and to the pointer.
+const titlePill = ref<HTMLElement | null>(null)
+const pillBoxes = [titlePill, zoomPill].map((el) => ({ el, box: useElementBounding(el) }))
+watchEffect(() => {
+  bridge.pills = pillBoxes.flatMap(({ el, box }) =>
+    el.value && box.width.value
+      ? [{ x: box.left.value, y: box.top.value, w: box.width.value, h: box.height.value, r: parseFloat(getComputedStyle(el.value).borderTopLeftRadius) || 0 }]
+      : [],
+  )
+})
 const { view } = pz
 // Captions never grow past their size at the fit zoom, so the room the layout gave them always holds.
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
 
 // ---- Drawing: one offscreen render at a time, in idle time, tiles in view first.
-type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null }
+type Job = { n: number; path: string; sandbox: Sandbox; targetSet?: string | null; grow?: boolean }
 const job = shallowRef<Job | null>(null)
 let seq = 0
 let pending: ((s: Snap) => void) | null = null
@@ -149,10 +179,12 @@ const makeSandbox = (t: Partial<TileBox> | null, live = false): Sandbox => {
   }
   if (t?.kind === 'state') sb.states[idOf(t.path!, t.stateKey!)] = t.option!
   if (t?.kind === 'set') sb.variants[idOf(t.path!, t.setKey!)] = t.option!
+  // A component state: the page with that option showing, and then the state.
+  if (t?.setOption) sb.variants[idOf(t.path!, t.setKey!)] = t.setOption
   return reactive({ ...sb, reg: sb.reg as any })
 }
 
-function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
+function runJob(path: string, sandbox: Sandbox, targetSet?: string | null, grow = false) {
   return new Promise<Snap>((resolve) => {
     const timer = setTimeout(() => finish(errorSnap('Timed out while drawing')), 6000)
     const finish = (s: Snap) => {
@@ -162,7 +194,7 @@ function runJob(path: string, sandbox: Sandbox, targetSet?: string | null) {
       resolve(s)
     }
     pending = finish
-    job.value = { n: ++seq, path, sandbox, targetSet }
+    job.value = { n: ++seq, path, sandbox, targetSet, grow }
   })
 }
 const onReady = (s: Snap) => pending?.(s)
@@ -184,14 +216,20 @@ async function discover() {
     if (!alive) return
     const snap = await runJob(r.path, makeSandbox(null))
     cache[keyOf(`${r.path}|default`)] = snap
+    const sets = snap.reg.sets
+      .filter((s) => s.path === r.path && (isChoice(s.options) || here === `set:${slugOfRoute(r)}/${s.key}`))
+      .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null }))
+    // A component state belongs to its set option, and shows there. One whose option is no longer in a set (after Keep only
+    // this) shows on its page.
+    const lives = (of: string) => sets.some((s) => s.options.some((o) => belongsTo(of, s, o)))
     pages.push({
       path: r.path,
       slug: slugOfRoute(r),
       title: titleOfRoute(r),
-      states: snap.reg.states.filter((s) => s.path === r.path).map((s) => ({ key: s.key, label: s.label, options: s.options })),
-      sets: snap.reg.sets
-        .filter((s) => s.path === r.path && (isChoice(s.options) || here === `set:${slugOfRoute(r)}/${s.key}`))
-        .map((s) => ({ key: s.key, label: s.label, name: s.name, file: s.file, options: s.options, meta: snap.sets.find((m) => m.key === s.key) ?? null })),
+      states: snap.reg.states
+        .filter((s) => s.path === r.path && (!s.of || !lives(s.of)))
+        .map((s) => ({ key: s.key, label: s.label, options: s.options, groups: s.groups, of: s.of })),
+      sets,
     })
     // Page order for sets: top to bottom, then left to right.
     const last = pages[pages.length - 1]
@@ -208,7 +246,6 @@ let pumping = false
 const missing = () => {
   const seen = new Set<string>()
   return layout.value.tiles.filter((t) => {
-    if (t.kind === 'gap') return false
     const k = keyOf(t.cacheId)
     if (cache[k] || seen.has(k)) return false
     seen.add(k)
@@ -224,7 +261,8 @@ async function pump() {
       const t = todo.find((x) => visible.has(x.id)) ?? todo[0]
       if (!t) break
       const k = keyOf(t.cacheId)
-      const snap = await runJob(t.path, makeSandbox(t), t.kind === 'set' ? t.setKey : null)
+      // A state tile (one option's states) grows to the set's full content height.
+      const snap = await runJob(t.path, makeSandbox(t), t.setKey ?? null, !!t.setOption)
       if (!alive) return
       cache[k] = snap
       await idle()
@@ -240,20 +278,12 @@ const onNear = (id: string, near: boolean) => {
   } else visible.delete(id)
 }
 
-const drawn_ = computed(() => layout.value.tiles.filter((t) => t.kind !== 'gap'))
-const total = computed(() => new Set(drawn_.value.map((t) => keyOf(t.cacheId))).size)
-const drawn = computed(() => {
-  const keys = new Set(drawn_.value.map((t) => keyOf(t.cacheId)))
-  let n = 0
-  keys.forEach((k) => cache[k] && n++)
-  return n
-})
+const drawKeys = computed(() => [...new Set(layout.value.tiles.map((t) => keyOf(t.cacheId)))])
+const total = computed(() => drawKeys.value.length)
+const drawn = computed(() => drawKeys.value.filter((k) => cache[k]).length)
 const drawing = computed(() => !!model.value && drawn.value < total.value)
 
-
 watch([() => layout.value.tiles.length, lensStr, pickValue], () => pump())
-
-
 
 // ---- Live tile
 const liveId = ref<string | null>(null)
@@ -279,6 +309,38 @@ watch(
   { immediate: true },
 )
 
+// ---- One option's component states: the tile menu's States opens them, ← and the set crumb go back up.
+function openStates(t: TileBox) {
+  const page = model.value?.find((p) => p.path === t.path)
+  if (!page || !t.setKey || !t.option) return
+  // A new history entry, so the browser's Back goes up one level.
+  router.push({ query: { ...route.query, canvas: `opt:${page.slug}/${t.setKey}/${t.option}` } })
+}
+function goUp() {
+  const target = setViewValue.value
+  if (!target) return
+  // Reached by States from that set: step back through history, so Back and Forward still mean something.
+  if (decodeURIComponent(String(history.state?.back ?? '')).includes(`canvas=${target}`)) router.back()
+  else router.replace({ query: { ...route.query, canvas: target } })
+}
+
+// Nothing declared for the option: the view is one line and a way to ask the agent for it, both the Viewer shell's
+// (it holds the notes). It is told the option's own tile of its set, where the Note tool would put that note.
+const emptyView = computed(() => !!optView.value && Array.isArray(statesOfOption(optView.value.cacheId)) && !layout.value.tiles.length)
+const optSpot = computed<TileSpot | null>(() => {
+  const v = optView.value
+  const tile = { kind: 'set' as const, view: setViewValue.value, page: v?.page.title ?? '', group: v?.set.label ?? '', groupKey: v?.set.key ?? '', option: v?.opt.value ?? '', optionLabel: v?.opt.label ?? '' }
+  return v ? { route: v.page.path, tile } : null
+})
+watch(
+  [emptyView, optSpot],
+  ([empty, spot]) => {
+    const v = optView.value
+    bridge.empty = empty && spot && v ? { spot, set: v.set.label, option: v.opt.label, file: v.set.file ?? '' } : null
+  },
+  { immediate: true },
+)
+
 function openPage(t: TileBox) {
   nav.pushed = false
   // A new history entry on top of the canvas, so Back returns to it. The picks are set once it has landed,
@@ -286,6 +348,7 @@ function openPage(t: TileBox) {
   router.push({ path: t.path }).then(() => {
     if (t.kind === 'state') stateValues[idOf(t.path, t.stateKey!)] = t.option!
     if (t.kind === 'set') choices[idOf(t.path, t.setKey!)] = t.option!
+    if (t.setOption) choices[idOf(t.path, t.setKey!)] = t.setOption
     mirrorStates(router)
     mirrorSets(router)
   })
@@ -341,10 +404,11 @@ function measureDots() {
   dotMix.value = Math.round(Math.min(1, 0.1 / Math.max(ratio - 1, 0.01)) * 100)
 }
 const pct = computed(() => Math.round(view.z * 100))
-const zoomOptions = [
-  { label: 'Zoom to fit', onClick: () => applyFit() },
-  ...[0.5, 1, 2].map((z) => ({ label: `${z * 100}%`, onClick: () => pz.zoomTo(z) })),
-]
+// The zoom menu is the shell's (runtime/shell/ZoomMenu.vue), drawn over its panel: the % asks for it at its box.
+function askZoom(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  bridge.zoomMenu?.({ x: r.left, y: r.top, w: r.width, h: r.height }, !e.detail)
+}
 
 // ---- Keys, scroll lock, focus
 useEventListener(document, 'keydown', (e: KeyboardEvent) => {
@@ -353,6 +417,7 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
     if (e.defaultPrevented || bridge.tool) return
     if (bridge.showOpen || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
     if (liveId.value) liveId.value = null
+    else if (optView.value) goUp()
     else closeCanvas(router)
     return
   }
@@ -375,6 +440,11 @@ onMounted(() => {
     const t = layout.value.tiles.find((x) => x.id === id)
     if (t) openPage(t)
   }
+  bridge.statesTile = (id) => {
+    const t = layout.value.tiles.find((x) => x.id === id)
+    if (t) openStates(t)
+  }
+  bridge.zoomTo = (to) => (to === 'fit' ? applyFit() : pz.zoomTo(Number(to)))
   document.body.style.overflow = 'hidden'
   if (vp.value) detach = pz.attach(vp.value)
   root.value?.focus()
@@ -388,6 +458,10 @@ onBeforeUnmount(() => {
   bridge.open = false
   bridge.reveal = null
   bridge.openTile = null
+  bridge.statesTile = null
+  bridge.zoomTo = null
+  bridge.pills = []
+  bridge.empty = null
   bridge.model = null
   bridge.tiles = []
   bridge.corner = 0
@@ -465,8 +539,7 @@ async function reveal(spot: TileSpot, at = { fx: 0.5, fy: 0.5 }) {
   }
   const t = tileBox(spot)!
   // The tile in the middle of what the panel leaves open; a tile bigger than that is centred on the spot instead.
-  const w = fullSize.value.w - (panelShown.value ? PANEL_W : 0)
-  const h = fullSize.value.h
+  const { w, h } = vpSize.value
   const fits = t.w * view.z <= w && t.h * view.z <= h
   const cx = fits ? t.x + t.w / 2 : t.x + at.fx * t.w
   const cy = fits ? t.y + t.h / 2 : t.y + at.fy * t.h
@@ -538,7 +611,20 @@ watch(
             :win="win"
             @activate="(e) => activate(t, e)"
             @near="(n: boolean) => onNear(t.id, n)"
+            @resize="(size) => onResize(t, size)"
           />
+          <!-- The headings over the sections of tiles, laid out at 1x and scaled like the captions. -->
+          <div
+            v-for="h in layout.heads"
+            :key="h.text"
+            role="heading"
+            aria-level="2"
+            class="pointer-events-none absolute origin-top-left select-none truncate"
+            :class="h.small ? 'text-p-sm text-ink-gray-5' : 'text-base font-medium text-ink-gray-8'"
+            :style="{ left: h.x + 'px', top: h.y + 'px', width: `calc(${layout.bounds.w}px / var(--ls))`, transform: 'scale(var(--ls))', lineHeight: '24px' }"
+          >
+            {{ h.text }}
+          </div>
         </div>
 
         <div v-if="nothing" data-ui class="absolute inset-0 flex items-center justify-center text-center">
@@ -547,18 +633,30 @@ watch(
       </div>
 
       <!-- Top left: the way back, and what the canvas shows. On a phone the name opens the Show list. It sits above the
-           tiles and pins (z-10 is the panel's; a box or menu opens in a layer above the canvas). -->
+           tiles, and the shell's pins go under it (`bridge.pills`). -->
       <div
+        ref="titlePill"
         data-ui
         data-canvas-title
-        class="absolute left-3 top-3 z-10 flex h-9 min-w-0 items-center gap-1 rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute left-3 top-3 z-10 flex min-w-0 items-center gap-1 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ maxWidth: `calc(100% - ${panelShown ? PANEL_W + 12 : 24}px)` }"
       >
         <Tooltip text="Back (Esc)">
-          <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="closeCanvas(router)" />
+          <Button class="shrink-0" variant="ghost" icon="lucide-arrow-left" aria-label="Back" @click="optView ? goUp() : closeCanvas(router)" />
         </Tooltip>
+        <!-- One option's states: "Supplier card › Compact › States". The set goes back up; on a phone only the option
+             and what it shows. -->
+        <div v-if="optView" data-canvas-crumbs class="flex min-w-0 items-center gap-1 pl-1 pr-2 text-base">
+          <template v-if="!phone">
+            <button type="button" class="min-w-0 truncate text-ink-gray-5 hover:text-ink-gray-8" :title="optView.set.label" @click="goUp">{{ optView.set.label }}</button>
+            <span class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
+          </template>
+          <span class="min-w-0 truncate text-ink-gray-8" :title="optView.opt.label">{{ optView.opt.label }}</span>
+          <span class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
+          <span class="shrink-0 text-ink-gray-8">States</span>
+        </div>
         <div
-          v-if="phone"
+          v-else-if="phone"
           class="min-w-0"
           aria-haspopup="dialog"
           :aria-expanded="bridge.showOpen"
@@ -581,18 +679,25 @@ watch(
         </div>
       </div>
 
-      <!-- Bottom right: zoom, left of the panel when it is open. -->
+      <!-- Bottom right: zoom, left of the panel when it is open. Title and zoom match the notes toolbar's surface. -->
       <div
         ref="zoomPill"
         data-ui
         data-canvas-zoom
-        class="absolute bottom-3 z-10 flex h-9 items-center rounded-6 border border-outline-gray-2 bg-surface-base p-1"
+        class="absolute bottom-3 z-10 flex items-center rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
         <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
-        <Dropdown v-bind="menuBind('zoom')" :portal-to="menuHost()" :options="zoomOptions">
-          <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
-        </Dropdown>
+        <Button
+          variant="ghost"
+          class="w-14 text-p-sm tabular-nums"
+          aria-label="Zoom"
+          aria-haspopup="menu"
+          :aria-expanded="bridge.zoomOpen"
+          :data-state="bridge.zoomOpen ? 'open' : 'closed'"
+          @click="askZoom"
+          >{{ pct }}%</Button
+        >
         <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
       </div>
     </div>
@@ -608,6 +713,7 @@ watch(
     :h="win.h"
     :sandbox="job.sandbox"
     :target-set="job.targetSet"
+    :grow="job.grow"
     @ready="onReady"
     @error="onError"
   />

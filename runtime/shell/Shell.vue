@@ -10,7 +10,7 @@ import { FrappeUIProvider } from 'frappe-ui'
 import { fromFrame, read, type FromFrame, type Theme } from '../shared/protocol'
 import { host, type Role } from './host'
 import type { ShellBoot } from './boot'
-import { applyTheme, resolveTheme, watchTheme } from './theme'
+import { applyTheme, chooseTheme, initTheme, preferenceNow, resolveTheme, urlTheme } from './theme'
 import { startLiveReload, type LiveReload } from './liveReload'
 import { initActions, placeToasts } from './actions'
 import { initApi } from './api'
@@ -20,6 +20,7 @@ import { restoreNotes, startSaving } from './notes'
 import CanvasLayer from './CanvasLayer.vue'
 import DemoPill from './DemoPill.vue'
 import TileMenu from './TileMenu.vue'
+import ZoomMenu from './ZoomMenu.vue'
 import Toolbar from './Toolbar.vue'
 
 const props = defineProps<{ boot: ShellBoot }>()
@@ -28,7 +29,8 @@ const props = defineProps<{ boot: ShellBoot }>()
 const STATUS_SCREENS = ['empty', 'compile-failed', 'link-failed', 'boot-failed']
 
 const frame = shallowRef<HTMLIFrameElement | null>(null)
-const theme = ref<Theme>(resolveTheme(props.boot.theme))
+initTheme(props.boot.prototype_theme, !!props.boot.me)
+const theme = ref<Theme>(resolveTheme())
 applyTheme(theme.value)
 
 // What the frame last said about itself lives in frame.ts `page`: the chrome lays itself out from it.
@@ -71,10 +73,13 @@ watch(
 const generation = ref(0)
 const src = ref(frameUrl())
 
-// The iframe boots on the shell's own hash, so a deep link and ?canvas= land where they point.
+// The iframe boots on the shell's own hash, so a deep link and ?canvas= land where they point. It paints the
+// prototype theme itself (theme.ts): a theme the link fixes, else the reader's preference.
 function frameUrl() {
 	const url = new URL(props.boot.frame_src, location.origin)
-	url.searchParams.set('theme', theme.value)
+	const fixed = urlTheme()
+	if (fixed) url.searchParams.set('theme', fixed)
+	url.searchParams.set('pref', preferenceNow())
 	return url.pathname + url.search + location.hash
 }
 
@@ -105,9 +110,10 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 		theme.value = next
 		applyTheme(next)
 	},
+	'theme:choose': ({ theme: next }) => chooseTheme(next),
 	// layout, demo, hover, pick, drag, rects, track, key, canvas, tile:pick, canvas:click and canvas:revealed go to
 	// frame.ts (`receive`), for the toolbar and the canvas layer; model to demo.ts (the Demo pill), tile:menu to
-	// TileMenu.vue, tweak:info and tweak:rects to tweaks.ts and TweakLayer.vue.
+	// TileMenu.vue, zoom:menu to ZoomMenu.vue, tweak:info and tweak:rects to tweaks.ts and TweakLayer.vue.
 }
 
 function onMessage(e: MessageEvent) {
@@ -126,17 +132,6 @@ function onHashChange() {
 	post('nav', { path })
 }
 
-// The system preference or a saved choice moved, and nothing fixes the theme in the URL.
-function onThemeSource() {
-	if (new URLSearchParams(location.search).get('theme')) return
-	const next = resolveTheme(null)
-	if (next === theme.value) return
-	theme.value = next
-	applyTheme(next)
-	post('theme', { theme: next })
-}
-
-let stopTheme = () => {}
 let live: LiveReload | null = null
 // The variant writes (Make default, Keep only this, Delete variant) reload the frame and hold the live reload meanwhile.
 initActions({
@@ -152,14 +147,12 @@ if (boot.role === 'owner') placeToasts()
 onMounted(() => {
 	window.addEventListener('message', onMessage)
 	window.addEventListener('hashchange', onHashChange)
-	stopTheme = watchTheme(onThemeSource)
 	// Only the owner has an agent writing to the tree, and only the owner's page carries a baseline.
 	if (props.boot.role === 'owner' && props.boot.rev) live = startLiveReload(props.boot.slug, props.boot.rev, reloadFrame)
 })
 onBeforeUnmount(() => {
 	window.removeEventListener('message', onMessage)
 	window.removeEventListener('hashchange', onHashChange)
-	stopTheme()
 	live?.stop()
 })
 </script>
@@ -182,6 +175,7 @@ onBeforeUnmount(() => {
 			<CanvasLayer />
 			<DemoPill v-if="pillShown" />
 			<TileMenu />
+			<ZoomMenu />
 			<Toolbar v-if="shown" :noter="noter" />
 		</div>
 	</FrappeUIProvider>

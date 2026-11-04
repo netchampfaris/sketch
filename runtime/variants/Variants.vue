@@ -1,13 +1,15 @@
 <script lang="ts">
 // <Variants name="Leave card"><template #compact>…</template><template #detailed>…</template></Variants>
-// Renders the chosen slot only, with no wrapper element. The first slot is the default.
+// Renders the chosen slot only, with no wrapper element. The default is the slot `default="…"` names, else the first.
+// Options show in the order they first appeared (extras.ts mergeOptions), so making one the default never moves it.
 // Variants a teammate added for this set (extras.ts) join the options after the owner's own and render in an error
 // boundary, so a mistake in one never reaches the page.
 import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, onErrorCaptured, ref, watch } from 'vue'
 import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extraOf, failed, mergeOptions } from './extras'
-import { choices, currentOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
+import { firstCopy } from './lift'
+import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
 
 type Forward = { attrs: Record<string, unknown>; slots: Record<string, (...a: any[]) => VNodeChild> }
 
@@ -54,6 +56,8 @@ export default defineComponent({
   inheritAttrs: false,
   props: {
     name: { type: String, required: true },
+    // The slot shown when nothing is picked. Sketch writes it when the owner picks Make default.
+    default: { type: String, default: '' },
     // A set Sketch wraps around a component that has no `<Variants>` of its own: `file` is that component, and
     // `forward` carries the props and slots a variant receives in its place.
     wrapper: { type: Boolean, default: false },
@@ -68,28 +72,40 @@ export default defineComponent({
     const path = pageKeyOf()
     let key = slugOf(props.name)
     let label = props.name
-    // A wrapped component drawn many times (a row in a list) is one set: every copy follows the one choice.
+    // The component whose template wrote this tag: its type carries the SFC's own path (`__file`,
+    // set by compileSFC), however deep in slots of other components the tag ends up.
+    const file = props.file || String((inst.vnode.ctx?.type as { __file?: string } | undefined)?.__file ?? '')
+    // One tag drawn many times (a card in a v-for, a component used in every row) is one set: every copy follows the one
+    // choice. Two tags of that name in different files are a mistake, and the second is told apart.
     const twin = (sb ? sb.reg.sets : sets).find((s) => s.path === path && s.key === key)
-    const shared = props.wrapper && !!twin
+    const shared = !!twin && (props.wrapper || (!!file && twin.file === file))
     if (twin && !shared) {
       console.warn(`[sketch variants] Two sets on this page are named "${props.name}". Names must be unique.`)
       key += '-2'
       label += ' 2'
     }
 
-    // The component whose template wrote this tag: its type carries the SFC's own path (`__file`,
-    // set by compileSFC), however deep in slots of other components the tag ends up.
-    const file = props.file || String((inst.vnode.ctx?.type as { __file?: string } | undefined)?.__file ?? '')
     const own = () => Object.keys(slots).filter((k) => k !== 'default').map((value) => ({ value, label: humanise(value) }))
-    const options = () => mergeOptions(own(), { name: props.name, wrapper: props.wrapper, file })
-    // The slot's elements sit between the Fragment's start and end anchors.
-    const elements = () => {
+    const options = () => mergeOptions(own(), { name: props.name, wrapper: props.wrapper, file, default: props.default })
+    // This copy's elements sit between the Fragment's start and end anchors.
+    const mine = () => {
       const out: Element[] = []
       const end = inst.subTree?.anchor
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
       return out
     }
-    const set: VSet = twin && shared ? twin : { key, label, name: props.name, file, path, options, elements }
+    // The tag is the page: the root of the component a route renders.
+    const page = () => {
+      const p = inst.parent
+      return !!p && p.subTree === inst.vnode && !!router?.getRoutes().some((r) => Object.values(r.components ?? {}).includes(p.type as any))
+    }
+    const copies: (() => Element[])[] = []
+    const set: VSet = twin && shared ? twin : { key, label, name: props.name, file, path, options, elements: () => firstCopy(copies), copies, page }
+    set.copies.push(mine)
+    onBeforeUnmount(() => {
+      const i = set.copies.indexOf(mine)
+      if (i >= 0) set.copies.splice(i, 1)
+    })
     const id = setId(set)
     const draw = (cur: string | undefined) => {
       if (cur === undefined) return undefined
@@ -104,7 +120,7 @@ export default defineComponent({
       return () => {
         const v = sb.variants[id]
         const o = options()
-        const cur = o.some((x) => x.value === v) ? v : o[0]?.value
+        const cur = o.some((x) => x.value === v) ? v : defaultOf(o)
         return h(Fragment, { key: cur }, draw(cur))
       }
     }

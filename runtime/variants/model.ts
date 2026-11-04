@@ -75,7 +75,14 @@ export function demoModel(router: any) {
       rect: boxes.value[setId(s)] ?? null,
       options: s.options().map((x) => ({ value: x.value, label: x.label, author: x.author ?? '' })),
     })),
-    states: pageStates.map((s) => ({ id: `state:${idOf(s.path, s.key)}`, label: s.label, path: s.path, value: stateOf(s), options: [...s.options] })),
+    states: pageStates.map((s) => ({
+      id: `state:${idOf(s.path, s.key)}`,
+      label: s.label,
+      path: s.path,
+      value: stateOf(s),
+      options: [...s.options],
+      ...(s.groups ? { groups: s.groups.map((g) => ({ title: g.title, options: [...g.options] })) } : {}),
+    })),
     canOpen,
   }
 }

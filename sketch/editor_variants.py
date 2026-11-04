@@ -51,6 +51,11 @@ def option_of(path: str) -> str:
 	return path[len(sharing.VARIANTS_ROOT) + 1 : -len(".vue")]
 
 
+def is_variant_path(path: str) -> bool:
+	"""True for a variant file's path: an editor's, or one the owner adopted."""
+	return sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)
+
+
 def meta_at(name: str, path: str) -> dict | None:
 	"""The `<variant>` tag of one file, or None when the file is gone, has none, or has one that cannot work."""
 	try:
@@ -99,22 +104,12 @@ def targets_same(meta: dict, other: dict) -> bool:
 
 def leaders(name: str, host_file: str, set_name: str, keep: str | None = None) -> list[str]:
 	"""The adopted variants that lead this set now."""
-	registry = read_registry(name)
-	probe = {
-		"set": set_name,
-		"component": host_file if _is_component_host(name, host_file, set_name) else "",
-		"name": "",
-	}
-	found = []
-	for path, row in registry.items():
-		if path == keep or not isinstance(row, dict) or not row.get("default"):
-			continue
-
-		meta = meta_at(name, path)
-		if meta and targets_same(meta, probe):
-			found.append(path)
-
-	return found
+	paths = [
+		path
+		for path, row in read_registry(name).items()
+		if path != keep and isinstance(row, dict) and row.get("default")
+	]
+	return _of_set(name, host_file, set_name, paths)
 
 
 def targeting(name: str, host_file: str, set_name: str) -> list[str]:
@@ -122,17 +117,23 @@ def targeting(name: str, host_file: str, set_name: str) -> list[str]:
 
 	A file whose `<variant>` tag cannot be read is left out: nothing says which set it is for.
 	"""
+	paths = [
+		row["path"]
+		for row in prototype_files.list_files(name)
+		if row["path"].endswith(".vue") and is_variant_path(row["path"])
+	]
+	return _of_set(name, host_file, set_name, paths)
+
+
+def _of_set(name: str, host_file: str, set_name: str, paths: list[str]) -> list[str]:
+	"""The paths whose `<variant>` tag targets this set."""
 	probe = {
 		"set": set_name,
 		"component": host_file if _is_component_host(name, host_file, set_name) else "",
 		"name": "",
 	}
 	found = []
-	for row in prototype_files.list_files(name):
-		path = row["path"]
-		if not path.endswith(".vue") or not (sharing.is_editor_path(path) or path.startswith(sharing.ADOPTED_DIR)):
-			continue
-
+	for path in paths:
 		meta = meta_at(name, path)
 		if meta and targets_same(meta, probe):
 			found.append(path)
@@ -254,13 +255,7 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	versions.commit_before(doc, "Changes before the default was changed", [found["path"]])
 	destination = move_in(doc, host_file, set_name, found)
 	label = found["meta"]["name"]
-	version = versions.commit(
-		doc,
-		f"Made “{label}” the default for {set_name}",
-		source="App",
-		action=versions.MADE_DEFAULT,
-		label=label,
-	)
+	version = commit_default(doc, label, set_name)
 	return {
 		"file": host_file,
 		"name": set_name,
@@ -269,6 +264,49 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 		"label": label,
 		"sequence": version.sequence if version else None,
 	}
+
+
+def lead_adopted(doc, host_file: str, set_name: str, option: str) -> dict:
+	"""Make a variant the owner adopted earlier the default of its set again. Only the registry changes."""
+	path = path_of(option)
+	versions.lock(doc.name)
+	registry = read_registry(doc.name)
+	meta = meta_at(doc.name, path)
+	if path not in registry or not meta:
+		frappe.throw(frappe._("That variant is gone. Reload the page."), frappe.ValidationError)
+
+	_check_target(doc.name, meta, host_file, set_name)
+	if registry[path].get("default"):
+		frappe.throw(frappe._('"{0}" is already the default for {1}.').format(meta["name"], set_name), frappe.ValidationError)
+
+	if versions.pending(doc.name):
+		versions.commit(doc, "Changes before the default was changed", source="App")
+
+	clear_defaults(doc.name, host_file, set_name)
+	registry = read_registry(doc.name)
+	registry[path]["default"] = True
+	write_registry(doc.name, registry)
+	versions.note(doc.name, sharing.ADOPTED_FILE, versions.MODIFIED)
+	version = commit_default(doc, meta["name"], set_name)
+	return {
+		"file": host_file,
+		"name": set_name,
+		"set": set_name,
+		"option": option,
+		"label": meta["name"],
+		"sequence": version.sequence if version else None,
+	}
+
+
+def commit_default(doc, label: str, set_name: str):
+	"""The version a Make default ends with, marked so `variant_default.undo_default` takes it."""
+	return versions.commit(
+		doc,
+		f"Made \u201c{label}\u201d the default for {set_name}",
+		source="App",
+		action=versions.MADE_DEFAULT,
+		label=label,
+	)
 
 
 def _check_target(name: str, meta: dict, host_file: str, set_name: str) -> None:

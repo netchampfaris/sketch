@@ -2,7 +2,7 @@
 // held. A comment saves them so that, later, a person can see what it was about, and the page can be put back the same way.
 // Plain data in the anchor (sketch/comments.py `clean_picks`); a set or state that has since gone is simply skipped.
 // The shell reads them from what the frame agent reports and asks for them back (`picks:apply`); the frame does the rest here.
-import { choices, currentOf, idOf, isChoice, mirrorSets, mirrorStates, onPage, sets, stateOf, stateValues, states } from './state'
+import { choices, currentOf, defaultOf, idOf, isChoice, mirrorSets, mirrorStates, onPage, sets, stateOf, stateValues, states } from './state'
 import type { DemoEntry, DemoPick } from '../shared/picks'
 
 export type { DemoPick }
@@ -14,7 +14,7 @@ export function currentPicks(route: any): DemoPick[] {
     const options = s.options()
     if (!onPage(route, s.path) || !isChoice(options)) continue
     const v = currentOf(s) ?? ''
-    out.push({ kind: 'set', path: s.path, key: s.key, label: s.label, option: v, optionLabel: options.find((o) => o.value === v)?.label ?? v, default: v === options[0]?.value })
+    out.push({ kind: 'set', path: s.path, key: s.key, label: s.label, option: v, optionLabel: options.find((o) => o.value === v)?.label ?? v, default: v === defaultOf(options) })
   }
   for (const s of Object.values(states)) {
     if (!onPage(route, s.path)) continue

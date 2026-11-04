@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import frappe
 
-from sketch import annotations, badges, comments, editor_variants, sharing
+from sketch import annotations, badges, comments, editor_variants, prototype_theme, sharing
 
 
 @dataclass(frozen=True)
@@ -190,6 +190,21 @@ def seen_mark(name: str, variants: str = "", threads: str = "") -> dict:
 	"""
 	user = _commenter(name).user
 	return {"marked": badges.mark(name, user, json_list(variants), json_list(threads))}
+
+
+# ---------------------------------------------------------------------- theme
+
+
+@frappe.whitelist(methods=["POST"])
+def save_prototype_theme(name: str, theme: str = "") -> dict:
+	"""Save the theme this person's prototypes open in, from a Prototype's own theme switch (decision 84).
+
+	The one place the preference changes. The frame asks the shell; the shell sends this only right after the
+	person's own click or key in the page (runtime/shell/theme.ts). It is light, dark or system on the reader's own
+	account, so a page can do no more with it than the reader could by hand.
+	"""
+	who = _actor(name)
+	return {"prototype_theme": prototype_theme.write(who.user, theme)}
 
 
 def json_list(raw) -> list:

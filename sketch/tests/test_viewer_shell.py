@@ -26,7 +26,7 @@ FILES = {"src/App.vue": "<template><h1>hello</h1></template>\n"}
 CSP = "Content-Security-Policy"
 
 #: Everything the frame may hold, and no more.
-FRAME_KEYS = {"files", "name", "title", "slug", "pin", "authors", "theme", "chrome"}
+FRAME_KEYS = {"files", "name", "title", "slug", "pin", "authors", "variant_seen", "theme", "chrome"}
 
 #: The doors the shell replaced. Each acted on a signature in the page, so none may come back.
 REMOVED = {

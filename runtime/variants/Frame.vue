@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // One render of the whole app in a given page, state and variant. Offscreen, it is drawn, captured and
 // dropped. Live, it stays in a tile. `app` is App.vue's own component, handed over so there is no cycle.
-import { nextTick, onErrorCaptured, onMounted, provide, ref, shallowRef } from 'vue'
+import { nextTick, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef } from 'vue'
 import { routeLocationKey, routerViewLocationKey, useRouter } from 'vue-router'
 import { Alert } from 'frappe-ui'
 import { sandboxKey } from './state'
 import type { Sandbox } from './state'
+import { follow } from './lift'
 import { capture, errorSnap, nextFrames } from './snapshot'
-import type { Snap } from './snapshot'
+import type { Crop, Snap } from './snapshot'
 
 const props = defineProps<{
   app: any
@@ -17,8 +18,11 @@ const props = defineProps<{
   sandbox: Sandbox
   mode: 'offscreen' | 'live'
   targetSet?: string | null
+  // A state tile: the set grows to its full content height (lift.ts).
+  grow?: boolean
 }>()
-const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string] }>()
+// `anchor`, live only: where the lifted set sits in the page each time it moves or resizes.
+const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null] }>()
 
 const router = useRouter()
 const resolved = router.resolve(props.path)
@@ -43,20 +47,27 @@ onErrorCaptured((err) => {
 
 const target = () => (props.targetSet ? props.sandbox.reg.sets.find((s) => s.key === props.targetSet) ?? null : null)
 
+let stop = () => {}
+let gone = false
+onBeforeUnmount(() => {
+  gone = true
+  stop()
+})
 onMounted(async () => {
   await nextFrames(2)
   await nextTick()
-  if (!el.value || reported) return
+  // A live tile closed during those frames must not start following a page that is already gone.
+  if (gone || !el.value || reported) return
   if (props.mode === 'live') {
-    // Bring the set into view inside its scroll container, as the snapshot did.
-    target()?.elements()[0]?.scrollIntoView({ block: 'center', inline: 'center' })
-    el.value.scrollTop = 0
-    el.value.scrollLeft = 0
+    // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
+    // page shows the whole window.
+    const t = target()
+    if (t && !t.page()) stop = follow(el.value, () => t.elements(), (box) => emit('anchor', box), props.grow)
     return
   }
   try {
     reported = true
-    emit('ready', capture(el.value, props.sandbox.reg, target()))
+    emit('ready', capture(el.value, props.sandbox.reg, target(), props.grow))
   } catch (e) {
     emit('error', firstLine(e))
   }

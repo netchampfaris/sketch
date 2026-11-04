@@ -213,11 +213,12 @@ async function copy(text: string, done: string): Promise<void> {
   </PageHeader>
 
   <!--
-    No width cap here. App.vue already centres the column at 940px, and a second
+    The 940px reading column, left on the page's own rail: App.vue's column is
+    1240px for the gallery, and a form that wide only stretches its fields. A
     cap of `max-w-4xl` (896px) stopped the body 44px short of the header border
     above it (problem 3.8).
   -->
-  <div class="px-3 pb-10 pt-6 sm:px-5">
+  <div class="max-w-[940px] px-3 pb-10 pt-6 sm:px-5">
     <section>
       <h2 class="text-lg-semibold text-ink-gray-8">Agent connection</h2>
       <p class="mt-1 text-p-sm text-ink-gray-7">

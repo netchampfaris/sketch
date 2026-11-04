@@ -42,7 +42,7 @@ export function encode(text: string): string {
 
 // The words as they are edited: each @[username] as its label again, and picked again.
 export function decode(text: string): string {
-  return text.replace(TOKEN, (whole, username: string) => {
+  return text.replace(TOKEN, (_, username: string) => {
     const p = mentionable.value.find((m) => m.username === username)
     if (!p) return `@${username}`
     remember(p)

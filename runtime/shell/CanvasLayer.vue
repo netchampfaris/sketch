@@ -1,18 +1,23 @@
 <script setup lang="ts">
 // What the Viewer shell draws over the frame's canvas: the pins on the tiles, the panel on the right (or its "Show
-// panel" button), and on a phone the Show list under the title pill's name, all in the places the in-frame canvas had
-// them (runtime/variants/Canvas.vue). The canvas itself and its title and zoom pills stay in the frame.
+// panel" button), an option's empty States view with Ask agent, and on a phone the Show list under the title pill's
+// name, all in the places the in-frame canvas had them (runtime/variants/Canvas.vue). The canvas itself and its title
+// and zoom pills stay in the frame; the zoom menu is ZoomMenu.vue.
 //
 // The pins sit in one layer moved by the canvas's pan and zoom (a single CSS transform), each pin at its place on
 // its tile in the canvas's own coordinates, so they stay on their tiles as the frame reports each frame of a pan.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { Button, Popover, Tooltip } from 'frappe-ui'
-import type { Rect } from '../shared/protocol'
+import { Button, Popover, Tooltip, toast } from 'frappe-ui'
+import type { Pill, Rect } from '../shared/protocol'
 import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
 import FrameAnchor from './FrameAnchor.vue'
 import { placeToasts } from './actions'
+import { addNote, notes, removeNote } from './annotate'
+import { saveNow } from './notes'
+import { tileAnchor } from './tiles'
+import { sameTile } from '../shared/tiles'
 import { onFrame, onGone, page, post } from './frame'
 import { PANEL_W, canvas, showView } from './canvas'
 
@@ -44,15 +49,35 @@ function choose(v: string) {
 const showAt = ref<Rect | null>(null)
 const showOpen = computed({
 	get: () => !!showAt.value && canvas.open && canvas.phone,
-	set: (o: boolean) => !o && (showAt.value = null),
+	set: (o: boolean) => {
+		// A thread or note opened from the list takes the focus and the presses: the list stays open under its box.
+		if (o || document.activeElement?.closest('[data-comment-popover],[data-note-popover]')) return
+		showAt.value = null
+	},
 })
+// The list opens in the shell's own layer, under the toolbar and the comment box, as it did in the frame.
+const listHost = ref<HTMLElement | null>(null)
 onBeforeUnmount(onFrame('canvas:show', (d) => (showAt.value = d.open && canvas.open && canvas.phone ? d.rect : null)))
 onBeforeUnmount(onGone(() => (showAt.value = null)))
 watch(showOpen, (o) => post('display', { showOpen: o }))
 useEventListener(window, 'blur', () => showOpen.value && document.activeElement?.tagName === 'IFRAME' && (showOpen.value = false))
 const anchor = ref<InstanceType<typeof FrameAnchor> | null>(null)
 const list = ref<HTMLElement | null>(null)
+// With Comment (or Note) in hand, the list shows that tab's content instead, as the panel does on desktop.
+const extra = computed(() => (canvas.tab === 'browse' ? null : (canvas.tabs[canvas.tab] ?? null)))
+// Its rows open threads and its menus act, so a pointer's click counts only when its press began at least 300 ms after
+// the list opened (FrameAnchor.vue): a press aimed at the page when the frame opened the list does nothing.
+function guardExtra(e: MouseEvent) {
+	if (!extra.value || !e.detail) return
+	if (anchor.value?.take()) return
+	e.preventDefault()
+	e.stopPropagation()
+}
 let clicked: Element | null = null
+function onListClick(e: MouseEvent) {
+	clicked = e.target as Element
+	guardExtra(e)
+}
 function chooseOnPhone(v: string) {
 	const el = anchor.value?.take() ?? null
 	// A click names its row; the search's Enter names none, so the press must have been in the list.
@@ -81,18 +106,71 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 })
 
 const inv = computed(() => 1 / canvas.zoom)
+// The frame's title and zoom pills sit over the pins, as they did when both were in the frame: the pins' layer is cut
+// out where the pills are, rounded as they are, so a pin under one neither shows nor takes the pointer.
+const roundRect = ({ x, y, w, h, r }: Pill) => {
+	const k = Math.min(r, w / 2, h / 2)
+	return `M${x + k} ${y}H${x + w - k}A${k} ${k} 0 0 1 ${x + w} ${y + k}V${y + h - k}A${k} ${k} 0 0 1 ${x + w - k} ${y + h}H${x + k}A${k} ${k} 0 0 1 ${x} ${y + h - k}V${y + k}A${k} ${k} 0 0 1 ${x + k} ${y}Z`
+}
+const pinClip = computed(() => (canvas.pills.length ? `path(evenodd, "M-1e5 -1e5H1e5V1e5H-1e5Z${canvas.pills.map(roundRect).join('')}")` : undefined))
+
+// One option's States view with nothing declared: one line and a way to ask the agent for it. The note is the one the
+// Note tool makes, on the option's own tile of its set; while it waits for the agent the view says so. The note is on
+// the server before the view says it is there: if it cannot be saved it is taken back, and the reason is shown.
+const OPENING = 'Build the states for'
+const pendingNote = computed(() => {
+	const spot = canvas.empty?.spot
+	if (!spot) return null
+	return notes.value.find((n) => !!n.tile && !n.sent && n.note.startsWith(OPENING) && sameTile({ route: n.route, tile: n.tile }, spot))?.id ?? null
+})
+const asking = ref(false)
+async function askAgent() {
+	const v = canvas.empty
+	if (!v || !canvas.canNote || asking.value) return
+	asking.value = true
+	try {
+		const note = `${OPENING} ${v.set} · ${v.option}${v.file ? ` (${v.file})` : ''}. Follow the States section of the Sketch skill.`
+		const id = addNote({ ...tileAnchor(v.spot, { fx: 0.5, fy: 0.5 }), note })
+		const why = await saveNow()
+		if (why) {
+			removeNote(id)
+			toast.error(`Could not add the note: ${why}. Try again.`)
+		}
+	} finally {
+		asking.value = false
+	}
+}
+const undoAsk = () => pendingNote.value && removeNote(pendingNote.value)
 </script>
 
 <template>
 	<template v-if="canvas.open">
 		<!-- The pins on the tiles: one layer under the pan and zoom, below the panel and the toolbar. Only the pins take the pointer. -->
-		<div class="pointer-events-none absolute inset-0 overflow-hidden">
+		<div class="pointer-events-none absolute inset-0 overflow-hidden" :style="{ clipPath: pinClip }">
 			<div
 				class="absolute left-0 top-0 origin-top-left"
 				:style="{ transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.zoom})`, '--inv': inv }"
 			>
 				<component :is="canvas.Pins" v-if="canvas.Pins" :tiles="canvas.tiles" :zoom="canvas.zoom" />
 			</div>
+		</div>
+
+		<!-- An option with no states built: say so, and offer the agent. -->
+		<div
+			v-if="canvas.empty"
+			data-ui
+			class="pointer-events-none absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-2 px-6 text-center"
+			:style="{ right: panelShown ? `${PANEL_W}px` : '0' }"
+		>
+			<template v-if="pendingNote">
+				<p class="text-base text-ink-gray-8">Added to your notes for the agent.</p>
+				<p class="text-p-sm text-ink-gray-5">Tell your agent to apply your notes.</p>
+				<Button class="pointer-events-auto" variant="ghost" label="Undo" @click="undoAsk" />
+			</template>
+			<template v-else>
+				<p class="text-base text-ink-gray-8">No states built yet</p>
+				<Button v-if="canvas.canNote" class="pointer-events-auto" variant="subtle" theme="gray" label="Ask agent" :loading="asking" @click="askAgent" />
+			</template>
 		</div>
 
 		<CanvasPanel v-if="panelShown" :items="canvas.items" :selected="canvas.view" @choose="choose" @hide="canvas.panelOpen = false" />
@@ -107,13 +185,16 @@ const inv = computed(() => 1 / canvas.zoom)
 			</Tooltip>
 		</div>
 
-		<Popover v-model:open="showOpen" trigger="manual" side="bottom" align="start" :offset="8" :collision-padding="12">
+		<div ref="listHost" class="pointer-events-auto fixed left-0 top-0 z-[100] size-0" />
+		<Popover v-model:open="showOpen" :portal-to="listHost" trigger="manual" side="bottom" align="start" :offset="8" :collision-padding="12">
 			<template #trigger>
 				<!-- Where the frame's name is: the list hangs from it. -->
 				<FrameAnchor ref="anchor" :rect="showAt" />
 			</template>
-			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="clicked = $event.target as Element" @keydown.capture="clicked = null">
+			<div ref="list" class="flex flex-col p-2" style="width: calc(100vw - 24px)" data-ui @click.capture="onListClick" @keydown.capture="clicked = null">
+				<component :is="extra" v-if="extra" class="min-h-0 flex-1" @hide="showOpen = false" />
 				<ShowList
+					v-else
 					:items="canvas.items"
 					:selected="canvas.view"
 					width="calc(var(--reka-popover-trigger-width) - 1rem)"

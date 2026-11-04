@@ -16,7 +16,7 @@ export type ShellBoot = {
 	annotations_epoch: number
 	rev: string
 	csrf_token: string
-	theme: 'light' | 'dark' | null
+	prototype_theme: string | null
 	frame_src: string
 }
 

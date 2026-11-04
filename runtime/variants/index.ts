@@ -3,23 +3,27 @@
 // Prototype's code can import this module, so every write (Make default, Keep only this, Delete variant, seen marks)
 // is the Viewer shell's, over the session.
 // A state called outside any RouterView (App.vue) is app-wide; inside one it belongs to that page.
-import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
+import { computed, defineComponent, h, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Variants from './Variants.vue'
-import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, sandboxKey, slugOf, stateValues, states } from './state'
+import { applyStateLink, hookRouter, humanise, idOf, mirrorStates, pageKeyOf, readOptions, sandboxKey, stateKeyOf, stateValues, states } from './state'
 
 export { Variants }
 export { default as Chrome } from './Chrome.vue'
-export { registerExtras } from './extras'
+export { registerExtras, registerSeen } from './extras'
 export { badges } from './badges'
 export { bridge, canvasReport, landed } from './bridge'
 export { closeCanvas, openCanvas, titleOfRoute } from './state'
 export { applyPicks, currentPicks, demoEntries } from './picks'
 export { demoModel, measureDemo, setDemo } from './model'
 
-// A demo value (a persona, a workflow phase). The first option is the default.
-export function useDemoState<T extends string>(name: string, options: readonly T[]) {
-  const key = slugOf(name)
+// A demo value (a persona, a workflow phase). The first option is the default. Options are a list, or an object of
+// groups ({ Data: ['Default', 'Loading'], Access: ['Read-only'] }). `of` ("Supplier card/Compact", a set's label and
+// an option's label) makes it a component state: drawn on the canvas, never in the Demo pill or the URL.
+export function useDemoState<T extends string>(name: string, input: readonly T[] | Record<string, readonly T[]>, config: { of?: string } = {}) {
+  const { options, groups } = readOptions(input)
+  const of = config.of?.trim() || undefined
+  const key = stateKeyOf(name, of)
   const path = pageKeyOf()
   const id = idOf(path, key)
   const route = useRoute()
@@ -28,11 +32,21 @@ export function useDemoState<T extends string>(name: string, options: readonly T
 
   // In a frame (a canvas tile): forced values only. Nothing reaches the live registry or the URL.
   if (sb) {
-    sb.reg.states.push({ key, label: name, path, options: [...options], count: 1 })
+    sb.reg.states.push({ key, label: name, path, options: [...options], count: 1, groups, of })
     return computed<T>({
       get: () => (options.includes(sb.states[id] as T) ? (sb.states[id] as T) : options[0]),
       set: (v) => {
         sb.states[id] = v
+      },
+    })
+  }
+
+  if (of) {
+    const own = ref<T>(options[0])
+    return computed<T>({
+      get: () => (options.includes(own.value) ? own.value : options[0]),
+      set: (v) => {
+        own.value = v
       },
     })
   }
@@ -49,7 +63,7 @@ export function useDemoState<T extends string>(name: string, options: readonly T
   onMounted(() => {
     const e = states[id]
     if (e) e.count++
-    else states[id] = { key, label: name, path, options: [...options], count: 1 }
+    else states[id] = { key, label: name, path, options: [...options], count: 1, groups }
     mirrorStates(router)
   })
   onBeforeUnmount(() => {

@@ -5,8 +5,10 @@
 // rebuilt it from scratch with every number clamped and every string and list capped. A validator
 // returns null for anything it cannot read, and the shell drops it.
 //
-// No message can cause a write. A write starts from a click or key on a shell element; a message can
-// only move what the shell draws. Strings from the frame are shown as text, never as HTML.
+// No message can cause a write, but one: `theme:choose`, the Prototype's own theme switch, which the shell saves only
+// as one of three values on the reader's own display preference, and only right after the person's own click or key.
+// Every other write starts from a click or key on a shell element; a message can only move what the shell draws.
+// Strings from the frame are shown as text, never as HTML.
 //
 // The shell posts to the frame with targetOrigin '*' (an opaque origin has no name to target), so
 // nothing it sends is ever secret: never comment or note text, never people's data, never a token.
@@ -92,6 +94,8 @@ function some<T extends Obj>(out: Obj): T {
 // ---- Shared shapes --------------------------------------------------------------------------
 export const THEMES = ['light', 'dark'] as const
 export type Theme = (typeof THEMES)[number]
+export const CHOICES = [...THEMES, 'system'] as const
+export type Choice = (typeof CHOICES)[number]
 export const MODES = ['note', 'tweak', 'comment'] as const
 export type Mode = (typeof MODES)[number]
 
@@ -185,6 +189,14 @@ const demoEntry = (v: unknown): DemoEntry | null =>
 			})
 		: null
 
+// A canvas pill's box and its corner radius.
+export type Pill = Rect & { r: number }
+const pill = (v: unknown): Pill | null => {
+	const b = rect(v)
+	const r = isObj(v) ? num(v.r) : null
+	return b && r !== null ? { ...b, r: Math.max(0, r) } : null
+}
+
 export type Redline = Rect & { label: string; lx: number; ly: number }
 const redline = (v: unknown): Redline | null => {
 	const r = rect(v)
@@ -200,6 +212,9 @@ export type FromFrame = {
 	// `key` is the route a note belongs to (runtime/agent/dom.ts routeKey); `path` the route's path alone.
 	route: { fullPath: string; path: string; key: string }
 	theme: { theme: Theme }
+	// The Prototype's own theme switch chose light, dark or system (runtime/viewer/boot.js): the shell saves it, only
+	// on the person's own click or key (runtime/shell/theme.ts).
+	'theme:choose': { theme: Choice }
 	// `backdrop` is the colour a page dialog's backdrop lays over the page ('' with none open), and `layers` the rects of
 	// what the page draws above it (the dialog's panel, a menu from it): the shell's Demo pill sits under both, as it
 	// did in the page.
@@ -215,8 +230,8 @@ export type FromFrame = {
 	demo: { entries: DemoEntry[] }
 	rects: { req: string; map: Record<string, Rect | null> }
 	track: { map: Record<string, Rect | null>; labels: Record<string, string> }
-	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, and how wide the zoom pill in the bottom-right
-	// corner is. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
+	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, how wide the zoom pill in the bottom-right
+	// corner is, and the boxes of the title and zoom pills (`pills`, with their corner radius), which the pins go under. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
 	// come only when they changed: the pan and zoom alone come once per frame while they move.
 	canvas: {
 		open: boolean
@@ -225,11 +240,16 @@ export type FromFrame = {
 		zoom: number
 		pan: { x: number; y: number }
 		corner: number
+		pills: Pill[]
 		tiles?: CanvasTile[]
 		pages?: CanvasPage[]
 		items?: PickItem[]
+		// One option's states with none built: the option's own tile of its set (where its note goes), and its words.
+		empty?: EmptyView | null
 	}
 	'tile:menu': { tileId: string; rect: Rect }
+	// The zoom pill's %: open its menu at the button's box. `keyboard`: a key pressed it, not a pointer.
+	'zoom:menu': { rect: Rect; keyboard: boolean }
 	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
 	'canvas:show': { rect: Rect; open: boolean }
 	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
@@ -314,7 +334,8 @@ export type ModelSet = {
 	rect: Rect | null
 	options: ModelOption[]
 }
-export type ModelState = { id: string; label: string; path: string; value: string; options: string[] }
+// `groups` is there only when the state was declared in groups ({ Data: ['Default', 'Loading'], Access: [...] }).
+export type ModelState = { id: string; label: string; path: string; value: string; options: string[]; groups?: { title: string; options: string[] }[] }
 // `rect` is in the canvas's own coordinates: the screen point is pan + rect * zoom.
 // A set's tile also says which `<Variants>` it is (its name and file) and how many options the set has: what Make default
 // and Keep only this ask the server for. A lying frame can only name another option for the owner's real click.
@@ -331,10 +352,15 @@ export type CanvasTile = {
 	setCount: number
 }
 // What the canvas found on a page, enough to tell whether a pinned tile still exists (sets by key with their option
-// values, states by key with their options).
-export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[] }
+// values, states by key with their options, and the set options a component state can name, as slugs).
+export type CanvasPage = { path: string; title: string; sets: { key: string; options: string[] }[]; states: { key: string; options: string[] }[]; ofs: string[] }
+// An option's States view that has nothing to show (runtime/variants/Canvas.vue): the shell says so and offers Ask
+// agent, a note on `spot` that opens with the set, the option and its file.
+export type EmptyView = { spot: TileSpot; set: string; option: string; file: string }
+const emptyView = (v: unknown): EmptyView | null =>
+	isObj(v) ? all<EmptyView>({ spot: tileSpot(v.spot), set: str(v.set), option: str(v.option), file: str(v.file ?? '', CAPS.route) }) : null
 // One row of the Show list (runtime/variants/picker.ts PickItem).
-export type PickItem = { value: string; label: string; sub: string; short: string; complete: boolean; group: 'sets' | 'states' | 'pages'; options: string[] }
+export type PickItem = { value: string; label: string; sub: string; short: string; group: 'sets' | 'pages'; options: string[] }
 export type ComponentInfo = { component: string; chain: string[]; file: string }
 // One element picked in the page. `ref` names it for later messages (selection, step, track), so the frame
 // can find the same element again while it lives; `selector` is the fallback once it is gone.
@@ -382,10 +408,12 @@ const modelSet = (v: unknown): ModelSet | null => {
 	})
 	return base && { ...base, rect: v.rect == null ? null : rect(v.rect) }
 }
-const modelState = (v: unknown): ModelState | null =>
-	isObj(v)
-		? all<ModelState>({ id: str(v.id), label: str(v.label), path: str(v.path, CAPS.route), value: str(v.value), options: strings(v.options, CAPS.options) })
-		: null
+const stateGroup = (v: unknown) => (isObj(v) ? all<{ title: string; options: string[] }>({ title: str(v.title), options: strings(v.options, CAPS.options) }) : null)
+const modelState = (v: unknown): ModelState | null => {
+	if (!isObj(v)) return null
+	const base = all<Omit<ModelState, 'groups'>>({ id: str(v.id), label: str(v.label), path: str(v.path, CAPS.route), value: str(v.value), options: strings(v.options, CAPS.options) })
+	return base && some<ModelState>({ ...base, groups: v.groups === undefined ? null : list(v.groups, CAPS.options, stateGroup) })
+}
 const canvasTile = (v: unknown): CanvasTile | null =>
 	isObj(v)
 		? all<CanvasTile>({
@@ -409,6 +437,7 @@ const canvasPage = (v: unknown): CanvasPage | null =>
 				title: str(v.title),
 				sets: list(v.sets, CAPS.sets, keyed),
 				states: list(v.states, CAPS.sets, keyed),
+				ofs: strings(v.ofs ?? [], CAPS.tiles),
 			})
 		: null
 const pickItem = (v: unknown): PickItem | null =>
@@ -418,8 +447,7 @@ const pickItem = (v: unknown): PickItem | null =>
 				label: str(v.label),
 				sub: str(v.sub ?? ''),
 				short: str(v.short, 40),
-				complete: bool(v.complete ?? true),
-				group: oneOf(v.group, ['sets', 'states', 'pages'] as const),
+				group: oneOf(v.group, ['sets', 'pages'] as const),
 				options: strings(v.options ?? [], CAPS.options),
 			})
 		: null
@@ -489,6 +517,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 	ready: (d) => all({ status: str(d.status, 40), routes: strings(d.routes, CAPS.list, CAPS.route), pages: list(d.pages ?? [], CAPS.list, page) }),
 	route: (d) => all({ fullPath: str(d.fullPath, CAPS.route), path: str(d.path, CAPS.route), key: str(d.key, CAPS.route) }),
 	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
+	'theme:choose': (d) => all({ theme: oneOf(d.theme, CHOICES) }),
 	layout: (d) =>
 		all({
 			vw: num(d.vw),
@@ -537,17 +566,21 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			zoom: typeof d.zoom === 'number' && d.zoom > 0 ? num(Math.max(d.zoom, 0.01)) : null,
 			pan: point(d.pan),
 			corner: num(d.corner ?? 0),
+			pills: list(d.pills ?? [], 4, pill),
 		})
 		if (!base) return null
+		// Unreadable, it is no empty view: the canvas still draws.
+		const empty = d.empty == null ? null : emptyView(d.empty)
 		const parts = {
 			tiles: maybe(d.tiles, (v) => list(v, CAPS.tiles, canvasTile)),
 			pages: maybe(d.pages, (v) => list(v, CAPS.list, canvasPage)),
 			items: maybe(d.items, (v) => list(v, CAPS.tiles, pickItem)),
 		}
 		if (Object.values(parts).some((x) => x === null)) return null
-		return some({ ...base, ...parts })
+		return { ...some<typeof base & typeof parts>({ ...base, ...parts }), empty }
 	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
+	'zoom:menu': (d) => all({ rect: rect(d.rect), keyboard: bool(d.keyboard ?? false) }),
 	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
 	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
 	'canvas:click': () => ({}),
@@ -625,12 +658,14 @@ export type ToFrame = {
 	'canvas:close': Obj
 	// Bring a tile into view, `fx, fy` being the spot on it as a fraction. The frame answers with `canvas:revealed`.
 	'canvas:reveal': { req: string; spot: TileSpot; fx: number; fy: number }
+	// The zoom menu's pick: fit the tiles, or a zoom.
+	'canvas:zoom': { to: ZoomTo }
 	// The tool picking tiles, '' while browsing: a click on a tile is then a `tile:pick`, not opening it live.
 	'canvas:tool': { tool: '' | 'comment' | 'note' }
 	// Where the shell's chrome sits, for the page's own chrome to keep clear of it. Any field may be left out.
 	// `busyTile` is the tile whose action the shell is saving and `menuTile` the one whose menu is open ('' for none);
 	// `landed` the option a write has just put in place, which the canvas rings once it is drawn; `showOpen` whether the
-	// phone's Show list is open.
+	// phone's Show list is open, `zoomMenu` whether the zoom menu is.
 	display: {
 		newOptions?: string[]
 		reserve?: number
@@ -639,12 +674,13 @@ export type ToFrame = {
 		menuTile?: string
 		landed?: { set: string; option: string }
 		showOpen?: boolean
+		zoomMenu?: boolean
 	}
 	// Sort and measure the Demo's rows again (the card opened, a row is hovered): the frame answers with `model`.
 	'model:measure': Obj
-	// The tile menu's Open page.
+	// The tile menu's Open page, and States (the option's component states).
 	'tile:open': { tileId: string }
-	theme: { theme: Theme }
+	'tile:states': { tileId: string }
 	// The two facts the frame's status screen (empty, did not build) words itself by. Sent only with that screen up.
 	copy: { owner: boolean; reloads: boolean }
 	scrollTo: { selector: string; smooth: boolean }
@@ -668,6 +704,8 @@ export type ToFrame = {
 	// and the elements each new one was made on (`bind`: tweak id -> ref).
 	'tweak:reapply': { tweaks: TweakSync[]; bind: Record<string, string> }
 }
+export const ZOOM_TO = ['fit', '0.5', '1', '2'] as const
+export type ZoomTo = (typeof ZOOM_TO)[number]
 export const TWEAK_OPS = ['clear', 'all', 'parent', 'child', 'find', 'select', 'highlight', 'refresh', 'keys'] as const
 export type TweakOp = (typeof TWEAK_OPS)[number]
 export type ClassEdit = { ref: string; classes: string[] }
@@ -729,6 +767,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	'canvas:open': (d) => some({ view: str(d.view, CAPS.route) }),
 	'canvas:close': () => ({}),
 	'canvas:reveal': (d) => all({ req: str(d.req, 40), spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy) }),
+	'canvas:zoom': (d) => all({ to: oneOf(d.to, ZOOM_TO) }),
 	'canvas:tool': (d) => all({ tool: oneOf(d.tool, ['', 'comment', 'note'] as const) }),
 	display: (d) =>
 		some({
@@ -739,10 +778,11 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 			menuTile: str(d.menuTile),
 			landed: isObj(d.landed) ? all({ set: str(d.landed.set), option: str(d.landed.option) }) : null,
 			showOpen: d.showOpen === undefined ? null : bool(d.showOpen),
+			zoomMenu: d.zoomMenu === undefined ? null : bool(d.zoomMenu),
 		}),
 	'model:measure': () => ({}),
 	'tile:open': (d) => all({ tileId: str(d.tileId) }),
-	theme: (d) => all({ theme: oneOf(d.theme, THEMES) }),
+	'tile:states': (d) => all({ tileId: str(d.tileId) }),
 	copy: (d) => all({ owner: bool(d.owner), reloads: bool(d.reloads) }),
 	scrollTo: (d) => all({ selector: str(d.selector, CAPS.selector), smooth: bool(d.smooth ?? false) }),
 	escape: () => ({}),

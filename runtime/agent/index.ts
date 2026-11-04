@@ -178,6 +178,8 @@ function startCanvas({ bridge, canvasReport }: Variants) {
 	bridge.tileMenu = (tileId, rect) => post('tile:menu', { tileId, rect })
 	// The phone's title pill: the shell opens its Show list under the name (runtime/shell/CanvasLayer.vue).
 	bridge.showMenu = (rect, open) => post('canvas:show', { rect, open })
+	// The zoom pill's %: the shell opens the zoom menu at it (runtime/shell/ZoomMenu.vue).
+	bridge.zoomMenu = (rect, keyboard) => post('zoom:menu', { rect, keyboard })
 
 	const PARTS = ['tiles', 'pages', 'items'] as const
 	let sent = { tiles: '', pages: '', items: '' }
@@ -202,7 +204,7 @@ function startCanvas({ bridge, canvasReport }: Variants) {
 		post('canvas', { ...msg, ...changed })
 	}
 	watch(
-		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.tiles, bridge.model, bridge.items],
+		() => [bridge.open, bridge.phone, bridge.view, bridge.zoom, bridge.pan, bridge.corner, bridge.pills, bridge.tiles, bridge.model, bridge.items, bridge.empty],
 		() => {
 			if (queued) return
 			queued = true
@@ -248,6 +250,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		'state:set': ({ id, value }) => router && variants?.setDemo(id, value, router),
 		'model:measure': () => router && variants?.measureDemo(router.currentRoute.value),
 		'tile:open': ({ tileId }) => variants?.bridge.openTile?.(tileId),
+		'tile:states': ({ tileId }) => variants?.bridge.statesTile?.(tileId),
 		// The canvas fits its tiles in the room the shell's panel leaves. The options new to this reader get their "New"
 		// badge. The tile whose action the shell saves spins, the one whose menu is open looks pressed, and the option a
 		// write landed on is ringed once drawn.
@@ -259,6 +262,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 			if (d.menuTile !== undefined) variants.bridge.menuTile = d.menuTile
 			if (d.landed && variants.landed) variants.landed.value = d.landed
 			if (d.showOpen !== undefined) variants.bridge.showOpen = d.showOpen
+			if (d.zoomMenu !== undefined) variants.bridge.zoomOpen = d.zoomMenu
 		},
 		'canvas:open': ({ view }) => {
 			if (!router || !variants) return
@@ -269,13 +273,10 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		},
 		'canvas:close': () => router && variants?.bridge.open && variants.closeCanvas(router),
 		'canvas:tool': ({ tool }) => variants && (variants.bridge.tool = tool),
+		'canvas:zoom': ({ to }) => variants?.bridge.zoomTo?.(to),
 		'canvas:reveal': async ({ req, spot, fx, fy }) => {
 			const point = (await variants?.bridge.reveal?.(spot, { fx, fy }).catch(() => null)) ?? null
 			post('canvas:revealed', { req, point })
-		},
-		theme: ({ theme: next }) => {
-			theme = next
-			document.documentElement.dataset.theme = next
 		},
 		copy: (hints) => repaint(hints),
 		nav: ({ path }) => {

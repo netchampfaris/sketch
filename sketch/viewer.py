@@ -37,11 +37,13 @@ from sketch import (
 	comments,
 	prototype,
 	prototype_files,
+	prototype_theme,
 	runtime_assets,
 	sharing,
 	signature,
 	thumbnail,
 	thumbnails,
+	variant_order,
 )
 
 #: The literal build.sh stamps into each per-Pin viewer.html (contract 4).
@@ -128,8 +130,9 @@ def url_theme() -> str | None:
 	"""The theme URL parameter, when it is light or dark.
 
 	Anything else, including "system", is None. The Viewer then resolves the
-	theme client side, from localStorage and then the browser preference
-	(spec 12). The renderer never writes localStorage and never sends "system".
+	theme client side: the person's prototype theme (the shell's
+	`prototype_theme`, handed to the frame as `pref`), the visit's choice for a
+	Guest, then the browser preference (spec 12, decision 84).
 	"""
 	value = (frappe.form_dict.get("theme") or "").strip().lower()
 	return value if value in THEMES else None
@@ -418,6 +421,8 @@ class SketchViewerRenderer(BaseRenderer):
 			"slug": self.doc.slug,
 			"pin": self.doc.pin,
 			"authors": {**sharing.authors(tree), **sharing.adopted_authors(adopted)},
+			# When each variant option first appeared, so a set shows them oldest first (sketch/variant_order.py).
+			"variant_seen": variant_order.first_seen(self.doc.name),
 			"theme": url_theme(),
 			"chrome": "off" if self.mode == "check" else "shell",
 		}
@@ -468,7 +473,10 @@ class SketchViewerRenderer(BaseRenderer):
 			else 0,
 			"rev": prototype_files.revision(self.doc.name) if live else "",
 			"csrf_token": csrf_token,
-			"theme": url_theme(),
+			# The theme this person's prototypes open in (`sketch.prototype_theme`), apart from Sketch's own UI theme. The
+			# shell hands it to the frame in its URL, and saves the Prototype's own switch over the session. A Guest
+			# keeps theirs for the visit, in the shell.
+			"prototype_theme": prototype_theme.read(frappe.session.user) if signed_in else None,
 			"frame_src": f"/u/{self.username}/{self.doc.slug}?frame=1",
 		}
 

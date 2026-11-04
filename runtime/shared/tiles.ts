@@ -10,6 +10,9 @@ export type TileHit = TileSpot & { fx: number; fy: number; x: number; y: number 
 export const sameTile = (a: TileSpot, b: TileSpot) =>
   a.route === b.route && a.tile.kind === b.tile.kind && a.tile.groupKey === b.tile.groupKey && a.tile.option === b.tile.option
 
+// The `of` a state's key ends in, as a slug, or '' for a page state.
+export const ofOfKey = (key: string) => (key.includes('@') ? key.slice(key.indexOf('@') + 1) : '')
+
 // Whether the canvas still has this tile, by the pages it found: null until they are known.
 export function tileExists(pages: CanvasPage[] | null, spot: TileSpot): boolean | null {
   if (!pages) return null
@@ -18,7 +21,10 @@ export function tileExists(pages: CanvasPage[] | null, spot: TileSpot): boolean 
   const { kind, groupKey, option } = spot.tile
   if (kind === 'default') return true
   if (kind === 'set') return !!p.sets.find((s) => s.key === groupKey)?.options.includes(option)
-  return !!p.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)
+  if (p.states.find((s) => s.key === groupKey)?.options.slice(1).includes(option)) return true
+  // A component state's key ends in its set and option, "state@supplier-card-compact": it stands while that option does.
+  const of = ofOfKey(groupKey)
+  return !!of && p.ofs.includes(of)
 }
 
 // The tile in plain words, the way the agent reads it: "Canvas · Overview › Spend summary › option Donut".

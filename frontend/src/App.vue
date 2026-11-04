@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, FrappeUIProvider, useColorScheme } from 'frappe-ui'
 import AppTopBar from './components/AppTopBar.vue'
+import WhatsNew from './components/WhatsNew.vue'
 import { toSpaPath } from './router'
 import {
   goToLogin,
@@ -101,16 +102,19 @@ function goBackToWhereTheyWere(): void {
       <AppTopBar />
       <!--
         The centred column. With no sidebar the content would otherwise run the
-        full width of a wide monitor. 940px is the reading-page width in
-        DESIGN.md > Geometry.
+        full width of a wide monitor. 1240px fits three cards across from lg and
+        four from 2xl; the top bar below it is as wide, so the two stay aligned.
+        A page of prose caps itself at its own measure.
 
         No horizontal padding here: PageHeader and every page body already
         apply the `px-3 sm:px-5` gutter, so a second one would double it.
       -->
-      <div class="mx-auto w-full max-w-[940px]">
+      <div class="mx-auto w-full max-w-[1240px]">
         <router-view />
       </div>
     </div>
+    <!-- Mounted once, so any screen can open it (`openWhatsNew`). -->
+    <WhatsNew />
     <!-- The session ended while the gallery was open: one place says so, over whatever dialog is up. Mounted only then,
          so it teleports after any open dialog and stacks above it (every frappe-ui Dialog is z-50). -->
     <Dialog
