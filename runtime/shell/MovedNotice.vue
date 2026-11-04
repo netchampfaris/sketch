@@ -55,12 +55,12 @@ async function dismiss() {
 			This prototype was on {{ from }}, which Sketch no longer supports. If something looks off, ask your agent to fix it.
 		</p>
 		<template v-if="blocked">
-			<p class="mt-1 text-p-sm text-ink-base">Couldn't copy. Select the prompt and copy it yourself:</p>
+			<p class="mt-1 text-p-sm text-ink-base">Couldn't copy. It's selected below, so copy it from there.</p>
 			<div
 				ref="box"
 				tabindex="0"
 				aria-label="Prompt for your agent"
-				class="max-h-24 select-text overflow-y-auto whitespace-pre-wrap break-words rounded-4 bg-surface-gray-8 px-2 py-1.5 text-p-sm text-ink-base"
+				class="select-text whitespace-pre-wrap break-words rounded-4 bg-surface-gray-8 px-2 py-1.5 text-p-sm text-ink-base"
 			>{{ prompt }}</div>
 		</template>
 		<div class="-mr-2 mt-1 flex justify-end gap-1">
@@ -69,7 +69,11 @@ async function dismiss() {
 				class="flex h-7 shrink-0 items-center rounded-4 bg-transparent px-2 py-1.5 text-base font-medium text-ink-blue-link hover:bg-surface-gray-8"
 				@click="copy"
 			>
-				{{ copied ? 'Copied' : 'Copy prompt' }}
+				<!-- Both labels share one grid cell, so the button keeps the longer one's width and never moves. -->
+				<span class="grid justify-items-center">
+					<span class="[grid-area:1/1]" :class="{ invisible: copied }">Copy prompt</span>
+					<span class="[grid-area:1/1]" :class="{ invisible: !copied }">Copied</span>
+				</span>
 			</button>
 			<button
 				type="button"
