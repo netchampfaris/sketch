@@ -47,6 +47,24 @@ const themeNow = (): Theme => (document.documentElement.dataset.theme === 'dark'
 // A page dialog is open. The tools step aside for it: it takes Escape first.
 const dialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')].some((d) => !isOurs(d))
 
+// A page dialog leaving: closed, but still drawn while its leave animation plays (the page removes it at the end). It
+// counts for that long, and never past CLOSING_MS, so a missed end cannot keep the pill hidden.
+const CLOSING_MS = 600
+const closedAt = new WeakMap<Element, number>()
+function shown(d: Element): boolean {
+	if (d.getAttribute('data-state') !== 'closed') {
+		closedAt.delete(d)
+		return true
+	}
+	const now = performance.now()
+	if (!closedAt.has(d)) {
+		closedAt.set(d, now)
+		setTimeout(postLayout, CLOSING_MS + 20)
+	}
+	return now - closedAt.get(d)! < CLOSING_MS
+}
+const dialogs = () => [...document.querySelectorAll('[role="dialog"][data-state]')].filter((d) => !isOurs(d) && shown(d))
+
 // A colour's alpha, between 0 and 1 (computed colours are rgb(), rgba(), or a function with "/ alpha").
 function alphaOf(c: string): number {
 	const a = c.match(/\/\s*([\d.]+%?)\s*\)$/)?.[1] ?? c.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)?.[1]
@@ -57,7 +75,7 @@ function alphaOf(c: string): number {
 // bottom-right corner, where the shell's Demo pill sits, that covers the whole viewport. The dialog's panel may be
 // over that corner first; a popover has no backdrop at all.
 function backdrop(): string {
-	if (!dialogOpen()) return ''
+	if (!dialogs().length) return ''
 	for (const el of document.elementsFromPoint(window.innerWidth - 24, window.innerHeight - 24)) {
 		if (isOurs(el)) continue
 		const style = getComputedStyle(el)
@@ -68,11 +86,11 @@ function backdrop(): string {
 	}
 	return ''
 }
-// Over a backdrop, what the page draws on top of it: the dialog's panel, and any menu or popover opened from it. Where
-// one of them meets the Demo pill, the pill is under it, as it was in the page.
+// Over a backdrop, what the page draws on top of it: the dialog's panel (until it has left), and any menu or popover
+// opened from it. Where one of them meets the Demo pill, the pill is under it, as it was in the page.
 function layers(): Rect[] {
-	const els = document.querySelectorAll('[role="dialog"][data-state="open"], [data-dismissable-layer]')
-	return [...els].filter((el) => !isOurs(el)).map((el) => {
+	const layers = [...document.querySelectorAll('[data-dismissable-layer]')].filter((el) => !isOurs(el))
+	return [...new Set([...dialogs(), ...layers])].map((el) => {
 		const r = el.getBoundingClientRect()
 		return { x: r.left, y: r.top, w: r.width, h: r.height }
 	})
