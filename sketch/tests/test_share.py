@@ -120,7 +120,7 @@ class ShareCase(IntegrationTestCase):
 
 	def undo_delete_as(self, user, option, sequence):
 		with set_user(user):
-			return viewer_api.undo_delete_variant(self.doc.name, sequence=str(sequence))
+			return viewer_api.undo_delete_variant(self.doc.name, option=option, sequence=str(sequence))
 
 	def add_variant(self, content=COMPACT, name="compact.vue", commit=True):
 		self.invite()
@@ -829,16 +829,7 @@ class TestDeleteAndDefault(ShareCase):
 		with set_user(self.owner):
 			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "@d2tshed/compact")
 			api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "wide")
-
-		page = self.page_data_for(self.owner)
-		signed = {
-			"exp": str(page["variant_exp"]),
-			"sig": page["variant_sig"],
-			"file": "src/pages/Home.vue",
-			"set_name": "KPI strip",
-		}
-		with set_user("Guest"):
-			done = api.set_variant_default_signed(self.doc.name, option="adopted/compact", **signed)
+			done = api.set_variant_default(self.doc.slug, "src/pages/Home.vue", "KPI strip", "adopted/compact")
 
 		registry = json.loads(self.tree()["src/variants/adopted.json"])
 		self.assertTrue(registry["src/variants/adopted/compact.vue"]["default"])
@@ -847,9 +838,9 @@ class TestDeleteAndDefault(ShareCase):
 		stored = frappe.db.get_value(versions.VERSION, row, ["action", "action_label"])
 		self.assertEqual(tuple(stored), (versions.MADE_DEFAULT, "Compact"))
 
-		with set_user("Guest"):
-			api.undo_variant_default_signed(
-				self.doc.name, sequence=str(done["sequence"]), option="adopted/compact", **signed
+		with set_user(self.owner):
+			api.undo_variant_default(
+				self.doc.slug, "src/pages/Home.vue", done["sequence"], "KPI strip", "adopted/compact"
 			)
 
 		registry = json.loads(self.tree()["src/variants/adopted.json"])

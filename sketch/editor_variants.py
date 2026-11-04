@@ -376,7 +376,7 @@ def delete(doc, username: str, is_owner: bool, option: str) -> dict:
 	}
 
 
-def undo_delete(doc, username: str, is_owner: bool, sequence) -> dict:
+def undo_delete(doc, username: str, is_owner: bool, sequence, option: str) -> dict:
 	"""Bring a deleted variant back. An editor may undo their own deletions only."""
 	sequence = _int(sequence)
 	done = versions.action_of(doc.name, sequence)

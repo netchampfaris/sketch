@@ -390,7 +390,7 @@ class TestMakeDefaultOnTheViewer(IntegrationTestCase):
 
 		self.addCleanup(prototype_files.write_files, self.doc.name, [{"path": "src/App.vue", "content": SIMPLE}])
 		self.make_default_as(self.owner)
-		self.assertEqual(self.source(), variant_default.move_slot(SIMPLE, "Spend summary", "budget-bars"))
+		self.assertEqual(self.source(), variant_default.record_slot(SIMPLE, "Spend summary", "budget-bars"))
 		self.assertEqual(
 			prototype_files.read_text(self.other.name, "src/App.vue")["content"], SIMPLE, "the owner's other prototype is untouched"
 		)

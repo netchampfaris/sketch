@@ -379,7 +379,7 @@ class TestCaps(CommentCase):
 		self.assertEqual(stored["offset"], {"x": 0, "y": 0.25})
 		self.assertEqual(stored["rect"], {"x": 0, "y": 20.0, "w": 100.0, "h": 40.0})
 		self.assertNotIn("box", stored)
-		json.dumps(self.call(api.comments_list, self.reader_name), allow_nan=False)
+		json.dumps(self.call(viewer_api.comments_list, self.reader_name), allow_nan=False)
 
 	def test_text_with_angle_brackets_survives_the_http_door(self):
 		utils.require_webserver()
