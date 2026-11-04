@@ -254,7 +254,8 @@ def adopt(doc, host_file: str, set_name: str, option: str) -> dict:
 	found = adoptable(doc, host_file, set_name, option)
 	versions.commit_before(doc, "Changes before the default was changed", [found["path"]])
 	destination = move_in(doc, host_file, set_name, found)
-	version = commit_default(doc, found["meta"]["name"], set_name)
+	label = found["meta"]["name"]
+	version = commit_default(doc, label, set_name)
 	return {
 		"file": host_file,
 		"name": set_name,

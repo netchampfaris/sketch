@@ -99,7 +99,7 @@ type Defaultable = { name: string; file: string; first?: { value: string } }
 export const makeFailure = (e: Error) =>
 	e instanceof TypeError ? "Couldn't make it the default. Check your connection and try again." : `Couldn't make it the default. ${e.message}`
 
-// Moves `option` first in the source and saves a version. Rejects with an error fit for `makeFailure`.
+// Records `option` as the set's default, where it sits, and saves a version. Rejects with an error fit for `makeFailure`.
 export async function makeDefault(set: Defaultable, option: string, key: string, tileId = '') {
 	if (saving.value) return
 	busy(key, tileId)

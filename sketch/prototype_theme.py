@@ -10,8 +10,8 @@ read Sketch's key anyway: the Viewer shell hands it this preference in its URL.
 
 Kept as a user default (`frappe.defaults`), so it needs no field and no
 migration. A person who never chose has "system". It changes only from inside a
-Prototype, through that Prototype's own theme switch (`sketch.viewer_api.save_prototype_theme`). It changes only from inside a
-Prototype, through that Prototype's own theme switch (`sketch.api.prototype_theme_signed`).
+Prototype: its theme switch asks the shell, and the shell saves the choice over
+the session (`sketch.viewer_api.save_prototype_theme`).
 """
 
 import frappe
