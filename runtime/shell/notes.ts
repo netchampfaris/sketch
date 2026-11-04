@@ -57,25 +57,33 @@ function flush(keepalive = false) {
 	clearTimeout(timer)
 	timer = 0
 	// The tab is going away: what waits its turn would never be sent.
-	return keepalive ? send(true) : inTurn(() => send(false))
+	return (keepalive ? send(true) : inTurn(() => send(false))).then((why) => {
+		if (!why) return
+		if (saveState.value !== 'error') toast.error('Could not save your notes. They are kept on this page until you reload.')
+		saveState.value = 'error'
+	})
 }
 
-async function send(keepalive: boolean) {
+// Null once the server has it (or it had it already), else why not.
+async function send(keepalive: boolean): Promise<string | null> {
 	const key = JSON.stringify(snapshot())
 	if (key === last) {
 		saveState.value = 'saved'
-		return
+		return null
 	}
 	try {
 		await post(keepalive)
 		last = key
 		// A change made while this was in flight has its own save scheduled.
 		if (!timer) saveState.value = 'saved'
+		return null
 	} catch (e) {
 		// The agent cleared since this page loaded: start again from what the server holds.
-		if (e instanceof HttpError && e.status === 409) return location.reload()
-		if (saveState.value !== 'error') toast.error('Could not save your notes. They are kept on this page until you reload.')
-		saveState.value = 'error'
+		if (e instanceof HttpError && e.status === 409) {
+			location.reload()
+			return null
+		}
+		return e instanceof HttpError ? `the server answered ${e.status}` : 'there is no connection'
 	}
 }
 
@@ -84,22 +92,7 @@ async function send(keepalive: boolean) {
 export function saveNow(): Promise<string | null> {
 	clearTimeout(timer)
 	timer = 0
-	return inTurn(async () => {
-		const key = JSON.stringify(snapshot())
-		try {
-			await post()
-			last = key
-			saveState.value = 'saved'
-			return null
-		} catch (e) {
-			// The agent cleared since this page loaded: start again from what the server holds.
-			if (e instanceof HttpError && e.status === 409) {
-				location.reload()
-				return null
-			}
-			return e instanceof HttpError ? `the server answered ${e.status}` : 'there is no connection'
-		}
-	})
+	return inTurn(() => send(false))
 }
 
 // Debounced after every change. A failed save is retried by the next change.
