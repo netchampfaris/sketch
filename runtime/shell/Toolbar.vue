@@ -144,9 +144,11 @@ onBeforeUnmount(
 	}),
 )
 // The selection, for Alt's distances in the frame.
-watch(draft, (d, was) =>
-	post('selection', { refs: (d?.els ?? []).map((e) => e.ref).filter((r): r is string => !!r), ...(d?.box ? { box: d.box } : {}), ...(!d && was ? { drop: true } : {}) }),
-)
+watch(draft, (d, was) => {
+	// The box closed: the outline under a still pointer waits for it to move, here and in the frame.
+	if (!d && was) frameHover.value = { ...frameHover.value, rect: null, label: '', lines: [] }
+	post('selection', { refs: (d?.els ?? []).map((e) => e.ref).filter((r): r is string => !!r), ...(d?.box ? { box: d.box } : {}), ...(!d && was ? { drop: true } : {}) })
+})
 
 // The comment box rides with its pin: where the frame says the pin's element is now. A pin that fans out of a pile keeps
 // its offset from that point.

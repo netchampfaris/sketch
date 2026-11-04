@@ -495,7 +495,8 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			navBottom: num(d.navBottom),
 			pageLayerOpen: bool(d.pageLayerOpen),
 			dialogOpen: bool(d.dialogOpen ?? false),
-			backdrop: color(d.backdrop ?? ''),
+			// Only a tint: one that does not read is no tint, and the rest of the layout still holds.
+			backdrop: color(d.backdrop ?? '') ?? '',
 		}),
 	model: (d) => all({ sets: list(d.sets, CAPS.sets, modelSet), states: list(d.states, CAPS.sets, modelState), canOpen: bool(d.canOpen ?? false) }),
 	hover: (d) => {
