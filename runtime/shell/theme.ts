@@ -45,15 +45,17 @@ export function applyTheme(theme: Theme) {
 // The Prototype's own switch chose a theme (the frame's `theme:choose`), the one way the preference changes. It is one
 // of three values on the reader's own account; the shell takes it only right after a click or key the person made (the
 // frame's activation reaches the shell), so a page cannot change it on its own. Its choice outranks
-// a theme in the link from now on, so the parameter leaves the URL and a reload keeps it.
+// a theme in the link from now on, so the parameter leaves the URL and a reload keeps it, even when the choice is the
+// preference already saved (a link's theme on top of it).
 export function chooseTheme(next: Choice) {
-	if (next === preference || !navigator.userActivation?.isActive) return
-	preference = next
+	if (!navigator.userActivation?.isActive) return
 	const url = new URL(location.href)
 	if (url.searchParams.has('theme')) {
 		url.searchParams.delete('theme')
 		history.replaceState(history.state, '', url)
 	}
+	if (next === preference) return
+	preference = next
 	if (!signedIn) {
 		try {
 			sessionStorage.setItem(VISIT, next)
