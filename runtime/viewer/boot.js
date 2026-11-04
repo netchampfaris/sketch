@@ -241,10 +241,12 @@ let copyHints = null
 const ownerCopy = () => Boolean(copyHints?.owner)
 const reloadCopy = () => Boolean(copyHints?.reloads)
 
-// The statuses that leave the page empty. `ok` and `errors` both mounted the
-// Prototype, so their paint is the Prototype's own and this must not replace it.
+// The statuses that can leave the page empty. `errors` mounted the Prototype,
+// but an error thrown while it first rendered leaves #app with nothing in it,
+// and the guard in paintStatus keeps any page that did render.
 const STATUS_SHAPE = {
   empty: 'empty',
+  errors: 'failed',
   'compile-failed': 'failed',
   'link-failed': 'failed',
   'boot-failed': 'failed',
@@ -254,6 +256,7 @@ const FAILED_HEADING = {
   'compile-failed': 'This prototype did not compile',
   'link-failed': 'This prototype did not link',
   'boot-failed': 'This prototype did not start',
+  errors: 'This prototype did not start',
 }
 
 // Enough to name the mistake. The rest is in window.__sketch, which is what
