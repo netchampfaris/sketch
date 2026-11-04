@@ -122,18 +122,13 @@ function applyTheme(data) {
   paintTheme()
 }
 
-// The Prototype chose a theme. Its own choice outranks a theme in the link from now on, so the parameter leaves the
-// URL and a reload keeps what was picked. The shell saves it (runtime/shell/theme.ts): this frame holds no credential.
+// The Prototype chose a theme. The shell saves it and takes the link's theme out of its own URL (runtime/shell/theme.ts):
+// this frame holds no credential.
 function saveTheme(value) {
   const next = choice(value)
   // frappe-ui writes back what it read when it starts: that is no choice.
   if (!next || next === preference) return
   preference = next
-  const url = new URL(location.href)
-  if (url.searchParams.has('theme')) {
-    url.searchParams.delete('theme')
-    history.replaceState(history.state, '', url)
-  }
   if (parent !== window) parent.postMessage({ channel: 'sketch-shell', type: 'theme:choose', data: { theme: next } }, '*')
 }
 
