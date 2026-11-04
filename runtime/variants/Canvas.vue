@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // The canvas: one collection at a time (a variant set, a page's states, or one option's component states), picked in "Show".
 // The grid is laid out once per view (see layout.ts); zoom and pan only transform it.
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
-import { Button, Dropdown, Tooltip } from 'frappe-ui'
+import { useElementBounding, useElementSize, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
+import { Button, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
@@ -13,8 +13,6 @@ import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { fullOptionId, layoutPick } from './layout'
 import type { PageModel, StateInfo, TileBox } from './layout'
-import { menuHost } from './menus'
-import { menuBind } from '../shared/menus'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
@@ -150,6 +148,17 @@ const pz = usePanZoom(() => vp.value)
 const zoomPill = ref<HTMLElement | null>(null)
 const { width: zoomW } = useElementSize(zoomPill, { width: 0, height: 0 }, { box: 'border-box' })
 watch(zoomW, (w) => (bridge.corner = w ? w + 8 : 0), { immediate: true })
+// The shell draws the pins over this frame, so it leaves them out of the title and zoom pills' boxes: the pills stay on
+// top, to the eye and to the pointer.
+const titlePill = ref<HTMLElement | null>(null)
+const pillBoxes = [titlePill, zoomPill].map((el) => ({ el, box: useElementBounding(el) }))
+watchEffect(() => {
+  bridge.pills = pillBoxes.flatMap(({ el, box }) =>
+    el.value && box.width.value
+      ? [{ x: box.left.value, y: box.top.value, w: box.width.value, h: box.height.value, r: parseFloat(getComputedStyle(el.value).borderTopLeftRadius) || 0 }]
+      : [],
+  )
+})
 const { view } = pz
 // Captions never grow past their size at the fit zoom, so the room the layout gave them always holds.
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
@@ -395,10 +404,11 @@ function measureDots() {
   dotMix.value = Math.round(Math.min(1, 0.1 / Math.max(ratio - 1, 0.01)) * 100)
 }
 const pct = computed(() => Math.round(view.z * 100))
-const zoomOptions = [
-  { label: 'Zoom to fit', onClick: () => applyFit() },
-  ...[0.5, 1, 2].map((z) => ({ label: `${z * 100}%`, onClick: () => pz.zoomTo(z) })),
-]
+// The zoom menu is the shell's (runtime/shell/ZoomMenu.vue), drawn over its panel: the % asks for it at its box.
+function askZoom(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  bridge.zoomMenu?.({ x: r.left, y: r.top, w: r.width, h: r.height })
+}
 
 // ---- Keys, scroll lock, focus
 useEventListener(document, 'keydown', (e: KeyboardEvent) => {
@@ -434,6 +444,7 @@ onMounted(() => {
     const t = layout.value.tiles.find((x) => x.id === id)
     if (t) openStates(t)
   }
+  bridge.zoomTo = (to) => (to === 'fit' ? applyFit() : pz.zoomTo(Number(to)))
   document.body.style.overflow = 'hidden'
   if (vp.value) detach = pz.attach(vp.value)
   root.value?.focus()
@@ -448,6 +459,8 @@ onBeforeUnmount(() => {
   bridge.reveal = null
   bridge.openTile = null
   bridge.statesTile = null
+  bridge.zoomTo = null
+  bridge.pills = []
   bridge.empty = null
   bridge.model = null
   bridge.tiles = []
@@ -620,8 +633,9 @@ watch(
       </div>
 
       <!-- Top left: the way back, and what the canvas shows. On a phone the name opens the Show list. It sits above the
-           tiles and pins (z-10 is the panel's; a box or menu opens in a layer above the canvas). -->
+           tiles, and the shell's pins go under it (`bridge.pills`). -->
       <div
+        ref="titlePill"
         data-ui
         data-canvas-title
         class="absolute left-3 top-3 z-10 flex min-w-0 items-center gap-1 rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
@@ -674,9 +688,16 @@ watch(
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
         <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
-        <Dropdown v-bind="menuBind('zoom')" :portal-to="menuHost()" :options="zoomOptions">
-          <Button variant="ghost" class="w-14 text-p-sm tabular-nums" aria-label="Zoom">{{ pct }}%</Button>
-        </Dropdown>
+        <Button
+          variant="ghost"
+          class="w-14 text-p-sm tabular-nums"
+          aria-label="Zoom"
+          aria-haspopup="menu"
+          :aria-expanded="bridge.zoomOpen"
+          :data-state="bridge.zoomOpen ? 'open' : 'closed'"
+          @click="askZoom"
+          >{{ pct }}%</Button
+        >
         <Button variant="ghost" icon="lucide-plus" aria-label="Zoom in" @click="pz.zoomBy(1.25)" />
       </div>
     </div>

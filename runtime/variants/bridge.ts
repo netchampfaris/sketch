@@ -9,7 +9,7 @@ import { ofOption, slugOf } from './state'
 // A canvas tile in plain data, the tile's words (whereOf, tileLabel) and sameTile live in runtime/shared/tiles.ts,
 // which the Viewer shell shares.
 import { sameTile, type TileHit, type TileRef, type TileSpot } from '../shared/tiles'
-import type { CanvasPage, CanvasTile, EmptyView, FromFrame, PickItem as ShownItem } from '../shared/protocol'
+import type { CanvasPage, CanvasTile, EmptyView, FromFrame, Pill, PickItem as ShownItem, ZoomTo } from '../shared/protocol'
 
 export { sameTile, tileLabel, whereOf } from '../shared/tiles'
 export type { TileHit, TileRef, TileSpot }
@@ -21,8 +21,10 @@ export const bridge = shallowReactive({
   // The pick on show, and the zoom.
   view: '',
   zoom: 1,
-  // How much of the bottom-right corner the zoom pill takes, with its gap.
+  // How much of the bottom-right corner the zoom pill takes, with its gap, and the title and zoom pills' boxes: the
+  // shell's pins go under them.
   corner: 0,
+  pills: [] as Pill[],
   model: null as PageModel[] | null,
   tiles: [] as TileBox[],
   // The pan (the zoom is above), and the Show list's rows, for the Viewer shell, which draws the pins and the panel.
@@ -53,6 +55,11 @@ export const bridge = shallowReactive({
   // and `showOpen` is whether it is open, for the name's pressed look.
   showMenu: null as ((rect: { x: number; y: number; w: number; h: number }, open: boolean) => void) | null,
   showOpen: false,
+  // The zoom menu is the shell's too, so it draws over the panel: the % asks for it at its box, `zoomMenu` is whether it
+  // is open, and `zoomTo` is what is picked in it.
+  zoomMenu: null as ((rect: { x: number; y: number; w: number; h: number }) => void) | null,
+  zoomOpen: false,
+  zoomTo: null as ((to: ZoomTo) => void) | null,
 })
 
 // ---- Tiles as data
@@ -114,7 +121,7 @@ export const itemsOf = (items: PickItem[]): ShownItem[] =>
 
 // What the canvas shows now, whole. The pages are left out until the canvas has looked: none is not an empty list.
 export function canvasReport(): FromFrame['canvas'] {
-  const at = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner, empty: bridge.open ? bridge.empty : null }
+  const at = { open: bridge.open, phone: bridge.phone, view: String(bridge.view ?? ''), zoom: bridge.zoom, pan: bridge.pan, corner: bridge.corner, pills: bridge.pills, empty: bridge.open ? bridge.empty : null }
   if (!bridge.open) return at
   const pages = pagesOf(bridge.model)
   return { ...at, tiles: tilesOf(bridge.tiles, bridge.view), items: itemsOf(bridge.items), ...(pages ? { pages } : {}) }

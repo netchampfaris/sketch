@@ -2,14 +2,14 @@
 // What the Viewer shell draws over the frame's canvas: the pins on the tiles, the panel on the right (or its "Show
 // panel" button), an option's empty States view with Ask agent, and on a phone the Show list under the title pill's
 // name, all in the places the in-frame canvas had them (runtime/variants/Canvas.vue). The canvas itself and its title
-// and zoom pills stay in the frame.
+// and zoom pills stay in the frame; the zoom menu is ZoomMenu.vue.
 //
 // The pins sit in one layer moved by the canvas's pan and zoom (a single CSS transform), each pin at its place on
 // its tile in the canvas's own coordinates, so they stay on their tiles as the frame reports each frame of a pan.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { Button, Popover, Tooltip, toast } from 'frappe-ui'
-import type { Rect } from '../shared/protocol'
+import type { Pill, Rect } from '../shared/protocol'
 import CanvasPanel from './CanvasPanel.vue'
 import ShowList from './ShowList.vue'
 import FrameAnchor from './FrameAnchor.vue'
@@ -86,6 +86,13 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 })
 
 const inv = computed(() => 1 / canvas.zoom)
+// The frame's title and zoom pills sit over the pins, as they did when both were in the frame: the pins' layer is cut
+// out where the pills are, rounded as they are, so a pin under one neither shows nor takes the pointer.
+const roundRect = ({ x, y, w, h, r }: Pill) => {
+	const k = Math.min(r, w / 2, h / 2)
+	return `M${x + k} ${y}H${x + w - k}A${k} ${k} 0 0 1 ${x + w} ${y + k}V${y + h - k}A${k} ${k} 0 0 1 ${x + w - k} ${y + h}H${x + k}A${k} ${k} 0 0 1 ${x} ${y + h - k}V${y + k}A${k} ${k} 0 0 1 ${x + k} ${y}Z`
+}
+const pinClip = computed(() => (canvas.pills.length ? `path(evenodd, "M-1e5 -1e5H1e5V1e5H-1e5Z${canvas.pills.map(roundRect).join('')}")` : undefined))
 
 // One option's States view with nothing declared: one line and a way to ask the agent for it. The note is the one the
 // Note tool makes, on the option's own tile of its set; while it waits for the agent the view says so. The note is on
@@ -119,7 +126,7 @@ const undoAsk = () => pendingNote.value && removeNote(pendingNote.value)
 <template>
 	<template v-if="canvas.open">
 		<!-- The pins on the tiles: one layer under the pan and zoom, below the panel and the toolbar. Only the pins take the pointer. -->
-		<div class="pointer-events-none absolute inset-0 overflow-hidden">
+		<div class="pointer-events-none absolute inset-0 overflow-hidden" :style="{ clipPath: pinClip }">
 			<div
 				class="absolute left-0 top-0 origin-top-left"
 				:style="{ transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.zoom})`, '--inv': inv }"

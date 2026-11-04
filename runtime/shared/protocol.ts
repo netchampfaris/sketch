@@ -189,6 +189,14 @@ const demoEntry = (v: unknown): DemoEntry | null =>
 			})
 		: null
 
+// A canvas pill's box and its corner radius.
+export type Pill = Rect & { r: number }
+const pill = (v: unknown): Pill | null => {
+	const b = rect(v)
+	const r = isObj(v) ? num(v.r) : null
+	return b && r !== null ? { ...b, r: Math.max(0, r) } : null
+}
+
 export type Redline = Rect & { label: string; lx: number; ly: number }
 const redline = (v: unknown): Redline | null => {
 	const r = rect(v)
@@ -222,8 +230,8 @@ export type FromFrame = {
 	demo: { entries: DemoEntry[] }
 	rects: { req: string; map: Record<string, Rect | null> }
 	track: { map: Record<string, Rect | null>; labels: Record<string, string> }
-	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, and how wide the zoom pill in the bottom-right
-	// corner is. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
+	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, how wide the zoom pill in the bottom-right
+	// corner is, and the boxes of the title and zoom pills (`pills`, with their corner radius), which the pins go under. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
 	// come only when they changed: the pan and zoom alone come once per frame while they move.
 	canvas: {
 		open: boolean
@@ -232,6 +240,7 @@ export type FromFrame = {
 		zoom: number
 		pan: { x: number; y: number }
 		corner: number
+		pills: Pill[]
 		tiles?: CanvasTile[]
 		pages?: CanvasPage[]
 		items?: PickItem[]
@@ -239,6 +248,8 @@ export type FromFrame = {
 		empty?: EmptyView | null
 	}
 	'tile:menu': { tileId: string; rect: Rect }
+	// The zoom pill's %: open its menu at the button's box.
+	'zoom:menu': { rect: Rect }
 	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
 	'canvas:show': { rect: Rect; open: boolean }
 	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
@@ -555,6 +566,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			zoom: typeof d.zoom === 'number' && d.zoom > 0 ? num(Math.max(d.zoom, 0.01)) : null,
 			pan: point(d.pan),
 			corner: num(d.corner ?? 0),
+			pills: list(d.pills ?? [], 4, pill),
 		})
 		if (!base) return null
 		// Unreadable, it is no empty view: the canvas still draws.
@@ -568,6 +580,7 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 		return { ...some<typeof base & typeof parts>({ ...base, ...parts }), empty }
 	},
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
+	'zoom:menu': (d) => all({ rect: rect(d.rect) }),
 	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
 	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
 	'canvas:click': () => ({}),
@@ -645,12 +658,14 @@ export type ToFrame = {
 	'canvas:close': Obj
 	// Bring a tile into view, `fx, fy` being the spot on it as a fraction. The frame answers with `canvas:revealed`.
 	'canvas:reveal': { req: string; spot: TileSpot; fx: number; fy: number }
+	// The zoom menu's pick: fit the tiles, or a zoom.
+	'canvas:zoom': { to: ZoomTo }
 	// The tool picking tiles, '' while browsing: a click on a tile is then a `tile:pick`, not opening it live.
 	'canvas:tool': { tool: '' | 'comment' | 'note' }
 	// Where the shell's chrome sits, for the page's own chrome to keep clear of it. Any field may be left out.
 	// `busyTile` is the tile whose action the shell is saving and `menuTile` the one whose menu is open ('' for none);
 	// `landed` the option a write has just put in place, which the canvas rings once it is drawn; `showOpen` whether the
-	// phone's Show list is open.
+	// phone's Show list is open, `zoomMenu` whether the zoom menu is.
 	display: {
 		newOptions?: string[]
 		reserve?: number
@@ -659,6 +674,7 @@ export type ToFrame = {
 		menuTile?: string
 		landed?: { set: string; option: string }
 		showOpen?: boolean
+		zoomMenu?: boolean
 	}
 	// Sort and measure the Demo's rows again (the card opened, a row is hovered): the frame answers with `model`.
 	'model:measure': Obj
@@ -688,6 +704,8 @@ export type ToFrame = {
 	// and the elements each new one was made on (`bind`: tweak id -> ref).
 	'tweak:reapply': { tweaks: TweakSync[]; bind: Record<string, string> }
 }
+export const ZOOM_TO = ['fit', '0.5', '1', '2'] as const
+export type ZoomTo = (typeof ZOOM_TO)[number]
 export const TWEAK_OPS = ['clear', 'all', 'parent', 'child', 'find', 'select', 'highlight', 'refresh', 'keys'] as const
 export type TweakOp = (typeof TWEAK_OPS)[number]
 export type ClassEdit = { ref: string; classes: string[] }
@@ -749,6 +767,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	'canvas:open': (d) => some({ view: str(d.view, CAPS.route) }),
 	'canvas:close': () => ({}),
 	'canvas:reveal': (d) => all({ req: str(d.req, 40), spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy) }),
+	'canvas:zoom': (d) => all({ to: oneOf(d.to, ZOOM_TO) }),
 	'canvas:tool': (d) => all({ tool: oneOf(d.tool, ['', 'comment', 'note'] as const) }),
 	display: (d) =>
 		some({
@@ -759,6 +778,7 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 			menuTile: str(d.menuTile),
 			landed: isObj(d.landed) ? all({ set: str(d.landed.set), option: str(d.landed.option) }) : null,
 			showOpen: d.showOpen === undefined ? null : bool(d.showOpen),
+			zoomMenu: d.zoomMenu === undefined ? null : bool(d.zoomMenu),
 		}),
 	'model:measure': () => ({}),
 	'tile:open': (d) => all({ tileId: str(d.tileId) }),
