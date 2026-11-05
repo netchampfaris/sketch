@@ -96,8 +96,7 @@ onMounted(() => agentToken.reload())
 
     <template v-else>
       <!--
-        Step 1 is the Copy button itself. Once an agent connected, it turns
-        subtle: copying again is for a second app, not the next thing to do.
+        Step 1 is the Copy button itself.
       -->
       <ol class="mt-6 space-y-3 text-p-sm text-ink-gray-7">
         <li class="flex items-center gap-2">
@@ -112,7 +111,7 @@ onMounted(() => agentToken.reload())
             :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
             :label="copied ? 'Copied' : 'Copy setup prompt'"
             theme="gray"
-            :variant="connected ? 'subtle' : 'solid'"
+            variant="subtle"
             @click="copy"
           />
         </li>
