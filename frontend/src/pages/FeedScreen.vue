@@ -41,10 +41,10 @@ const items = computed(() => publicPrototypes.data ?? [])
  * its own period and phase, so they never move in step.
  */
 const floating = [
-  { place: 'sm:left-[3%] sm:top-[24%] lg:left-[5%] lg:top-[30%]', period: '8s', phase: '0s' },
-  { place: 'sm:right-[3%] sm:top-[58%] lg:right-[5%] lg:top-[58%]', period: '9.5s', phase: '-3s' },
-  { place: 'sm:left-[8%] sm:top-[66%] lg:left-[12%] lg:top-[68%]', period: '7s', phase: '-5s' },
-  { place: 'sm:right-[8%] sm:top-[16%] lg:right-[12%] lg:top-[18%]', period: '10s', phase: '-1.5s' },
+  { place: 'sm:block sm:left-[3%] sm:top-[24%] lg:left-[5%] lg:top-[30%]', period: '8s', phase: '0s' },
+  { place: 'sm:block sm:right-[3%] sm:top-[58%] lg:right-[5%] lg:top-[58%]', period: '9.5s', phase: '-3s' },
+  { place: 'sm:block sm:left-[8%] sm:top-[66%] lg:left-[12%] lg:top-[68%]', period: '7s', phase: '-5s' },
+  { place: 'sm:block sm:right-[8%] sm:top-[16%] lg:right-[12%] lg:top-[18%]', period: '10s', phase: '-1.5s' },
   { place: 'hidden lg:block lg:left-[17%] lg:top-[12%]', period: '8.5s', phase: '-6s' },
   { place: 'hidden lg:block lg:right-[17%] lg:top-[74%]', period: '6.5s', phase: '-2.5s' },
 ].map((spot, index) => ({ ...spot, app: heroApps[index] }))
@@ -153,7 +153,7 @@ onMounted(() => {
       v-for="spot in floating"
       :key="spot.app.name"
       :aria-label="`Works with ${spot.app.name}`"
-      class="agent-drift absolute hidden size-8 text-ink-gray-4 sm:block dark:text-ink-gray-5"
+      class="agent-drift absolute hidden size-8 text-ink-gray-4 dark:text-ink-gray-5"
       :class="spot.place"
       role="img"
       :style="{ animationDuration: spot.period, animationDelay: spot.phase }"
