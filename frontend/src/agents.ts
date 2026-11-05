@@ -47,10 +47,10 @@ export interface PickerApp {
 }
 
 export const pickerApps: PickerApp[] = [
-  { id: 'claude-code', name: 'Claude Code', logo: claude, hint: 'Paste it into Claude Code in your terminal.' },
-  { id: 'cursor', name: 'Cursor', logo: cursor, hint: "Paste it into Cursor's agent chat." },
+  { id: 'claude-code', name: 'Claude Code', logo: claude, hint: 'Paste it into Claude Code.' },
+  { id: 'cursor', name: 'Cursor', logo: cursor, hint: 'Paste it into Cursor.' },
   { id: 'codex', name: 'Codex', logo: codex, hint: 'Paste it into Codex.' },
-  { id: 'vscode', name: 'VS Code', logo: vscode, hint: 'Paste it into Copilot Chat in agent mode.' },
+  { id: 'vscode', name: 'VS Code', logo: vscode, hint: 'Paste it into Copilot Chat in VS Code.' },
   {
     id: 'other',
     name: 'Other',

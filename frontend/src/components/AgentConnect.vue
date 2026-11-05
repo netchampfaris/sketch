@@ -171,7 +171,6 @@ onMounted(() => agentToken.reload())
             :disabled="!token"
             :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
             :label="copied ? 'Copied' : 'Copy setup prompt'"
-            size="md"
             theme="gray"
             :variant="connected ? 'subtle' : 'solid'"
             @click="copy"
@@ -180,7 +179,7 @@ onMounted(() => agentToken.reload())
         <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>{{ app.hint }}</li>
         <li class="flex gap-2">
           <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">3</span>
-          {{ connected ? 'It shows up above when it connects.' : "Come back here. This page shows when it's connected." }}
+          Start building there, and watch it live here.
         </li>
       </ol>
 

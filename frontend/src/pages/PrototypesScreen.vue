@@ -298,8 +298,9 @@ onMounted(() => {
       one too: hiding it while the list was empty left a user with no way to make one (finding 4.5), so the empty state
       below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
 
-      Inert until an agent connects: a Prototype made before that is a page nothing can write to. `aria-disabled`, not
-      `disabled`, so the button keeps its tab stop and its touch target, and the tooltip saying why still opens.
+      Hidden on the empty gallery until an agent connects: the setup below is the one thing to do there, and a
+      Prototype made before that is a page nothing can write to. With cards already here (after a token reset) it
+      stays, inert, with a tooltip saying why. `aria-disabled`, not `disabled`, so the tooltip still opens.
     -->
     <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <TabButtons v-if="showTabs" v-model="tabModel" :options="tabs" size="sm">
@@ -317,7 +318,7 @@ onMounted(() => {
         >
           <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
         </TextInput>
-        <Tooltip :disabled="connected" text="Connect your agent first">
+        <Tooltip v-if="connected || !setup" :disabled="connected" text="Connect your agent first">
           <Button
             :aria-disabled="!connected || undefined"
             :class="{ 'cursor-default !bg-surface-gray-2 !text-ink-gray-4 hover:!bg-surface-gray-2 active:!bg-surface-gray-2': !connected }"
