@@ -3,14 +3,40 @@
 
 import hashlib
 import hmac
+import json
 import secrets
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import get_datetime, now_datetime, pretty_date, time_diff_in_seconds
 from frappe.utils.password import get_decrypted_password
 
 TOKEN_PREFIX = "sk_"
+
+#: What an MCP client calls itself in `initialize`'s `clientInfo.name`, folded
+#: to lower case, and the name a person knows the app by. The one place the
+#: mapping lives: the gallery and Settings print these names as they come.
+CLIENT_NAMES = {
+	"claude-code": "Claude Code",
+	"cursor": "Cursor",
+	"codex-mcp-client": "Codex",
+	"codex": "Codex",
+	"visual studio code": "VS Code",
+	"windsurf": "Windsurf",
+	"opencode": "OpenCode",
+}
+
+#: An unknown client keeps its own name, cut to this many characters.
+CLIENT_NAME_LIMIT = 40
+
+#: Record one app at most once a minute. A client may send `initialize` on
+#: every reconnect, and a row write each time buys nothing the screen shows.
+CLIENT_INTERVAL_SECONDS = 60
+
+#: The most apps one row keeps. The name comes from the client, so the map is
+#: capped rather than grown by whatever a client chooses to call itself.
+CLIENT_LIMIT = 10
 
 
 class SketchToken(Document):
@@ -22,6 +48,7 @@ class SketchToken(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		clients: DF.JSON | None
 		last_used: DF.Datetime | None
 		token: DF.Password
 		token_hash: DF.Data | None
@@ -128,8 +155,57 @@ def regenerate(user: str | None = None) -> str:
 	# there claims a live connection that is dead, on the one screen the user
 	# opens to fix it. The next good /mcp request stamps it again.
 	doc.last_used = None
+	# The apps go with it, for the same reason: each one holds the dead token.
+	doc.clients = None
 	doc.save(ignore_permissions=True)
 	return token
+
+
+def record_client(user: str, client_info) -> None:
+	"""Remember which app just connected, from `initialize`'s `clientInfo`.
+
+	Cheap on purpose, like `sketch.auth._stamp_last_used`: one row read, and a
+	direct write only when this app is new or was last seen over a minute ago.
+	`update_modified=False` keeps `modified` for real token changes.
+
+	A name is a nicety, so no failure of it reaches the agent.
+	"""
+	info = client_info if isinstance(client_info, dict) else {}
+	name = client_display_name(info.get("name"))
+	if not name:
+		return
+
+	try:
+		row = frappe.db.get_value("Sketch Token", {"user": user}, ["name", "clients"], as_dict=True)
+		if not row:
+			return
+
+		clients = _load_clients(row.clients)
+		seen = clients.get(name)
+		now = now_datetime()
+		if seen and time_diff_in_seconds(now, seen) < CLIENT_INTERVAL_SECONDS:
+			return
+
+		clients[name] = str(now)
+		newest = sorted(clients.items(), key=lambda item: item[1], reverse=True)[:CLIENT_LIMIT]
+		frappe.db.set_value("Sketch Token", row.name, "clients", json.dumps(dict(newest)), update_modified=False)
+	except Exception:
+		frappe.logger("sketch.auth").warning("could not record the MCP client", exc_info=True)
+
+
+def clients(user: str) -> list[dict]:
+	"""The apps that used this user's token, newest first, as the screens print them."""
+	stored = frappe.db.get_value("Sketch Token", {"user": user}, "clients")
+	rows = sorted(_load_clients(stored).items(), key=lambda item: item[1], reverse=True)
+	return [{"name": name, "last_used": seen, "last_used_pretty": pretty_date(seen)} for name, seen in rows]
+
+
+def client_display_name(raw) -> str | None:
+	"""The name a person knows the app by, or None for a client with no name."""
+	if not isinstance(raw, str) or not raw.strip():
+		return None
+	raw = raw.strip()
+	return CLIENT_NAMES.get(raw.lower(), raw[:CLIENT_NAME_LIMIT])
 
 
 def resolve(token: str) -> str | None:
@@ -164,3 +240,16 @@ def resolve(token: str) -> str | None:
 		return None
 
 	return name
+
+
+def _load_clients(stored) -> dict[str, str]:
+	"""The stored map, or an empty one. Frappe hands a JSON field back as text."""
+	if not stored:
+		return {}
+	try:
+		value = json.loads(stored) if isinstance(stored, str) else stored
+	except ValueError:
+		return {}
+	if not isinstance(value, dict):
+		return {}
+	return {str(name): str(get_datetime(seen)) for name, seen in value.items() if seen}

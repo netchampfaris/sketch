@@ -361,6 +361,7 @@ def get_session() -> dict:
 		"has_token": bool(row),
 		"last_used": last_used,
 		"last_used_pretty": pretty_date(last_used) if last_used else None,
+		"clients": sketch_token.clients(user) if row else [],
 		"mcp_endpoint": _public_base() + MCP_PATH,
 		"logout_url": "/api/method/logout",
 	}
@@ -1039,7 +1040,8 @@ def get_agent_token() -> dict:
 	(review 3.2). The Settings screen posts (`frontend/src/store.ts`).
 
 	`last_used` is read after get_or_create, so a token minted on this call
-	reports null. `sketch.auth` stamps the field on a good `/mcp` request.
+	reports null. `sketch.auth` stamps the field on a good `/mcp` request, and
+	`initialize` adds the app to `clients`.
 	"""
 	token = sketch_token.get_or_create(frappe.session.user)
 	last_used = frappe.db.get_value("Sketch Token", {"user": frappe.session.user}, "last_used")
@@ -1049,6 +1051,7 @@ def get_agent_token() -> dict:
 		"endpoint": _public_base() + MCP_PATH,
 		"last_used": last_used,
 		"last_used_pretty": pretty_date(last_used) if last_used else None,
+		"clients": sketch_token.clients(frappe.session.user),
 	}
 
 

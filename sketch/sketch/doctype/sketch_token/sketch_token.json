@@ -10,7 +10,8 @@
   "user",
   "token",
   "token_hash",
-  "last_used"
+  "last_used",
+  "clients"
  ],
  "fields": [
   {
@@ -45,11 +46,18 @@
    "fieldtype": "Datetime",
    "label": "Last Used",
    "read_only": 1
+  },
+  {
+   "description": "Which agent apps used this token: display name to the last time each one sent an MCP initialize. Written by sketch_token.record_client, at most once a minute per app.",
+   "fieldname": "clients",
+   "fieldtype": "JSON",
+   "label": "Clients",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-01 00:00:00.000000",
+ "modified": "2026-11-05 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sketch",
  "name": "Sketch Token",

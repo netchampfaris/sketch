@@ -34,6 +34,7 @@ import frappe
 
 import sketch
 from sketch.mcp import tools as surface
+from sketch.sketch.doctype.sketch_token import sketch_token
 
 MODERN_VERSION = "2026-07-28"
 LEGACY_VERSION = "2025-06-18"
@@ -264,10 +265,16 @@ def server_info() -> dict:
 
 
 def handle_initialize(params: dict, modern: bool) -> dict:
-	"""Legacy only. Echo the requested version, or refuse it."""
+	"""Legacy only. Echo the requested version, or refuse it.
+
+	It also records which app connected, so the gallery and Settings can say
+	"Connected · Cursor". `initialize` is the one message that names the client.
+	"""
 	requested = params.get("protocolVersion")
 	if requested and requested not in SUPPORTED_VERSIONS:
 		raise unsupported_version(requested)
+
+	sketch_token.record_client(frappe.session.user, params.get("clientInfo"))
 
 	return {
 		"protocolVersion": requested or LEGACY_VERSION,
