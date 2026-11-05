@@ -3,8 +3,8 @@
  * One agent app's mark, sized by the caller and coloured by `currentColor`.
  *
  * `v-html` is safe here: `svg` is one of the bundled files in
- * `assets/agents/`, never user input. A lucide class stands in for the rows
- * that have no single brand (Other, claude.ai).
+ * `assets/agents/`, never user input. A lucide class stands in for the row
+ * that has no single brand (Other).
  */
 defineProps<{ svg?: string; icon?: string }>()
 </script>

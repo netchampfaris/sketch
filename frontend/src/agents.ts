@@ -24,9 +24,8 @@ export interface HeroApp {
 }
 
 /**
- * The apps on the feed hero, in the order they float. claude.ai is not one: it
- * cannot connect. Nor is OpenCode: its mark is a plain frame, and at 28px it
- * read as an empty box, not an app.
+ * The apps on the feed hero, in the order they float. OpenCode is not one: its
+ * mark is a plain frame, and at 28px it read as an empty box, not an app.
  */
 export const heroApps: HeroApp[] = [
   { name: 'Claude Code', logo: claude },
@@ -39,11 +38,11 @@ export const heroApps: HeroApp[] = [
 export interface PickerApp {
   id: string
   name: string
-  /** A brand mark, or a lucide class for the two rows that have no single brand. */
+  /** A brand mark, or a lucide class for Other, which has no single brand. */
   logo?: string
   icon?: string
-  /** Where to paste the prompt. Null for an app that cannot connect. */
-  hint: string | null
+  /** Where to paste the prompt. */
+  hint: string
 }
 
 export const pickerApps: PickerApp[] = [
@@ -57,9 +56,6 @@ export const pickerApps: PickerApp[] = [
     icon: 'lucide-bot',
     hint: "Paste it into your agent's chat. Any agent that can add an MCP server works.",
   },
-  // A claude.ai custom connector sends a URL only, with no Authorization
-  // header, so it cannot reach /mcp. The row says so where the user looks.
-  { id: 'claude-ai', name: 'claude.ai', icon: 'lucide-globe', hint: null },
 ]
 
 const APP_KEY = 'sketch.agent-app'
@@ -72,7 +68,10 @@ function storedApp(): string {
   }
 }
 
-/** The picked app's id. Remembered per browser; Claude Code until the user picks. */
+/**
+ * The picked app's id. Remembered per browser; Claude Code until the user
+ * picks, and for a stored id no longer in the picker (claude.ai was once).
+ */
 export const pickedApp = ref(pickerApps.some((app) => app.id === storedApp()) ? storedApp() : 'claude-code')
 
 export function pickApp(id: string): void {

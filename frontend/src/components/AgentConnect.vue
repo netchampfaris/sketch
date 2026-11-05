@@ -55,8 +55,6 @@ async function moveChip(event: KeyboardEvent): Promise<void> {
   group?.querySelectorAll<HTMLElement>('[role="radio"]')[index]?.focus()
 }
 
-const link = 'rounded-2 text-ink-gray-9 underline underline-offset-2 focus-visible:ring-0 focus-visible:focus-ring'
-
 const copied = ref(false)
 let copiedTimer: number | undefined
 
@@ -125,8 +123,7 @@ onMounted(() => agentToken.reload())
 
     <template v-else>
       <!--
-        One row of chips, wrapping on a phone. The six need about 610px, which
-        is why the setup column is 620px wide. The picked chip keeps a border,
+        One row of chips, wrapping on a phone. The picked chip keeps a border,
         the strongest in the row, so it reads as chosen, not as a pressed button.
       -->
       <div aria-label="Your agent app" class="mt-6 flex flex-wrap gap-1.5" role="radiogroup" @keydown="moveChip">
@@ -148,18 +145,12 @@ onMounted(() => agentToken.reload())
         </Button>
       </div>
 
-      <!-- The two names are links that pick their chip. -->
-      <p v-if="!app.hint" class="mt-6 text-p-sm text-ink-gray-7">
-        claude.ai can't connect to Sketch yet. Use
-        <button :class="link" type="button" @click="pickApp('claude-code')">Claude Code</button> or
-        <button :class="link" type="button" @click="pickApp('cursor')">Cursor</button> instead.
-      </p>
 
       <!--
         Step 1 is the Copy button itself. Once an agent connected, it turns
         subtle: copying again is for a second app, not the next thing to do.
       -->
-      <ol v-else class="mt-6 space-y-3 text-p-sm text-ink-gray-7">
+      <ol class="mt-6 space-y-3 text-p-sm text-ink-gray-7">
         <li class="flex items-center gap-2">
           <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">1</span>
           <!--
