@@ -17,6 +17,9 @@ import { fillPrompt } from '../setupPrompt'
 import { agentToken, errorText, method, session } from '../store'
 import type { AgentToken } from '../types'
 
+/** About shows the line alone: no ⋯, since resetting a token is Settings' job. */
+const props = defineProps<{ readOnly?: boolean }>()
+
 const names = computed(() => clients.value.map((client) => client.name))
 
 const text = computed(() => {
@@ -128,7 +131,7 @@ async function reset(): Promise<void> {
       <span aria-live="polite" class="truncate" :title="text">{{ text }}</span>
     </p>
     <!-- Only once an app connected: before that, there is nothing a reset would fix. -->
-    <Dropdown v-if="connected || wasReset" align="end" :options="menu">
+    <Dropdown v-if="!props.readOnly && (connected || wasReset)" align="end" :options="menu">
       <Button ref="options" icon="lucide-ellipsis" label="Connection options" theme="gray" variant="ghost" />
     </Dropdown>
   </div>

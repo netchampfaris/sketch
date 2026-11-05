@@ -5,8 +5,8 @@
 
 It replaces `/help`, which was a server-rendered symptom list: four client
 config keys, three `/mcp` error codes and a claude.ai warning. The page a
-stranger follows off the feed has one job, which is to get them signed in and
-connected, so /about is three steps and nothing else
+stranger follows off the feed says what Sketch is, how to start (the setup's
+own three steps) and what a prototype can do
 (`frontend/src/pages/AboutScreen.vue`).
 
 It is a route of the SPA, not a `www` template, so the cases here check the

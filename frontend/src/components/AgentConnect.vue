@@ -3,9 +3,9 @@
  * Connect your agent: the one setup block, on the empty gallery and on
  * Settings (decision 87).
  *
- * Top to bottom, 24px apart: the status line, three steps whose first is the
- * Copy button itself, and the prompt folded away behind "See what your agent
- * will read". One prompt works in every agent app (`setupPrompt.ts`), so the
+ * Top to bottom, 24px apart: the status line, the three steps
+ * (`SetupSteps.vue`, the Copy button in the first), and the prompt folded away
+ * behind "See what your agent will read". One prompt works in every agent app (`setupPrompt.ts`), so the
  * block never asks which one the user has.
  *
  * Mounting it reads `get_agent_token`, which mints the token on first read.
@@ -17,38 +17,18 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import AgentStatus from './AgentStatus.vue'
-import { connected, waiting } from '../agents'
+import CopyPromptButton from './CopyPromptButton.vue'
+import SetupSteps from './SetupSteps.vue'
+import { connected } from '../agents'
 import { usePoll } from '../poll'
 import { fillPrompt } from '../setupPrompt'
-import { agentToken, copyText } from '../store'
+import { agentToken } from '../store'
 
 const token = computed(() => agentToken.data?.token ?? '')
 const prompt = computed(() => fillPrompt(token.value, agentToken.data?.endpoint ?? ''))
 
 /** A failed first read with no token in hand. A failed poll after that keeps the block as it was. */
 const failed = computed(() => Boolean(agentToken.error) && !token.value)
-
-const copied = ref(false)
-let copiedTimer: number | undefined
-
-/**
- * "Copied" holds for two seconds, then the status turns to waiting. `copyText`
- * shows its own error toast and rethrows (store.ts), so a refused copy changes
- * nothing here.
- */
-async function copy(): Promise<void> {
-  try {
-    await copyText(prompt.value)
-  } catch {
-    return
-  }
-  copied.value = true
-  window.clearTimeout(copiedTimer)
-  copiedTimer = window.setTimeout(() => {
-    copied.value = false
-    if (!connected.value) waiting.value = true
-  }, 2000)
-}
 
 const open = ref(false)
 const revealed = ref(false)
@@ -95,32 +75,9 @@ onMounted(() => agentToken.reload())
     />
 
     <template v-else>
-      <!--
-        Step 1 is the Copy button itself.
-      -->
-      <ol class="mt-6 space-y-3 text-p-sm text-ink-gray-7">
-        <li class="flex items-center gap-2">
-          <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">1</span>
-          <!--
-            Disabled until the token lands. A copy sent early carries the
-            literal `<token>` placeholder, and the agent then writes a config
-            that fails with a 401 the user cannot explain.
-          -->
-          <Button
-            :disabled="!token"
-            :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
-            :label="copied ? 'Copied' : 'Copy setup prompt'"
-            theme="gray"
-            variant="subtle"
-            @click="copy"
-          />
-        </li>
-        <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>Paste it into your agent.</li>
-        <li class="flex gap-2">
-          <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">3</span>
-          Start building there, and watch it live here.
-        </li>
-      </ol>
+      <SetupSteps class="mt-6">
+        <template #action><CopyPromptButton /></template>
+      </SetupSteps>
 
       <!-- Closed by default: the prompt is for the agent, and the token sits inside it. -->
       <div class="mt-6">

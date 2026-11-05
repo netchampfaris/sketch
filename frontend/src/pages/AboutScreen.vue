@@ -1,121 +1,139 @@
 <script setup lang="ts">
 /**
- * /about: what Sketch is, and the three steps to a first prototype.
+ * /about: what Sketch is, how to start, and what a prototype can do. Someone
+ * new, signed out or just signed in, should get all three in under a minute.
  *
- * It replaces /help. That page was a symptom list: four client config keys,
- * three `/mcp` error codes and a warning about claude.ai connectors. It read
- * as a manual for a product the reader had not started yet. The route a
- * stranger follows off the feed has one job, which is to get them signed in
- * and connected, so that is all this page does.
+ * It sits in the setup's centred column (`SettingsScreen.vue`, the empty
+ * gallery), and its steps are the setup's own (`SetupSteps.vue`), so the
+ * three screens tell one story. Plain words: no protocol names outside step
+ * 2, where they tell an agent's owner it will work.
  *
- * A Guest reads it with no session (`router.ts`, `meta.public`), so it asks
- * for nothing and every step is written for somebody who has not signed in.
+ * A Guest reads it with no session (`router.ts`, `meta.public`). For them
+ * step 1 is signing in. A signed-in user gets the real Copy button, so the
+ * page reads their token, minting it if this is the first place they open;
+ * that is the setup on screen, which is the only place a token is minted.
  *
- * The setup itself is not repeated here. Settings holds the prompt with the
- * user's own token in it (`SettingsScreen.vue`, SETUP_PROMPT), and a second
- * copy of it would drift from the first.
+ * Every row of "In a prototype" is a feature the Viewer has: Variants and the
+ * Demo pill (`runtime/shell/DemoPill.vue`), notes and comments
+ * (`runtime/shell/notes.ts`, `comments.ts`), and the Share dialog's public
+ * link and invites (`ShareDialog.vue`).
  */
-import { computed } from 'vue'
-import { Button, PageHeader } from 'frappe-ui'
-import { goToLogin, signedIn } from '../store'
+import { watch } from 'vue'
+import { Button } from 'frappe-ui'
+import AgentLogo from '../components/AgentLogo.vue'
+import AgentStatus from '../components/AgentStatus.vue'
+import CopyPromptButton from '../components/CopyPromptButton.vue'
+import SetupSteps from '../components/SetupSteps.vue'
+import { connected, heroApps } from '../agents'
+import { agentToken, continueWithProvider, prototypes, signedIn } from '../store'
 
-/** The three steps, in the order a new user takes them. */
-const steps = [
+const features = [
+  { icon: 'lucide-columns-2', title: 'Compare options', body: 'Your agent can put versions side by side, and you pick one.' },
   {
-    title: 'Sign in with GitHub',
-    body: 'The same button makes your account. Sketch asks for nothing else.',
+    icon: 'lucide-users',
+    title: 'Switch roles and states',
+    body: 'Try the page as a different person or in a different state from the Demo menu.',
   },
   {
-    title: 'Connect your agent',
-    body: 'Settings carries a setup prompt with your token in it. Paste that into your agent, and the agent does the rest.',
+    icon: 'lucide-message-square',
+    title: 'Leave notes',
+    body: 'Point at anything on the page and leave a note for your agent, or a comment for people.',
   },
-  {
-    title: 'Ask it to build something',
-    body: 'Your agent writes the files over MCP. Keep the prototype tab open: it reloads itself on every write.',
-  },
+  { icon: 'lucide-share-2', title: 'Share it', body: 'Make it public, or invite people to add their own versions.' },
 ]
 
-const action = computed(() =>
-  signedIn.value
-    ? { label: 'Open settings', icon: 'lucide-settings', route: '/settings' }
-    : { label: 'Sign in', icon: 'lucide-log-in', route: '' },
+/** The setup is the empty gallery for a user with nothing built, else Settings. The list loads at boot (`App.vue`). */
+function setupRoute(): string {
+  return prototypes.data?.length ? '/settings' : '/'
+}
+
+// The session can land after this page mounts (a direct load), so it waits for it.
+watch(
+  signedIn,
+  (yes) => {
+    if (yes && !agentToken.data?.token) agentToken.reload()
+  },
+  { immediate: true },
 )
 </script>
 
 <template>
-  <PageHeader class="border-b-0 pt-6">
-    <div class="min-w-0">
-      <h1 class="truncate text-2xl-semibold text-ink-gray-8">About Sketch</h1>
-    </div>
-  </PageHeader>
-
-  <!-- The reading measure, not the gallery's column: this page is prose. -->
-  <div class="max-w-[640px] px-3 pb-10 pt-6 sm:px-5">
-    <p class="text-p-base text-ink-gray-7">
-      Sketch renders frappe-ui prototypes that your own agent writes over MCP.
-      There is no editor here and no agent panel: you bring your own agent, and
-      Sketch gives it somewhere to write and something to render.
-    </p>
-
-    <section class="mt-10">
-      <h2 class="text-lg-semibold text-ink-gray-8">Start</h2>
-      <ol class="mt-4 flex flex-col gap-4">
-        <li v-for="(step, index) in steps" :key="step.title" class="flex gap-3">
-          <!--
-            The number is a fixed 24px circle, so a step with two lines of body
-            copy keeps its marker on the first line and every marker sits on
-            one x.
-          -->
-          <span
-            aria-hidden="true"
-            class="grid size-6 shrink-0 place-items-center rounded-full bg-surface-gray-2 text-xs-medium text-ink-gray-7"
-          >
-            {{ index + 1 }}
-          </span>
-          <div class="min-w-0">
-            <p class="text-base-medium text-ink-gray-8">{{ step.title }}</p>
-            <p class="mt-1 text-p-sm text-ink-gray-5">{{ step.body }}</p>
-          </div>
-        </li>
-      </ol>
-
-      <!--
-        One action, and it is the next step the reader can actually take: the
-        way in for a Guest, the token for somebody already signed in.
-      -->
-      <Button
-        v-if="signedIn"
-        class="mt-6"
-        :icon-left="action.icon"
-        :label="action.label"
-        :route="action.route"
-        theme="gray"
-        variant="subtle"
-      />
-      <Button
-        v-else
-        class="mt-6"
-        :icon-left="action.icon"
-        :label="action.label"
-        theme="gray"
-        variant="subtle"
-        @click="goToLogin"
-      />
-    </section>
-
-    <section class="mt-10">
-      <h2 class="text-lg-semibold text-ink-gray-8">Something is broken</h2>
-      <p class="mt-1 text-p-base text-ink-gray-7">
-        Open an issue on
-        <a
-          class="text-ink-blue-link hover:underline"
-          href="https://github.com/netchampfaris/sketch"
-          rel="noreferrer noopener"
-          target="_blank"
-          >the Sketch repository</a
-        >. Name your agent client and paste the error it printed. Never paste
-        your token.
+  <!-- The setup's column and top offset (`SettingsScreen.vue`), content left-aligned. -->
+  <div class="px-3 pb-10 pt-10 sm:px-5">
+    <div class="mx-auto max-w-[620px] py-6 sm:py-12">
+      <h1 class="text-2xl-semibold text-ink-gray-8">About Sketch</h1>
+      <p class="mt-3 text-p-base text-ink-gray-6">
+        Sketch shows the prototypes your AI agent builds. You describe what you want in your agent, and it shows up
+        here, live, for you and your team to try.
       </p>
-    </section>
+
+      <section class="mt-10">
+        <h2 class="text-base-semibold text-ink-gray-8">How it works</h2>
+        <SetupSteps class="mt-3" :signed-out="!signedIn">
+          <template #action>
+            <CopyPromptButton v-if="signedIn" />
+            <Button v-else label="Continue with GitHub" theme="gray" variant="subtle" @click="continueWithProvider" />
+          </template>
+        </SetupSteps>
+        <!-- The next thing to do, for someone signed in: the setup, or where it stands once done. -->
+        <template v-if="signedIn">
+          <AgentStatus v-if="connected" class="mt-6" read-only />
+          <Button
+            v-else
+            class="mt-6"
+            label="Go to setup"
+            :route="setupRoute()"
+            theme="gray"
+            variant="subtle"
+          />
+        </template>
+      </section>
+
+      <section class="mt-10">
+        <h2 class="text-base-semibold text-ink-gray-8">Works with</h2>
+        <div class="mt-3 flex flex-wrap gap-4">
+          <span
+            v-for="app in heroApps"
+            :key="app.name"
+            :aria-label="app.name"
+            class="size-6 text-ink-gray-5"
+            role="img"
+            :title="app.name"
+          >
+            <AgentLogo class="size-full" :svg="app.logo" />
+          </span>
+        </div>
+      </section>
+
+      <section class="mt-10">
+        <h2 class="text-base-semibold text-ink-gray-8">In a prototype</h2>
+        <ul class="mt-3 flex flex-col gap-4">
+          <li v-for="feature in features" :key="feature.title" class="flex gap-3">
+            <!-- 16px icon in the steps' 24px marker column, so both lists share one x. -->
+            <span class="grid size-6 shrink-0 place-items-center">
+              <span aria-hidden="true" class="size-4 text-ink-gray-6" :class="feature.icon" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-base-medium text-ink-gray-8">{{ feature.title }}</p>
+              <p class="mt-1 text-p-sm text-ink-gray-5">{{ feature.body }}</p>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="mt-10">
+        <h2 class="text-base-semibold text-ink-gray-8">Something is broken</h2>
+        <p class="mt-3 text-p-base text-ink-gray-7">
+          Open an issue on
+          <a
+            class="text-ink-blue-link hover:underline"
+            href="https://github.com/netchampfaris/sketch"
+            rel="noreferrer noopener"
+            target="_blank"
+            >the Sketch repository</a
+          >. Name your agent client and paste the error it printed. Never paste your token.
+        </p>
+      </section>
+    </div>
   </div>
 </template>
