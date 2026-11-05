@@ -12,7 +12,9 @@
  *
  * The one thing a Guest cannot see is what Sketch is, so a small hero stays above
  * the grid, only while there is no session: what it is, the one way in, and
- * what is new. Past ten public prototypes a search and an owner picker sit
+ * what is new. The agent apps that work with Sketch drift around it as logos
+ * (decision 86), so "your agent" has faces without a list of names in the copy.
+ * Past ten public prototypes a search and an owner picker sit
  * above the grid, and the two filters combine.
  *
  * The cards come from `sketch.api.public_prototypes` and are the whole set:
@@ -21,7 +23,9 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { Avatar, Button, Combobox, Skeleton, TextInput } from 'frappe-ui'
+import AgentLogo from '../components/AgentLogo.vue'
 import FeedCard from '../components/FeedCard.vue'
+import { heroApps } from '../agents'
 import { openWhatsNew } from '../whatsnew'
 import { continueWithProvider, publicPrototypes, sessionSettled, signedIn } from '../store'
 
@@ -29,6 +33,21 @@ import { continueWithProvider, publicPrototypes, sessionSettled, signedIn } from
 const logo = '/assets/sketch/images/sketch-logo.svg'
 
 const items = computed(() => publicPrototypes.data ?? [])
+
+/**
+ * Where each hero logo sits, in the side space left and right of the centred
+ * text, never over it. From 1024px all six; from 640px the first four, closer
+ * to the edges, because the side space is under 100px there. Each drifts on
+ * its own period and phase, so they never move in step.
+ */
+const floating = [
+  { place: 'sm:left-[3%] sm:top-[24%] lg:left-[5%] lg:top-[30%]', period: '8s', phase: '0s' },
+  { place: 'sm:right-[3%] sm:top-[58%] lg:right-[5%] lg:top-[58%]', period: '9.5s', phase: '-3s' },
+  { place: 'sm:left-[8%] sm:top-[66%] lg:left-[12%] lg:top-[68%]', period: '7s', phase: '-5s' },
+  { place: 'sm:right-[8%] sm:top-[16%] lg:right-[12%] lg:top-[18%]', period: '10s', phase: '-1.5s' },
+  { place: 'hidden lg:block lg:left-[17%] lg:top-[12%]', period: '8.5s', phase: '-6s' },
+  { place: 'hidden lg:block lg:right-[17%] lg:top-[74%]', period: '6.5s', phase: '-2.5s' },
+].map((spot, index) => ({ ...spot, app: heroApps[index] }))
 
 /**
  * True until the first listing lands. It latches, and it is not a computed
@@ -124,7 +143,25 @@ onMounted(() => {
     which a Guest may open by hand and never sees on its own. On a phone the two buttons stack, full width, in the same
     order.
   -->
-  <section v-if="showIntro" class="px-3 py-12 text-center sm:px-5 sm:py-16">
+  <section v-if="showIntro" class="relative px-3 py-12 text-center sm:px-5 sm:py-16">
+    <!--
+      The floating logos, from 640px. Absolute, so the text block keeps its
+      own centre and height. Each is a named image: it names an app the
+      sentence leaves unnamed.
+    -->
+    <span
+      v-for="spot in floating"
+      :key="spot.app.name"
+      :aria-label="`Works with ${spot.app.name}`"
+      class="agent-drift absolute hidden size-8 text-ink-gray-4 sm:block dark:text-ink-gray-5"
+      :class="spot.place"
+      role="img"
+      :style="{ animationDuration: spot.period, animationDelay: spot.phase }"
+      :title="`Works with ${spot.app.name}`"
+    >
+      <AgentLogo class="size-full" :svg="spot.app.logo" />
+    </span>
+
     <img alt="" aria-hidden="true" class="mx-auto mb-4 size-10 dark:invert" :src="logo" />
     <h1 class="text-2xl-semibold text-ink-gray-8">Design with your agent</h1>
     <p class="mx-auto mt-2 max-w-[560px] text-p-base text-ink-gray-6">
@@ -142,6 +179,19 @@ onMounted(() => {
         Continue with GitHub
       </Button>
       <Button label="See what's new" theme="gray" variant="outline" @click="openWhatsNew" />
+    </div>
+    <!-- On a phone the side space is gone: one still row under the buttons. -->
+    <div class="mt-6 flex justify-center gap-4 sm:hidden">
+      <span
+        v-for="app in heroApps"
+        :key="app.name"
+        :aria-label="`Works with ${app.name}`"
+        class="size-5 text-ink-gray-4 dark:text-ink-gray-5"
+        role="img"
+        :title="`Works with ${app.name}`"
+      >
+        <AgentLogo class="size-full" :svg="app.logo" />
+      </span>
     </div>
   </section>
 
@@ -220,3 +270,29 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* A few pixels of slow drift, on each logo's own period and phase. Still under reduced motion. */
+.agent-drift {
+  animation: agent-drift ease-in-out infinite;
+}
+
+@keyframes agent-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(3px, -4px);
+  }
+  66% {
+    transform: translate(-3px, 2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-drift {
+    animation: none;
+  }
+}
+</style>

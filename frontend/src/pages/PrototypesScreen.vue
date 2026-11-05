@@ -8,17 +8,25 @@
  * Tabs "All · Mine · Shared" show only while there is something shared, and a
  * search sits beside them once the tab holds more than ten.
  *
+ * With nothing in it at all, the gallery is the setup (decision 87): a new
+ * user connects their agent here, and once it connects, the same space offers
+ * starter requests and watches for the first card.
+ *
  * The screen also polls, because this is the screen a new user watches while
  * the agent writes its first Prototype. See the polling block below.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Skeleton, TabButtons, TextInput, useCall } from 'frappe-ui'
+import { Button, Skeleton, TabButtons, TextInput, Tooltip, useCall } from 'frappe-ui'
+import AgentConnect from '../components/AgentConnect.vue'
+import AgentStatus from '../components/AgentStatus.vue'
 import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'
 import PrototypeCard from '../components/PrototypeCard.vue'
 import SharedCard from '../components/SharedCard.vue'
+import StarterRequests from '../components/StarterRequests.vue'
+import { connected } from '../agents'
 import { usePoll } from '../poll'
-import { conversationPrototypes, method, prototypes, session, sharedPrototypes } from '../store'
+import { conversationPrototypes, method, prototypes, sharedPrototypes } from '../store'
 import type { Prototype, SharedPrototype } from '../types'
 
 const showPicker = ref(false)
@@ -129,21 +137,23 @@ watch(
 )
 
 /**
- * True once an agent has called /mcp with a good token (plan v2, step 1.5).
+ * Nothing owned and nothing shared: the gallery turns into the setup.
  *
- * Read from `session`, never from `get_agent_token`: that call mints a token
- * as a side effect, and rendering a screen must never mint one. `has_token`
- * is the wrong signal for the same reason.
+ * `connected` reads the boot session until the setup block has read the
+ * token, then the token's own replies (`agents.ts`). The session read never
+ * mints a token; only the setup block, drawn here, does.
  */
-const connected = computed(() => Boolean(session.data?.last_used))
+const setup = computed(() => !items.value.length && !shared.value.length)
+
+/** True once the setup gave way to a first card, so that grid fades in. */
+const arrived = ref(false)
+watch(setup, (now, before) => {
+  arrived.value = before && !now && !firstLoad.value
+})
 
 /**
- * The empty state says the one thing a new user must do next, and only that.
- *
- * Sketch has no editor, so an empty gallery is normal, not an error. Which
- * sentence shows depends on whether an agent has ever reached /mcp: before
- * that, creating a Prototype gives the user an empty page and nothing to do
- * with it.
+ * The empty Mine tab of a user who only has shared prototypes. Sketch has no
+ * editor, so an empty gallery is normal, not an error.
  */
 const emptyBody = computed(() =>
   connected.value
@@ -287,6 +297,9 @@ onMounted(() => {
       "New prototype" is the one action on this screen (DESIGN.md principle 3) and it is here in every state, the empty
       one too: hiding it while the list was empty left a user with no way to make one (finding 4.5), so the empty state
       below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
+
+      Disabled until an agent connects: a Prototype made before that is a page nothing can write to. A disabled button
+      fires no pointer events, so the tooltip hangs on a wrapper.
     -->
     <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <TabButtons v-if="showTabs" v-model="tabModel" :options="tabs" size="sm">
@@ -304,7 +317,18 @@ onMounted(() => {
         >
           <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
         </TextInput>
-        <Button icon-left="lucide-plus" label="New prototype" theme="gray" variant="subtle" @click="showPicker = true" />
+        <Tooltip :disabled="connected" text="Connect your agent first">
+          <span class="inline-flex">
+            <Button
+              :disabled="!connected"
+              icon-left="lucide-plus"
+              label="New prototype"
+              theme="gray"
+              variant="subtle"
+              @click="showPicker = true"
+            />
+          </span>
+        </Tooltip>
       </div>
     </div>
 
@@ -320,74 +344,80 @@ onMounted(() => {
       the whole grid rose 56px a row when the list landed. Change a row here
       only with the matching rows in `PrototypeCard.vue` and `SharedCard.vue`.
     -->
-    <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      <div v-for="n in 3" :key="n">
-        <Skeleton class="aspect-[16/10] w-full rounded-6" />
-        <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
-        <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-28" /></div>
-      </div>
-    </div>
-
-    <div
-      v-else-if="!tabItems.length"
-      class="flex flex-col items-center justify-center gap-3 py-16 text-center"
-    >
-      <span
-        class="grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5"
-      >
-        <span class="lucide-panels-top-left size-6" aria-hidden="true" />
-      </span>
-      <p class="text-base-medium text-ink-gray-8">{{ emptyTitle }}</p>
-      <p class="max-w-sm text-p-sm text-ink-gray-5">{{ emptyBody }}</p>
-      <!--
-        Never "New prototype": the header already carries that, and one screen
-        prints one create action (finding 4.5). This slot holds the other step
-        instead, and only while it is still open. An unconnected user who
-        creates a Prototype gets a page nothing can write to, so the empty
-        state points at the token.
-
-        `connected` is read once at boot and the poll no longer refreshes it,
-        so this button cannot vanish under the pointer while the user reads
-        the sentence above it. No button is solid: subtle is the heaviest
-        weight this app uses (commit 54f7fdc).
-      -->
-      <Button
-        v-if="!connected"
-        class="mt-2"
-        icon-left="lucide-plug-zap"
-        label="Connect your agent"
-        route="/settings"
-        theme="gray"
-        variant="subtle"
-      />
-    </div>
-
-    <div
-      v-else-if="!visible.length"
-      class="flex flex-col items-center justify-center gap-3 py-16 text-center"
-    >
-      <p class="text-base-medium text-ink-gray-8">No prototypes match "{{ needle }}"</p>
-      <Button label="Clear search" variant="ghost" @click="query = ''" />
-    </div>
-
     <!--
-      One column on a phone, two from md, three from lg, four from 2xl. The
-      shell's column is 1240px (App.vue), and the top bar is as wide, so the
-      mark and the title stay on one line. A card scales a 1280px iframe's
-      picture to its own width, and three across at 1240px is still 390px, the
-      smallest the picture stays readable at.
+      The first card fades in over the setup it replaces. Only that arrival:
+      `arrived` is false on every other change, so loading, tabs and search
+      swap their content at once, as before.
     -->
-    <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      <template v-for="one in visible" :key="one.row.name">
-        <SharedCard v-if="one.shared" :prototype="one.row" :conversation="one.conversation" />
-        <PrototypeCard
-          v-else
-          :prototype="one.row"
-          @changed="prototypes.reload()"
-          @removed="prototypes.reload()"
-        />
-      </template>
-    </div>
+    <Transition
+      enter-active-class="transition-opacity duration-200 ease-out"
+      enter-from-class="opacity-0"
+      :css="arrived"
+      @after-enter="arrived = false"
+    >
+      <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <div v-for="n in 3" :key="n">
+          <Skeleton class="aspect-[16/10] w-full rounded-6" />
+          <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
+          <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-28" /></div>
+        </div>
+      </div>
+
+      <!-- First use: nothing exists and no agent has connected. The setup is the page. -->
+      <div v-else-if="setup && !connected" class="mx-auto max-w-[620px] py-6 sm:py-12">
+        <h2 class="text-xl-semibold text-ink-gray-8">Connect your agent</h2>
+        <p class="mt-2 text-p-base text-ink-gray-6">
+          Sketch has no editor. Your AI agent builds the prototypes, and they show up here.
+        </p>
+        <AgentConnect class="mt-6" />
+      </div>
+
+      <!-- Connected, nothing built yet: what to ask for, and the gallery watching for the answer. -->
+      <div v-else-if="setup" class="mx-auto max-w-[620px] py-6 sm:py-12">
+        <AgentStatus />
+        <StarterRequests class="mt-6" />
+      </div>
+
+      <div
+        v-else-if="!tabItems.length"
+        class="flex flex-col items-center justify-center gap-3 py-16 text-center"
+      >
+        <span
+          class="grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5"
+        >
+          <span class="lucide-panels-top-left size-6" aria-hidden="true" />
+        </span>
+        <p class="text-base-medium text-ink-gray-8">{{ emptyTitle }}</p>
+        <p class="max-w-sm text-p-sm text-ink-gray-5">{{ emptyBody }}</p>
+      </div>
+
+      <div
+        v-else-if="!visible.length"
+        class="flex flex-col items-center justify-center gap-3 py-16 text-center"
+      >
+        <p class="text-base-medium text-ink-gray-8">No prototypes match "{{ needle }}"</p>
+        <Button label="Clear search" variant="ghost" @click="query = ''" />
+      </div>
+
+      <!--
+        One column on a phone, two from md, three from lg, four from 2xl. The
+        shell's column is 1240px (App.vue), and the top bar is as wide, so the
+        mark and the title stay on one line. A card scales a 1280px iframe's
+        picture to its own width, and three across at 1240px is still 390px, the
+        smallest the picture stays readable at.
+      -->
+      <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <template v-for="one in visible" :key="one.row.name">
+          <SharedCard v-if="one.shared" :prototype="one.row" :conversation="one.conversation" />
+          <PrototypeCard
+            v-else
+            :prototype="one.row"
+            @changed="prototypes.reload()"
+            @removed="prototypes.reload()"
+          />
+        </template>
+      </div>
+    </Transition>
   </div>
 
   <NewPrototypeDialog v-model:open="showPicker" @created="prototypes.reload()" />

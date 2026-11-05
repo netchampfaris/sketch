@@ -31,6 +31,7 @@ import {
   type DropdownOptions,
   type TabButton,
 } from 'frappe-ui'
+import { connected } from '../agents'
 import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
 import { openWhatsNew } from '../whatsnew'
 
@@ -60,6 +61,13 @@ const username = computed(() => session.data?.username ?? '')
 const account = computed(() =>
   sessionSettled.value ? signedIn.value : !route.meta.public,
 )
+
+/**
+ * Until an agent connects, the Settings door is "Connect agent" and leads to
+ * the gallery, which is the setup (decision 87). It waits for the session, so
+ * a connected user never sees it flash before the gear.
+ */
+const needsAgent = computed(() => account.value && sessionSettled.value && !connected.value)
 
 /** Where the mark leads. A Guest has no gallery, so it leads to the feed. */
 const home = computed(() => (account.value ? '/' : '/feed'))
@@ -247,10 +255,24 @@ const menu = computed<DropdownOptions>(() => [
         <!--
           Settings is its own control in the bar, not a row inside the account menu: the token lives on that page, and
           a user reconnecting on a second machine should not have to open a menu to find it. Icon only at every width,
-          with a tooltip. `label` stays: on an icon-only Button it becomes the `aria-label` (`Button.vue:334`), so the
-          control is still named to a screen reader.
+          with a tooltip (decision 79). `label` stays: on an icon-only Button it becomes the `aria-label` (`Button.vue:334`),
+          so the control is still named to a screen reader. Until an agent connects it is "Connect agent" instead,
+          labelled from 640px, and leads to the setup on the gallery.
         -->
-        <Tooltip v-if="account" text="Settings">
+        <template v-if="needsAgent">
+          <Button
+            class="hidden sm:inline-flex"
+            icon-left="lucide-plug"
+            label="Connect agent"
+            route="/"
+            theme="gray"
+            variant="subtle"
+          />
+          <Tooltip text="Connect agent">
+            <Button class="sm:hidden" icon="lucide-plug" label="Connect agent" route="/" theme="gray" variant="subtle" />
+          </Tooltip>
+        </template>
+        <Tooltip v-else-if="account" text="Settings">
           <Button icon="lucide-settings" label="Settings" route="/settings" theme="gray" variant="ghost" />
         </Tooltip>
 

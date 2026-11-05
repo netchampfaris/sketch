@@ -17,6 +17,8 @@ export interface SketchSession {
   last_used?: string | null
   /** The same instant as "2 minutes ago". Null until the agent connects. */
   last_used_pretty?: string | null
+  /** The apps that connected with this token, newest first. Optional: an older reply has none. */
+  clients?: AgentClient[]
   mcp_endpoint: string
   logout_url: string
 }
@@ -228,6 +230,18 @@ export interface AgentToken {
   last_used?: string | null
   /** See `SketchSession.last_used_pretty`. */
   last_used_pretty?: string | null
+  /** See `SketchSession.clients`. */
+  clients?: AgentClient[]
+}
+
+/**
+ * One app that connected to /mcp, named from MCP `initialize`'s `clientInfo`
+ * (`sketch_token.record_client`). `name` is the display name: "Claude Code".
+ */
+export interface AgentClient {
+  name: string
+  last_used: string
+  last_used_pretty: string
 }
 
 /** `sketch.api.delete_versions`, dry run or not. */
