@@ -31,8 +31,7 @@ import {
   type DropdownOptions,
   type TabButton,
 } from 'frappe-ui'
-import { connected } from '../agents'
-import { goToLogin, logout, prototypes, session, sessionSettled, signedIn } from '../store'
+import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
 import { openWhatsNew } from '../whatsnew'
 
 const { colorScheme, setColorScheme } = useColorScheme()
@@ -61,20 +60,6 @@ const username = computed(() => session.data?.username ?? '')
 const account = computed(() =>
   sessionSettled.value ? signedIn.value : !route.meta.public,
 )
-
-/**
- * Until an agent connects, the Settings door is "Connect agent" (decision 87).
- * It waits for the session, so a connected user never sees it flash before the
- * gear.
- */
-const needsAgent = computed(() => account.value && sessionSettled.value && !connected.value)
-
-/**
- * The empty gallery is the setup, so a user with nothing built goes there. One
- * with prototypes would land on their cards, so they go to Settings. The list
- * loads at boot (`App.vue`).
- */
-const connectRoute = computed(() => (prototypes.data?.length ? '/settings' : '/'))
 
 /** Where the mark leads. A Guest has no gallery, so it leads to the feed. */
 const home = computed(() => (account.value ? '/' : '/feed'))
@@ -263,30 +248,10 @@ const menu = computed<DropdownOptions>(() => [
           Settings is its own control in the bar, not a row inside the account menu: the token lives on that page, and
           a user reconnecting on a second machine should not have to open a menu to find it. Icon only at every width,
           with a tooltip (decision 79). `label` stays: on an icon-only Button it becomes the `aria-label` (`Button.vue:334`),
-          so the control is still named to a screen reader. Until an agent connects it is "Connect agent" instead,
-          labelled from 640px, and ghost like the gear, so it never reads as the current tab.
+          so the control is still named to a screen reader. It is the gear whether or not an agent has connected:
+          the empty gallery is where a new user connects one.
         -->
-        <template v-if="needsAgent">
-          <Button
-            class="hidden sm:inline-flex"
-            icon-left="lucide-plug"
-            label="Connect agent"
-            :route="connectRoute"
-            theme="gray"
-            variant="ghost"
-          />
-          <Tooltip text="Connect agent">
-            <Button
-              class="sm:hidden"
-              icon="lucide-plug"
-              label="Connect agent"
-              :route="connectRoute"
-              theme="gray"
-              variant="ghost"
-            />
-          </Tooltip>
-        </template>
-        <Tooltip v-else-if="account" text="Settings">
+        <Tooltip v-if="account" text="Settings">
           <Button icon="lucide-settings" label="Settings" route="/settings" theme="gray" variant="ghost" />
         </Tooltip>
 
