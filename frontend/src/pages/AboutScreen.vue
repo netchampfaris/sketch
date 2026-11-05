@@ -23,6 +23,7 @@ import { Button } from 'frappe-ui'
 import AgentLogo from '../components/AgentLogo.vue'
 import AgentStatus from '../components/AgentStatus.vue'
 import CopyPromptButton from '../components/CopyPromptButton.vue'
+import GithubMark from '../components/GithubMark.vue'
 import SetupSteps from '../components/SetupSteps.vue'
 import { connected, heroApps } from '../agents'
 import { agentToken, continueWithProvider, prototypes, signedIn } from '../store'
@@ -72,7 +73,10 @@ watch(
         <SetupSteps class="mt-3" :signed-out="!signedIn">
           <template #action>
             <CopyPromptButton v-if="signedIn" />
-            <Button v-else label="Continue with GitHub" theme="gray" variant="subtle" @click="continueWithProvider" />
+            <Button v-else theme="gray" variant="subtle" @click="continueWithProvider">
+              <template #prefix><GithubMark class="size-4" /></template>
+              Continue with GitHub
+            </Button>
           </template>
         </SetupSteps>
         <!-- The next thing to do, for someone signed in: the setup, or where it stands once done. -->
