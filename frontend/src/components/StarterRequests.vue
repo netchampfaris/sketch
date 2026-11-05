@@ -12,7 +12,7 @@ import { copyText } from '../store'
 const starters = [
   { text: 'Build a leave request form for an HR app' },
   { text: 'Make a CRM deals list with filters and a detail panel' },
-  { text: 'Turn this screenshot into a prototype', hint: 'attach a screenshot in your agent' },
+  { text: 'Turn this screenshot into a prototype', hint: 'Attach a screenshot in your agent' },
 ]
 
 /** `copyText` shows its own error toast and rethrows (store.ts). */
@@ -28,8 +28,7 @@ async function copy(text: string): Promise<void> {
 
 <template>
   <div>
-    <p class="text-p-sm text-ink-gray-7">Ask your agent something like:</p>
-    <List class="mt-2" :columns="['minmax(0,1fr)', '2rem']" divider="full">
+    <List :columns="['minmax(0,1fr)', '2rem']" divider="full">
       <ListRow v-for="one in starters" :key="one.text" :value="one.text">
         <ListCell>
           <div class="min-w-0 py-2">

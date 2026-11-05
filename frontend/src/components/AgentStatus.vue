@@ -10,8 +10,8 @@
  * request, green once it arrived. The row is a fixed h-7, so a poll landing
  * never moves what sits under it.
  */
-import { computed } from 'vue'
-import { Button, Dropdown, dialog, toast, useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { Button, Dropdown, dialog, toast, useCall, type ImperativeDialogAction } from 'frappe-ui'
 import { clients, connected, justConnected, lastUsedPretty, listNames, waiting } from '../agents'
 import { fillPrompt } from '../setupPrompt'
 import { agentToken, errorText, method, session } from '../store'
@@ -29,9 +29,6 @@ const text = computed(() => {
   return waiting.value ? 'Waiting for your agent…' : 'Not connected yet'
 })
 
-/** A token exists once anything minted one; before that there is nothing to reset. */
-const hasToken = computed(() => Boolean(agentToken.data?.token) || Boolean(session.data?.has_token))
-
 const regenerate = useCall<AgentToken>({
   url: method('regenerate_agent_token'),
   method: 'POST',
@@ -44,15 +41,41 @@ const menu = [{ label: 'Reset token…', icon: 'lucide-rotate-ccw', onClick: ask
  * A reset breaks every connected app at once, so it asks first, and names the
  * apps it breaks. Returning the call keeps the dialog open until the server
  * answers.
+ *
+ * The dialog opens on Cancel, the safe answer, and however it closes, focus
+ * goes back to ⋯: the menu item that opened it is gone by then.
  */
 function askToReset(): void {
-  const apps = names.value.length ? listNames(names.value) : 'Every app you connected'
   dialog.danger({
     title: 'Reset token?',
-    message: `${apps} will stop working until you paste the new prompt into them.`,
-    confirmLabel: 'Reset token',
-    onConfirm: reset,
+    message: names.value.length
+      ? `${listNames(names.value)} will stop working until you paste the new prompt into them.`
+      : 'A prompt you already copied will stop working.',
+    actions: [
+      // `autofocus` falls through to the button, and frappe-ui's Dialog focuses it on open.
+      { label: 'Cancel', variant: 'outline', autofocus: true, onClick: refocus } as ImperativeDialogAction,
+      { label: 'Reset token', variant: 'solid', theme: 'red', onClick: () => reset().finally(refocus) },
+    ],
+    onCancel: refocus,
   })
+}
+
+const options = ref<{ $el: HTMLElement } | null>(null)
+
+/** Keeps ⋯ after a reset here, so focus has somewhere to return and a second reset stays one click away. */
+const wasReset = ref(false)
+
+/** After the dialog has left the page; its focus scope hands focus to the page body on the way out. */
+function refocus(): void {
+  const started = performance.now()
+  const tick = () => {
+    if (document.querySelector('[role="dialog"]') && performance.now() - started < 1000) {
+      requestAnimationFrame(tick)
+      return
+    }
+    window.setTimeout(() => options.value?.$el.focus())
+  }
+  requestAnimationFrame(tick)
 }
 
 /**
@@ -66,15 +89,17 @@ function askToReset(): void {
  * that prints the prompt.
  */
 async function reset(): Promise<void> {
-  let fresh: AgentToken
+  let fresh: AgentToken | null
   try {
     fresh = await regenerate.submit()
   } catch (error) {
     toast.error(errorText(error))
     return
   }
+  if (!fresh) return
   justConnected.value = false
   waiting.value = true
+  wasReset.value = true
   await Promise.all([agentToken.reload(), session.reload()])
   try {
     await navigator.clipboard.writeText(fillPrompt(fresh.token, fresh.endpoint))
@@ -102,8 +127,9 @@ async function reset(): Promise<void> {
       <!-- Polite, so a screen reader hears "Connected" arrive without a focus move. -->
       <span aria-live="polite" class="truncate" :title="text">{{ text }}</span>
     </p>
-    <Dropdown v-if="hasToken" align="end" :options="menu">
-      <Button icon="lucide-ellipsis" label="Connection options" theme="gray" variant="ghost" />
+    <!-- Only once an app connected: before that, there is nothing a reset would fix. -->
+    <Dropdown v-if="connected || wasReset" align="end" :options="menu">
+      <Button ref="options" icon="lucide-ellipsis" label="Connection options" theme="gray" variant="ghost" />
     </Dropdown>
   </div>
 </template>

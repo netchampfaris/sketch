@@ -14,7 +14,7 @@ import claude from './assets/agents/claude.svg?raw'
 import codex from './assets/agents/codex.svg?raw'
 import copilot from './assets/agents/copilot.svg?raw'
 import cursor from './assets/agents/cursor.svg?raw'
-import opencode from './assets/agents/opencode.svg?raw'
+import vscode from './assets/agents/vscode.svg?raw'
 import windsurf from './assets/agents/windsurf.svg?raw'
 import { agentToken, session } from './store'
 
@@ -23,14 +23,17 @@ export interface HeroApp {
   logo: string
 }
 
-/** The apps on the feed hero, in the order they float. claude.ai is not one: it cannot connect. */
+/**
+ * The apps on the feed hero, in the order they float. claude.ai is not one: it
+ * cannot connect. Nor is OpenCode: its mark is a plain frame, and at 28px it
+ * read as an empty box, not an app.
+ */
 export const heroApps: HeroApp[] = [
   { name: 'Claude Code', logo: claude },
   { name: 'Cursor', logo: cursor },
   { name: 'Codex', logo: codex },
   { name: 'GitHub Copilot in VS Code', logo: copilot },
   { name: 'Windsurf', logo: windsurf },
-  { name: 'OpenCode', logo: opencode },
 ]
 
 export interface PickerApp {
@@ -47,7 +50,7 @@ export const pickerApps: PickerApp[] = [
   { id: 'claude-code', name: 'Claude Code', logo: claude, hint: 'Paste it into Claude Code in your terminal.' },
   { id: 'cursor', name: 'Cursor', logo: cursor, hint: "Paste it into Cursor's agent chat." },
   { id: 'codex', name: 'Codex', logo: codex, hint: 'Paste it into Codex.' },
-  { id: 'vscode', name: 'VS Code', logo: copilot, hint: 'Paste it into Copilot Chat in agent mode.' },
+  { id: 'vscode', name: 'VS Code', logo: vscode, hint: 'Paste it into Copilot Chat in agent mode.' },
   {
     id: 'other',
     name: 'Other',
@@ -119,26 +122,38 @@ export const justConnected = ref(false)
  * moment the connection lands, before a watcher inside it could run.
  *
  * `last_used` is stamped when the request authenticates and the app's name a
- * moment later in the same request, so a read can land between the two. One
- * more read then picks the name up.
+ * moment later in the same request, so a read can land between the two. The
+ * toast then waits for one more read to name the app.
  */
 let sawUnconnected = false
+let unnamed = false
 watch(
   () => agentToken.data,
   (reply) => {
     if (!reply?.token) return
     if (!reply.last_used) {
       sawUnconnected = true
+      unnamed = false
+      return
+    }
+    if (unnamed) {
+      unnamed = false
+      announce(reply.clients?.[0]?.name)
       return
     }
     if (!sawUnconnected) return
     sawUnconnected = false
     justConnected.value = true
     waiting.value = false
-    toast.success('Sketch is connected. Ask your agent to build something.')
-    if (!reply.clients?.length) window.setTimeout(() => agentToken.reload(), 3000)
+    if (reply.clients?.length) return announce(reply.clients[0].name)
+    unnamed = true
+    window.setTimeout(() => agentToken.reload(), 3000)
   },
 )
+
+function announce(app?: string): void {
+  toast.success(app ? `Connected · ${app}` : 'Connected')
+}
 
 /** "Claude Code", "Claude Code and Cursor", "Claude Code, Cursor and Codex". */
 export function listNames(names: string[]): string {

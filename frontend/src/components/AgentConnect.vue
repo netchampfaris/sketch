@@ -3,8 +3,8 @@
  * Connect your agent: the one setup block, on the empty gallery and on
  * Settings (decision 87).
  *
- * Top to bottom: the status line, the app picker, one Copy button with three
- * plain steps under it, and the prompt itself folded away behind "See what
+ * Top to bottom, 24px apart: the status line, the app picker, three steps whose
+ * first is the Copy button itself, and the prompt folded away behind "See what
  * your agent will read". The picker changes only step 2, "where to paste": the
  * setup prompt is one prompt for every app (`setupPrompt.ts`).
  *
@@ -14,7 +14,7 @@
  *
  * The token is never on screen unless the prompt is unfolded and Show is on.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import AgentLogo from './AgentLogo.vue'
 import AgentStatus from './AgentStatus.vue'
@@ -30,6 +30,32 @@ const prompt = computed(() => fillPrompt(token.value, agentToken.data?.endpoint 
 const failed = computed(() => Boolean(agentToken.error) && !token.value)
 
 const app = computed(() => pickerApps.find((one) => one.id === pickedApp.value) ?? pickerApps[0])
+
+/**
+ * The chips are one radio group: a single tab stop on the picked chip, and
+ * the arrows, Home and End move the pick, as a native radio group does.
+ */
+const KEYS: Record<string, (index: number, count: number) => number> = {
+  ArrowRight: (index, count) => (index + 1) % count,
+  ArrowDown: (index, count) => (index + 1) % count,
+  ArrowLeft: (index, count) => (index - 1 + count) % count,
+  ArrowUp: (index, count) => (index - 1 + count) % count,
+  Home: () => 0,
+  End: (_, count) => count - 1,
+}
+
+async function moveChip(event: KeyboardEvent): Promise<void> {
+  const move = KEYS[event.key]
+  if (!move) return
+  event.preventDefault()
+  const index = move(pickerApps.indexOf(app.value), pickerApps.length)
+  pickApp(pickerApps[index].id)
+  await nextTick()
+  const group = event.currentTarget as HTMLElement | null
+  group?.querySelectorAll<HTMLElement>('[role="radio"]')[index]?.focus()
+}
+
+const link = 'rounded-2 text-ink-gray-9 underline underline-offset-2 focus-visible:ring-0 focus-visible:focus-ring'
 
 const copied = ref(false)
 let copiedTimer: number | undefined
@@ -93,23 +119,26 @@ onMounted(() => agentToken.reload())
 
     <ErrorMessage
       v-if="failed"
-      class="mt-4"
+      class="mt-6"
       message="Couldn't load your setup prompt. Reload the page to try again."
     />
 
     <template v-else>
       <!--
         One row of chips, wrapping on a phone. The six need about 610px, which
-        is why the setup column is 620px wide. The choice only changes step 2.
+        is why the setup column is 620px wide. The picked chip keeps a border,
+        the strongest in the row, so it reads as chosen, not as a pressed button.
       -->
-      <div aria-label="Your agent app" class="mt-4 flex flex-wrap gap-1.5" role="radiogroup">
+      <div aria-label="Your agent app" class="mt-6 flex flex-wrap gap-1.5" role="radiogroup" @keydown="moveChip">
         <Button
           v-for="one in pickerApps"
           :key="one.id"
           :aria-checked="one.id === app.id"
+          :class="one.id === app.id ? '!border-outline-gray-5 !bg-surface-gray-2 !text-ink-gray-9' : '!text-ink-gray-7'"
           role="radio"
+          :tabindex="one.id === app.id ? 0 : -1"
           theme="gray"
-          :variant="one.id === app.id ? 'subtle' : 'outline'"
+          variant="outline"
           @click="pickApp(one.id)"
         >
           <template #prefix>
@@ -119,63 +148,75 @@ onMounted(() => agentToken.reload())
         </Button>
       </div>
 
-      <p v-if="!app.hint" class="mt-5 text-p-sm text-ink-gray-7">
-        claude.ai can't connect to Sketch yet. Use Claude Code or Cursor instead.
+      <!-- The two names are links that pick their chip. -->
+      <p v-if="!app.hint" class="mt-6 text-p-sm text-ink-gray-7">
+        claude.ai can't connect to Sketch yet. Use
+        <button :class="link" type="button" @click="pickApp('claude-code')">Claude Code</button> or
+        <button :class="link" type="button" @click="pickApp('cursor')">Cursor</button> instead.
       </p>
 
-      <template v-else>
-        <!--
-          Disabled until the token lands. A copy sent early carries the literal
-          `<token>` placeholder, and the agent then writes a config that fails
-          with a 401 the user cannot explain.
-        -->
-        <Button
-          class="mt-5"
-          :disabled="!token"
-          :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
-          :label="copied ? 'Copied' : 'Copy setup prompt'"
-          size="md"
-          theme="gray"
-          variant="solid"
-          @click="copy"
-        />
-        <ol class="mt-3 space-y-1 text-p-sm text-ink-gray-7">
-          <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">1</span>Copy the prompt</li>
-          <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>{{ app.hint }}</li>
-          <li class="flex gap-2">
-            <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">3</span>Come back here. This page shows when it's
-            connected.
-          </li>
-        </ol>
-      </template>
+      <!--
+        Step 1 is the Copy button itself. Once an agent connected, it turns
+        subtle: copying again is for a second app, not the next thing to do.
+      -->
+      <ol v-else class="mt-6 space-y-3 text-p-sm text-ink-gray-7">
+        <li class="flex items-center gap-2">
+          <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">1</span>
+          <!--
+            Disabled until the token lands. A copy sent early carries the
+            literal `<token>` placeholder, and the agent then writes a config
+            that fails with a 401 the user cannot explain.
+          -->
+          <Button
+            :disabled="!token"
+            :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
+            :label="copied ? 'Copied' : 'Copy setup prompt'"
+            size="md"
+            theme="gray"
+            :variant="connected ? 'subtle' : 'solid'"
+            @click="copy"
+          />
+        </li>
+        <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>{{ app.hint }}</li>
+        <li class="flex gap-2">
+          <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">3</span>
+          {{ connected ? 'It shows up above when it connects.' : "Come back here. This page shows when it's connected." }}
+        </li>
+      </ol>
 
       <!-- Closed by default: the prompt is for the agent, and the token sits inside it. -->
-      <div class="mt-5">
-        <Button
-          :aria-expanded="open"
-          :icon-right="open ? 'lucide-chevron-up' : 'lucide-chevron-down'"
-          label="See what your agent will read"
-          theme="gray"
-          variant="ghost"
-          class="-ml-2"
-          @click="open = !open"
-        />
+      <div class="mt-6">
+        <Button :aria-expanded="open" class="-ml-2" theme="gray" variant="ghost" @click="open = !open">
+          <span class="text-p-sm text-ink-gray-6">See what your agent will read</span>
+          <template #suffix>
+            <span
+              aria-hidden="true"
+              class="size-3.5 text-ink-gray-6"
+              :class="open ? 'lucide-chevron-up' : 'lucide-chevron-down'"
+            />
+          </template>
+        </Button>
         <div v-if="open" class="mt-2">
           <!--
             Wrap, never scroll sideways: the endpoint line alone runs past the
             box. `break-words` leaves words whole and still breaks the one
             string that cannot fit, the token. Show and Hide sit above the
-            text, never over it, so no line hides under the button.
+            text, never over it, so no line hides under the button; -mr-2
+            lines the label up with the box's right edge.
           -->
           <div class="flex h-7 items-center justify-between gap-3">
             <p class="text-p-sm text-ink-gray-5">Setup prompt</p>
+            <!-- The text goes in the slot, not `label`: Button names itself from `label` over `aria-label`. -->
             <Button
+              :aria-label="revealed ? 'Hide token' : 'Show token'"
+              class="-mr-2"
               :icon-left="revealed ? 'lucide-eye-off' : 'lucide-eye'"
-              :label="revealed ? 'Hide' : 'Show'"
               theme="gray"
               variant="ghost"
               @click="revealed = !revealed"
-            />
+            >
+              {{ revealed ? 'Hide' : 'Show' }}
+            </Button>
           </div>
           <pre
             class="mt-2 whitespace-pre-wrap break-words rounded-4 bg-surface-gray-1 p-3 font-mono text-p-xs text-ink-gray-8"

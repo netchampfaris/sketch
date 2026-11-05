@@ -298,8 +298,8 @@ onMounted(() => {
       one too: hiding it while the list was empty left a user with no way to make one (finding 4.5), so the empty state
       below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
 
-      Disabled until an agent connects: a Prototype made before that is a page nothing can write to. A disabled button
-      fires no pointer events, so the tooltip hangs on a wrapper.
+      Inert until an agent connects: a Prototype made before that is a page nothing can write to. `aria-disabled`, not
+      `disabled`, so the button keeps its tab stop and its touch target, and the tooltip saying why still opens.
     -->
     <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <TabButtons v-if="showTabs" v-model="tabModel" :options="tabs" size="sm">
@@ -318,16 +318,15 @@ onMounted(() => {
           <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
         </TextInput>
         <Tooltip :disabled="connected" text="Connect your agent first">
-          <span class="inline-flex">
-            <Button
-              :disabled="!connected"
-              icon-left="lucide-plus"
-              label="New prototype"
-              theme="gray"
-              variant="subtle"
-              @click="showPicker = true"
-            />
-          </span>
+          <Button
+            :aria-disabled="!connected || undefined"
+            :class="{ 'cursor-default !bg-surface-gray-2 !text-ink-gray-4 hover:!bg-surface-gray-2 active:!bg-surface-gray-2': !connected }"
+            icon-left="lucide-plus"
+            label="New prototype"
+            theme="gray"
+            variant="subtle"
+            @click="showPicker = connected"
+          />
         </Tooltip>
       </div>
     </div>
@@ -372,9 +371,14 @@ onMounted(() => {
         <AgentConnect class="mt-6" />
       </div>
 
-      <!-- Connected, nothing built yet: what to ask for, and the gallery watching for the answer. -->
+      <!--
+        Connected, nothing built yet: what to ask for, and the gallery watching
+        for the answer. The same frame as first use, with the status as the
+        heading's line, so the page changes its words, not its shape.
+      -->
       <div v-else-if="setup" class="mx-auto max-w-[620px] py-6 sm:py-12">
-        <AgentStatus />
+        <h2 class="text-xl-semibold text-ink-gray-8">Ask for your first prototype</h2>
+        <AgentStatus class="mt-1" />
         <StarterRequests class="mt-6" />
       </div>
 

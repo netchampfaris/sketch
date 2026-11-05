@@ -35,18 +35,21 @@ const logo = '/assets/sketch/images/sketch-logo.svg'
 const items = computed(() => publicPrototypes.data ?? [])
 
 /**
- * Where each hero logo sits, in the side space left and right of the centred
- * text, never over it. From 1024px all six; from 640px the first four, closer
- * to the edges, because the side space is under 100px there. Each drifts on
- * its own period and phase, so they never move in step.
+ * Where each hero logo sits: mirrored left and right of the centred text, in
+ * three rows that run from the Sketch tile down to the buttons, never over the
+ * text. From 1024px all five; from 768px the four corner ones, near the edges,
+ * as the side space is about 100px there. Below 768px there is no side space,
+ * so they sit in one still row under the buttons.
+ *
+ * Solid marks draw at 28px and line marks at 32px, so the two weigh the same.
+ * Each drifts on its own period and phase, so they never move in step.
  */
 const floating = [
-  { place: 'sm:block sm:left-[3%] sm:top-[24%] lg:left-[5%] lg:top-[30%]', period: '8s', phase: '0s' },
-  { place: 'sm:block sm:right-[3%] sm:top-[58%] lg:right-[5%] lg:top-[58%]', period: '9.5s', phase: '-3s' },
-  { place: 'sm:block sm:left-[8%] sm:top-[66%] lg:left-[12%] lg:top-[68%]', period: '7s', phase: '-5s' },
-  { place: 'sm:block sm:right-[8%] sm:top-[16%] lg:right-[12%] lg:top-[18%]', period: '10s', phase: '-1.5s' },
-  { place: 'hidden lg:block lg:left-[17%] lg:top-[12%]', period: '8.5s', phase: '-6s' },
-  { place: 'hidden lg:block lg:right-[17%] lg:top-[74%]', period: '6.5s', phase: '-2.5s' },
+  { place: 'md:grid md:left-[3%] md:top-16 lg:left-[16%]', size: 'size-8', period: '8s', phase: '0s' },
+  { place: 'md:grid md:right-[3%] md:top-16 lg:right-[16%]', size: 'size-7', period: '9.5s', phase: '-3s' },
+  { place: 'lg:grid lg:left-[6%] lg:top-[132px]', size: 'size-7', period: '7s', phase: '-5s' },
+  { place: 'md:grid md:right-[3%] md:top-[200px] lg:right-[13%]', size: 'size-7', period: '6.5s', phase: '-2.5s' },
+  { place: 'md:grid md:left-[3%] md:top-[200px] lg:left-[13%]', size: 'size-8', period: '8.5s', phase: '-6s' },
 ].map((spot, index) => ({ ...spot, app: heroApps[index] }))
 
 /**
@@ -145,21 +148,22 @@ onMounted(() => {
   -->
   <section v-if="showIntro" class="relative px-3 py-12 text-center sm:px-5 sm:py-16">
     <!--
-      The floating logos, from 640px. Absolute, so the text block keeps its
+      The floating logos, from 768px. Absolute, so the text block keeps its
       own centre and height. Each is a named image: it names an app the
-      sentence leaves unnamed.
+      sentence leaves unnamed. The box is 32px for every mark and the mark
+      centres in it, so a 28px one stays on its row.
     -->
     <span
       v-for="spot in floating"
       :key="spot.app.name"
       :aria-label="`Works with ${spot.app.name}`"
-      class="agent-drift absolute hidden size-8 text-ink-gray-4 dark:text-ink-gray-5"
+      class="agent-drift absolute hidden size-8 place-items-center text-ink-gray-3 dark:text-ink-gray-4"
       :class="spot.place"
       role="img"
       :style="{ animationDuration: spot.period, animationDelay: spot.phase }"
       :title="`Works with ${spot.app.name}`"
     >
-      <AgentLogo class="size-full" :svg="spot.app.logo" />
+      <AgentLogo :class="spot.size" :svg="spot.app.logo" />
     </span>
 
     <img alt="" aria-hidden="true" class="mx-auto mb-4 size-10 dark:invert" :src="logo" />
@@ -180,13 +184,13 @@ onMounted(() => {
       </Button>
       <Button label="See what's new" theme="gray" variant="outline" @click="openWhatsNew" />
     </div>
-    <!-- On a phone the side space is gone: one still row under the buttons. -->
-    <div class="mt-6 flex justify-center gap-4 sm:hidden">
+    <!-- Below 768px the side space is gone: one still row under the buttons. -->
+    <div class="mt-6 flex justify-center gap-4 md:hidden">
       <span
         v-for="app in heroApps"
         :key="app.name"
         :aria-label="`Works with ${app.name}`"
-        class="size-5 text-ink-gray-4 dark:text-ink-gray-5"
+        class="size-5 text-ink-gray-3 dark:text-ink-gray-4"
         role="img"
         :title="`Works with ${app.name}`"
       >

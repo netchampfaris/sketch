@@ -32,7 +32,7 @@ import {
   type TabButton,
 } from 'frappe-ui'
 import { connected } from '../agents'
-import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
+import { goToLogin, logout, prototypes, session, sessionSettled, signedIn } from '../store'
 import { openWhatsNew } from '../whatsnew'
 
 const { colorScheme, setColorScheme } = useColorScheme()
@@ -63,11 +63,18 @@ const account = computed(() =>
 )
 
 /**
- * Until an agent connects, the Settings door is "Connect agent" and leads to
- * the gallery, which is the setup (decision 87). It waits for the session, so
- * a connected user never sees it flash before the gear.
+ * Until an agent connects, the Settings door is "Connect agent" (decision 87).
+ * It waits for the session, so a connected user never sees it flash before the
+ * gear.
  */
 const needsAgent = computed(() => account.value && sessionSettled.value && !connected.value)
+
+/**
+ * The empty gallery is the setup, so a user with nothing built goes there. One
+ * with prototypes would land on their cards, so they go to Settings. The list
+ * loads at boot (`App.vue`).
+ */
+const connectRoute = computed(() => (prototypes.data?.length ? '/settings' : '/'))
 
 /** Where the mark leads. A Guest has no gallery, so it leads to the feed. */
 const home = computed(() => (account.value ? '/' : '/feed'))
@@ -257,19 +264,26 @@ const menu = computed<DropdownOptions>(() => [
           a user reconnecting on a second machine should not have to open a menu to find it. Icon only at every width,
           with a tooltip (decision 79). `label` stays: on an icon-only Button it becomes the `aria-label` (`Button.vue:334`),
           so the control is still named to a screen reader. Until an agent connects it is "Connect agent" instead,
-          labelled from 640px, and leads to the setup on the gallery.
+          labelled from 640px, and ghost like the gear, so it never reads as the current tab.
         -->
         <template v-if="needsAgent">
           <Button
             class="hidden sm:inline-flex"
             icon-left="lucide-plug"
             label="Connect agent"
-            route="/"
+            :route="connectRoute"
             theme="gray"
-            variant="subtle"
+            variant="ghost"
           />
           <Tooltip text="Connect agent">
-            <Button class="sm:hidden" icon="lucide-plug" label="Connect agent" route="/" theme="gray" variant="subtle" />
+            <Button
+              class="sm:hidden"
+              icon="lucide-plug"
+              label="Connect agent"
+              :route="connectRoute"
+              theme="gray"
+              variant="ghost"
+            />
           </Tooltip>
         </template>
         <Tooltip v-else-if="account" text="Settings">

@@ -46,7 +46,7 @@ import AgentConnect from '../components/AgentConnect.vue'
   -->
   <div class="max-w-[620px] px-3 pb-10 pt-6 sm:box-content sm:px-5">
     <section>
-      <h2 class="text-lg-semibold text-ink-gray-8">Agent connection</h2>
+      <h2 class="text-base-semibold text-ink-gray-8">Agent connection</h2>
       <AgentConnect class="mt-3" />
     </section>
   </div>
