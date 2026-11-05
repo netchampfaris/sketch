@@ -180,7 +180,7 @@ const menu = computed<DropdownOptions>(() => [
         :class="account ? 'hidden sm:flex sm:flex-1 sm:basis-0' : 'flex'"
       >
         <router-link
-          class="-mx-1 flex items-center gap-2 rounded-4 px-1 py-1 transition hover:bg-surface-gray-2 focus-visible:ring-0 focus-visible:focus-ring"
+          class="flex items-center gap-2 rounded-4 focus-visible:ring-0 focus-visible:focus-ring"
           :to="home"
         >
           <img

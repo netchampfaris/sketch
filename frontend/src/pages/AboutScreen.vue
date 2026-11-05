@@ -16,7 +16,7 @@
  * Every row of "In a prototype" is a feature the Viewer has: Variants and the
  * Demo pill (`runtime/shell/DemoPill.vue`), notes and comments
  * (`runtime/shell/notes.ts`, `comments.ts`), and the Share dialog's public
- * link and invites (`ShareDialog.vue`).
+ * link (`ShareDialog.vue`) and comments.
  */
 import { watch } from 'vue'
 import { Button } from 'frappe-ui'
@@ -40,7 +40,7 @@ const features = [
     title: 'Leave notes',
     body: 'Point at anything on the page and leave a note for your agent, or a comment for people.',
   },
-  { icon: 'lucide-share-2', title: 'Share it', body: 'Make it public, or invite people to add their own versions.' },
+  { icon: 'lucide-share-2', title: 'Share it', body: 'Send the link to your team so they can try it and leave comments.' },
 ]
 
 /** The setup is the empty gallery for a user with nothing built, else Settings. The list loads at boot (`App.vue`). */
