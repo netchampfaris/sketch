@@ -206,7 +206,8 @@ export function goToLogin(): void {
 }
 
 /**
- * "Continue with GitHub" on the feed: the provider's own page when the site has exactly one, else /login.
+ * "Continue with GitHub" on the feed and "Sign in" in the top bar: the provider's own page when the site has exactly
+ * one, else /login.
  *
  * Both remember the path first, so the visitor comes back to where they were (`goToLogin`). The server hands out the
  * provider's address, because it carries a single-use state token (`sketch.api.sign_in_url`). A failed read is not an
@@ -225,15 +226,17 @@ export async function continueWithProvider(): Promise<void> {
 }
 
 /**
- * End the session, then send the browser to the login page.
+ * End the session, then send the browser to the public feed: the one page a
+ * signed-out visitor can use, and a way back in from its hero.
  *
  * `logout` is POST only, so `call` is the right door: it posts, and it adds
  * the CSRF token that `sketch/www/sketch.py` puts on `window`. The path comes
  * from the session, never from a literal here.
  *
- * A silent failure would leave the user signed in on a login page, so the
+ * A silent failure would leave the user still signed in on the feed, so the
  * browser only moves after the server answers. On an error the user stays put
- * and reads a toast.
+ * and reads a toast. A full load, not a router push, so no signed-in state
+ * survives in memory.
  */
 export async function logout(): Promise<void> {
   const url = session.data?.logout_url
@@ -245,7 +248,7 @@ export async function logout(): Promise<void> {
       return
     }
   }
-  window.location.href = '/login'
+  window.location.href = '/feed'
 }
 
 /**

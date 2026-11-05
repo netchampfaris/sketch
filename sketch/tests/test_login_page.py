@@ -31,8 +31,7 @@ from sketch.tests import utils
 
 #: Copy that only Sketch's template has.
 SKETCH_MARKS = (
-	"Sketch renders frappe-ui prototypes that your own agent writes over MCP.",
-	"What is Sketch?",
+	"Sign in to see your prototypes.",
 	'class="sk-shell"',
 )
 
@@ -82,9 +81,9 @@ class TestLoginPage(IntegrationTestCase):
 		it must answer with a page, not a redirect."""
 		self.assertIn('class="sk-shell"', self.get_login())
 
-	def test_the_page_says_what_sketch_is(self):
-		"""One line about the product, before the button. Core's page said
-		nothing about what the visitor is signing in to."""
+	def test_the_page_says_what_signing_in_is_for(self):
+		"""One line before the button on what signing in gets the visitor.
+		Core's page said nothing about it."""
 		body = self.get_login()
 
 		for mark in SKETCH_MARKS:
@@ -114,9 +113,12 @@ class TestLoginPage(IntegrationTestCase):
 		self.assertNotIn('data-variant="solid"', self.get_login())
 
 	def test_the_page_offers_a_way_back_out(self):
-		"""A visitor who is not ready to sign in has somewhere to go. The
-		marketing page is the only other Guest route."""
-		self.assertIn('href="/"', self.get_login())
+		"""A visitor who is not ready to sign in has somewhere to go: the bar's
+		About. The "What is Sketch?" link that pointed at "/" is gone; for a
+		Guest that only bounced back here."""
+		body = self.get_login()
+		self.assertIn('href="/about"', body)
+		self.assertNotIn("What is Sketch?", body)
 
 	# ------------------------------------------------------ the provider
 

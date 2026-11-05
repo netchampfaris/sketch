@@ -31,7 +31,7 @@ import {
   type DropdownOptions,
   type TabButton,
 } from 'frappe-ui'
-import { goToLogin, logout, session, sessionSettled, signedIn } from '../store'
+import { continueWithProvider, logout, session, sessionSettled, signedIn } from '../store'
 import { openWhatsNew } from '../whatsnew'
 
 const { colorScheme, setColorScheme } = useColorScheme()
@@ -223,7 +223,9 @@ const menu = computed<DropdownOptions>(() => [
       <div class="flex flex-1 basis-0 items-center justify-end gap-2">
         <!--
           Signed out, on /feed or /about. Two controls, both labelled: the
-          page that explains Sketch, and the way in. Neither is solid, which
+          page that explains Sketch, and the way in, which goes straight to
+          GitHub like the hero's "Continue with GitHub" (`continueWithProvider`
+          falls back to /login on a site with no key). Neither is solid, which
           is the standing rule, and the row is the same 32px tall as the
           signed-in one, so the bar does not move when the session lands.
         -->
@@ -240,7 +242,7 @@ const menu = computed<DropdownOptions>(() => [
             label="Sign in"
             theme="gray"
             variant="subtle"
-            @click="goToLogin"
+            @click="continueWithProvider"
           />
         </template>
 
