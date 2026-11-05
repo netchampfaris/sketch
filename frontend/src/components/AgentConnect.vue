@@ -3,10 +3,10 @@
  * Connect your agent: the one setup block, on the empty gallery and on
  * Settings (decision 87).
  *
- * Top to bottom, 24px apart: the status line, the app picker, three steps whose
- * first is the Copy button itself, and the prompt folded away behind "See what
- * your agent will read". The picker changes only step 2, "where to paste": the
- * setup prompt is one prompt for every app (`setupPrompt.ts`).
+ * Top to bottom, 24px apart: the status line, three steps whose first is the
+ * Copy button itself, and the prompt folded away behind "See what your agent
+ * will read". One prompt works in every agent app (`setupPrompt.ts`), so the
+ * block never asks which one the user has.
  *
  * Mounting it reads `get_agent_token`, which mints the token on first read.
  * That is the point of this block, so it mints only where it is drawn: on
@@ -14,11 +14,10 @@
  *
  * The token is never on screen unless the prompt is unfolded and Show is on.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
-import AgentLogo from './AgentLogo.vue'
 import AgentStatus from './AgentStatus.vue'
-import { connected, pickApp, pickedApp, pickerApps, waiting } from '../agents'
+import { connected, waiting } from '../agents'
 import { usePoll } from '../poll'
 import { fillPrompt } from '../setupPrompt'
 import { agentToken, copyText } from '../store'
@@ -28,32 +27,6 @@ const prompt = computed(() => fillPrompt(token.value, agentToken.data?.endpoint 
 
 /** A failed first read with no token in hand. A failed poll after that keeps the block as it was. */
 const failed = computed(() => Boolean(agentToken.error) && !token.value)
-
-const app = computed(() => pickerApps.find((one) => one.id === pickedApp.value) ?? pickerApps[0])
-
-/**
- * The chips are one radio group: a single tab stop on the picked chip, and
- * the arrows, Home and End move the pick, as a native radio group does.
- */
-const KEYS: Record<string, (index: number, count: number) => number> = {
-  ArrowRight: (index, count) => (index + 1) % count,
-  ArrowDown: (index, count) => (index + 1) % count,
-  ArrowLeft: (index, count) => (index - 1 + count) % count,
-  ArrowUp: (index, count) => (index - 1 + count) % count,
-  Home: () => 0,
-  End: (_, count) => count - 1,
-}
-
-async function moveChip(event: KeyboardEvent): Promise<void> {
-  const move = KEYS[event.key]
-  if (!move) return
-  event.preventDefault()
-  const index = move(pickerApps.indexOf(app.value), pickerApps.length)
-  pickApp(pickerApps[index].id)
-  await nextTick()
-  const group = event.currentTarget as HTMLElement | null
-  group?.querySelectorAll<HTMLElement>('[role="radio"]')[index]?.focus()
-}
 
 const copied = ref(false)
 let copiedTimer: number | undefined
@@ -123,30 +96,6 @@ onMounted(() => agentToken.reload())
 
     <template v-else>
       <!--
-        One row of chips, wrapping on a phone. The picked chip keeps a border,
-        the strongest in the row, so it reads as chosen, not as a pressed button.
-      -->
-      <div aria-label="Your agent app" class="mt-6 flex flex-wrap gap-1.5" role="radiogroup" @keydown="moveChip">
-        <Button
-          v-for="one in pickerApps"
-          :key="one.id"
-          :aria-checked="one.id === app.id"
-          :class="one.id === app.id ? '!border-outline-gray-5 !bg-surface-gray-2 !text-ink-gray-9' : '!text-ink-gray-7'"
-          role="radio"
-          :tabindex="one.id === app.id ? 0 : -1"
-          theme="gray"
-          variant="outline"
-          @click="pickApp(one.id)"
-        >
-          <template #prefix>
-            <AgentLogo class="size-4" :icon="one.icon" :svg="one.logo" />
-          </template>
-          {{ one.name }}
-        </Button>
-      </div>
-
-
-      <!--
         Step 1 is the Copy button itself. Once an agent connected, it turns
         subtle: copying again is for a second app, not the next thing to do.
       -->
@@ -167,7 +116,7 @@ onMounted(() => agentToken.reload())
             @click="copy"
           />
         </li>
-        <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>{{ app.hint }}</li>
+        <li class="flex gap-2"><span class="w-3 shrink-0 tabular-nums text-ink-gray-5">2</span>Paste it into your agent.</li>
         <li class="flex gap-2">
           <span class="w-3 shrink-0 tabular-nums text-ink-gray-5">3</span>
           Start building there, and watch it live here.

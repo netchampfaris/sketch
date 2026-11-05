@@ -2,8 +2,8 @@
  * The agent apps Sketch names, and the connection state every screen reads.
  *
  * The feed hero floats the apps' logos (decision 86). The setup block
- * (`AgentConnect.vue`, decision 87) lets the user pick theirs, which changes
- * only the "where to paste" line: the setup prompt is one prompt for every app.
+ * (`AgentConnect.vue`, decision 87) names no app: its prompt works in all of
+ * them.
  *
  * The logos are the apps' own marks, monochrome, from the SVGs in
  * `assets/agents/` (each file names its source).
@@ -14,7 +14,6 @@ import claude from './assets/agents/claude.svg?raw'
 import codex from './assets/agents/codex.svg?raw'
 import copilot from './assets/agents/copilot.svg?raw'
 import cursor from './assets/agents/cursor.svg?raw'
-import vscode from './assets/agents/vscode.svg?raw'
 import windsurf from './assets/agents/windsurf.svg?raw'
 import { agentToken, session } from './store'
 
@@ -34,54 +33,6 @@ export const heroApps: HeroApp[] = [
   { name: 'GitHub Copilot in VS Code', logo: copilot },
   { name: 'Windsurf', logo: windsurf },
 ]
-
-export interface PickerApp {
-  id: string
-  name: string
-  /** A brand mark, or a lucide class for Other, which has no single brand. */
-  logo?: string
-  icon?: string
-  /** Where to paste the prompt. */
-  hint: string
-}
-
-export const pickerApps: PickerApp[] = [
-  { id: 'claude-code', name: 'Claude Code', logo: claude, hint: 'Paste it into Claude Code.' },
-  { id: 'cursor', name: 'Cursor', logo: cursor, hint: 'Paste it into Cursor.' },
-  { id: 'codex', name: 'Codex', logo: codex, hint: 'Paste it into Codex.' },
-  { id: 'vscode', name: 'VS Code', logo: vscode, hint: 'Paste it into Copilot Chat in VS Code.' },
-  {
-    id: 'other',
-    name: 'Other',
-    icon: 'lucide-bot',
-    hint: "Paste it into your agent's chat. Any agent that can add an MCP server works.",
-  },
-]
-
-const APP_KEY = 'sketch.agent-app'
-
-function storedApp(): string {
-  try {
-    return window.localStorage.getItem(APP_KEY) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-/**
- * The picked app's id. Remembered per browser; Claude Code until the user
- * picks, and for a stored id no longer in the picker (claude.ai was once).
- */
-export const pickedApp = ref(pickerApps.some((app) => app.id === storedApp()) ? storedApp() : 'claude-code')
-
-export function pickApp(id: string): void {
-  pickedApp.value = id
-  try {
-    window.localStorage.setItem(APP_KEY, id)
-  } catch {
-    // Not remembered. The picker opens on Claude Code next visit.
-  }
-}
 
 /**
  * The connection, from the freshest reply there is.

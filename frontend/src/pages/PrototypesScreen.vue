@@ -366,7 +366,7 @@ onMounted(() => {
       <!-- First use: nothing exists and no agent has connected. The setup is the page. -->
       <div v-else-if="setup && !connected" class="mx-auto max-w-[620px] py-6 sm:py-12">
         <h2 class="text-xl-semibold text-ink-gray-8">Connect your agent</h2>
-        <p class="mt-2 text-p-base text-ink-gray-6">
+        <p class="mt-3 text-p-base text-ink-gray-6">
           Sketch has no editor. Your AI agent builds the prototypes, and they show up here.
         </p>
         <AgentConnect class="mt-6" />
