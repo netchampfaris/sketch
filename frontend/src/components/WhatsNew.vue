@@ -72,14 +72,16 @@ watch(whatsNewOpen, (isOpen) => {
 /**
  * The gallery is where it opens by itself, once the session read says who is here. A Guest never gets it unasked.
  * Nor does a user who is still connecting or has nothing built: the setup is their one task, so the release waits,
- * unseen, for the first prototype.
+ * unseen, for a later visit. A tab that saw the gallery empty never opens it, so the first card arrives unhidden.
  */
 const onGallery = computed(() => route.path === '/')
 const hasBuilt = computed(() => connected.value && Boolean(prototypes.data?.length))
+let sawEmpty = false
 watch(
-  [signedIn, onGallery, hasBuilt],
-  ([yes, home, built]) => {
-    if (yes && home && built && !seenRelease()) whatsNewOpen.value = true
+  [signedIn, onGallery, hasBuilt, () => prototypes.data],
+  ([yes, home, built, list]) => {
+    if (list && !list.length) sawEmpty = true
+    if (yes && home && built && !sawEmpty && !seenRelease()) whatsNewOpen.value = true
   },
   { immediate: true },
 )
