@@ -32,7 +32,7 @@ async function copy(text: string): Promise<void> {
       <ListRow v-for="one in starters" :key="one.text" :value="one.text">
         <ListCell>
           <div class="min-w-0 py-2">
-            <p class="text-p-base text-ink-gray-8">{{ one.text }}</p>
+            <p class="text-pretty text-p-base text-ink-gray-8">{{ one.text }}</p>
             <p v-if="one.hint" class="mt-0.5 text-p-sm text-ink-gray-5">{{ one.hint }}</p>
           </div>
         </ListCell>

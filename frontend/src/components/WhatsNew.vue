@@ -78,9 +78,9 @@ const onGallery = computed(() => route.path === '/')
 const hasBuilt = computed(() => connected.value && Boolean(prototypes.data?.length))
 let sawEmpty = false
 watch(
-  [signedIn, onGallery, hasBuilt, () => prototypes.data],
-  ([yes, home, built, list]) => {
-    if (list && !list.length) sawEmpty = true
+  [signedIn, onGallery, hasBuilt, () => prototypes.isFinished && !prototypes.data?.length],
+  ([yes, home, built, empty]) => {
+    if (empty) sawEmpty = true
     if (yes && home && built && !sawEmpty && !seenRelease()) whatsNewOpen.value = true
   },
   { immediate: true },
@@ -143,7 +143,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     keyboard reachable; the × is its own button beside it, not inside it.
   -->
   <div
-    v-if="signedIn && onGallery && !whatsNewOpen && !cardGone"
+    v-if="signedIn && onGallery && hasBuilt && !whatsNewOpen && !cardGone"
     class="fixed bottom-4 left-4 z-30 hidden w-64 rounded-6 bg-surface-elevation-1 shadow-xl ring-1 ring-outline-gray-2 sm:block"
   >
     <button type="button" class="block w-full rounded-6 px-3 py-2.5 pr-10 text-left" @click="openWhatsNew">

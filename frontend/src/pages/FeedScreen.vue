@@ -147,129 +147,131 @@ onMounted(() => {
     which a Guest may open by hand and never sees on its own. On a phone the two buttons stack, full width, in the same
     order.
   -->
-  <section v-if="showIntro" class="relative px-3 py-12 text-center sm:px-5 sm:py-16">
-    <!--
-      The floating logos, from 768px. Absolute, so the text block keeps its
-      own centre and height. Each is a named image: it names an app the
-      sentence leaves unnamed. The box is 32px for every mark and the mark
-      centres in it, so a 28px one stays on its row.
-    -->
-    <span
-      v-for="spot in floating"
-      :key="spot.app.name"
-      :aria-label="`Works with ${spot.app.name}`"
-      class="agent-drift absolute hidden size-8 place-items-center text-ink-gray-3 dark:text-ink-gray-4"
-      :class="spot.place"
-      role="img"
-      :style="{ animationDuration: spot.period, animationDelay: spot.phase }"
-      :title="`Works with ${spot.app.name}`"
-    >
-      <AgentLogo :class="spot.size" :svg="spot.app.logo" />
-    </span>
-
-    <img alt="" aria-hidden="true" class="mx-auto mb-4 size-10 dark:invert" :src="logo" />
-    <h1 class="text-2xl-semibold text-ink-gray-8">Design with your agent</h1>
-    <p class="mx-auto mt-2 max-w-[560px] text-p-base text-ink-gray-6">
-      Sketch renders frappe-ui prototypes that your own agent writes over MCP.
-    </p>
-    <div class="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-      <Button theme="gray" variant="solid" @click="continueWithProvider">
-        <template #prefix>
-          <GithubMark class="size-4" />
-        </template>
-        Continue with GitHub
-      </Button>
-      <Button label="See what's new" theme="gray" variant="outline" @click="openWhatsNew" />
-    </div>
-    <!-- Below 768px the side space is gone: one still row under the buttons. -->
-    <div class="mt-6 flex justify-center gap-4 md:hidden">
+  <main>
+    <section v-if="showIntro" class="relative px-3 py-12 text-center sm:px-5 sm:py-16">
+      <!--
+        The floating logos, from 768px. Absolute, so the text block keeps its
+        own centre and height. Each is a named image: it names an app the
+        sentence leaves unnamed. The box is 32px for every mark and the mark
+        centres in it, so a 28px one stays on its row.
+      -->
       <span
-        v-for="app in heroApps"
-        :key="app.name"
-        :aria-label="`Works with ${app.name}`"
-        class="size-5 text-ink-gray-3 dark:text-ink-gray-4"
+        v-for="spot in floating"
+        :key="spot.app.name"
+        :aria-label="`Works with ${spot.app.name}`"
+        class="agent-drift absolute hidden size-8 place-items-center text-ink-gray-3 dark:text-ink-gray-4"
+        :class="spot.place"
         role="img"
-        :title="`Works with ${app.name}`"
+        :style="{ animationDuration: spot.period, animationDelay: spot.phase }"
+        :title="`Works with ${spot.app.name}`"
       >
-        <AgentLogo class="size-full" :svg="app.logo" />
+        <AgentLogo :class="spot.size" :svg="spot.app.logo" />
       </span>
-    </div>
-  </section>
 
-  <div class="px-3 pb-10 sm:px-5" :class="showIntro ? '' : 'pt-6'">
-    <!--
-      The toolbar, signed in and whenever anything is public, on the left: a search by title,
-      then an owner picker (avatar, name, and how many they have public), both 28px. On a phone each takes its own line.
-    -->
-    <div v-if="showFilters" class="mb-4 flex flex-col gap-2 sm:flex-row">
-      <TextInput v-model="query" class="w-full sm:w-64" aria-label="Search prototypes" placeholder="Search prototypes">
-        <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
-      </TextInput>
-      <Combobox
-        v-model="owner"
-        class="w-full sm:w-52"
-        :options="ownerOptions"
-        placeholder="Anyone"
-        trigger="button"
+      <img alt="" aria-hidden="true" class="mx-auto mb-4 size-10 dark:invert" :src="logo" />
+      <h1 class="text-2xl-semibold text-ink-gray-8">Design with your agent</h1>
+      <p class="mx-auto mt-2 max-w-[560px] text-p-base text-ink-gray-6">
+        Sketch renders frappe-ui prototypes that your own agent writes over MCP.
+      </p>
+      <div class="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+        <Button theme="gray" variant="solid" @click="continueWithProvider">
+          <template #prefix>
+            <GithubMark class="size-4" />
+          </template>
+          Continue with GitHub
+        </Button>
+        <Button label="See what's new" theme="gray" variant="outline" @click="openWhatsNew" />
+      </div>
+      <!-- Below 768px the side space is gone: one still row under the buttons. -->
+      <div class="mt-6 flex justify-center gap-4 md:hidden">
+        <span
+          v-for="app in heroApps"
+          :key="app.name"
+          :aria-label="`Works with ${app.name}`"
+          class="size-5 text-ink-gray-3 dark:text-ink-gray-4"
+          role="img"
+          :title="`Works with ${app.name}`"
+        >
+          <AgentLogo class="size-full" :svg="app.logo" />
+        </span>
+      </div>
+    </section>
+
+    <div class="px-3 pb-10 sm:px-5" :class="showIntro ? '' : 'pt-6'">
+      <!--
+        The toolbar, signed in and whenever anything is public, on the left: a search by title,
+        then an owner picker (avatar, name, and how many they have public), both 28px. On a phone each takes its own line.
+      -->
+      <div v-if="showFilters" class="mb-4 flex flex-col gap-2 sm:flex-row">
+        <TextInput v-model="query" class="w-full sm:w-64" aria-label="Search prototypes" placeholder="Search prototypes">
+          <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
+        </TextInput>
+        <Combobox
+          v-model="owner"
+          class="w-full sm:w-52"
+          :options="ownerOptions"
+          placeholder="Anyone"
+          trigger="button"
+        >
+          <template #item-prefix="{ item }">
+            <Avatar v-if="item.username" :image="item.image" :label="item.label" size="sm" />
+          </template>
+          <template #item-suffix="{ item }">
+            <span v-if="item.count" class="text-xs tabular-nums text-ink-gray-5">{{ item.count }}</span>
+          </template>
+        </Combobox>
+      </div>
+
+      <!--
+        The placeholder repeats the loaded card's own height and margin classes
+        and replaces only the text, so the grid does not resize when the rows
+        arrive. The blocks match FeedCard.vue one for one: the picture, then the
+        `h-7` and `h-5` rows. Change a row here only with the matching row there.
+      -->
+      <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <div v-for="n in 4" :key="n">
+          <Skeleton class="aspect-[16/10] w-full rounded-6" />
+          <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
+          <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-56" /></div>
+        </div>
+      </div>
+
+      <div
+        v-else-if="!items.length"
+        class="flex flex-col items-center justify-center gap-3 py-16 text-center"
       >
-        <template #item-prefix="{ item }">
-          <Avatar v-if="item.username" :image="item.image" :label="item.label" size="sm" />
-        </template>
-        <template #item-suffix="{ item }">
-          <span v-if="item.count" class="text-xs tabular-nums text-ink-gray-5">{{ item.count }}</span>
-        </template>
-      </Combobox>
-    </div>
+        <span
+          class="grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5"
+        >
+          <span class="lucide-panels-top-left size-6" aria-hidden="true" />
+        </span>
+        <p class="text-base-medium text-ink-gray-8">No public prototypes yet</p>
+        <p class="max-w-sm text-p-sm text-ink-gray-5">
+          A prototype lands here when its owner turns on the public link.
+        </p>
+      </div>
 
-    <!--
-      The placeholder repeats the loaded card's own height and margin classes
-      and replaces only the text, so the grid does not resize when the rows
-      arrive. The blocks match FeedCard.vue one for one: the picture, then the
-      `h-7` and `h-5` rows. Change a row here only with the matching row there.
-    -->
-    <div v-if="firstLoad" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      <div v-for="n in 4" :key="n">
-        <Skeleton class="aspect-[16/10] w-full rounded-6" />
-        <div class="mt-3 flex h-7 items-center"><Skeleton class="h-4 w-40" /></div>
-        <div class="flex h-5 items-center"><Skeleton class="h-3.5 w-56" /></div>
+      <div
+        v-else-if="!visible.length"
+        class="flex flex-col items-center justify-center gap-3 py-16 text-center"
+      >
+        <p class="text-base-medium text-ink-gray-8">{{ nothingMatches }}</p>
+        <Button label="Clear search" variant="ghost" @click="clearFilters" />
+      </div>
+
+      <!--
+        The same grid as the gallery: one column on a phone, two from md, three
+        from lg, four from 2xl, in the shell's 1240px column.
+      -->
+      <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <FeedCard
+          v-for="item in visible"
+          :key="`${item.username}/${item.slug}`"
+          :prototype="item"
+        />
       </div>
     </div>
-
-    <div
-      v-else-if="!items.length"
-      class="flex flex-col items-center justify-center gap-3 py-16 text-center"
-    >
-      <span
-        class="grid size-12 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-5"
-      >
-        <span class="lucide-panels-top-left size-6" aria-hidden="true" />
-      </span>
-      <p class="text-base-medium text-ink-gray-8">No public prototypes yet</p>
-      <p class="max-w-sm text-p-sm text-ink-gray-5">
-        A prototype lands here when its owner turns on the public link.
-      </p>
-    </div>
-
-    <div
-      v-else-if="!visible.length"
-      class="flex flex-col items-center justify-center gap-3 py-16 text-center"
-    >
-      <p class="text-base-medium text-ink-gray-8">{{ nothingMatches }}</p>
-      <Button label="Clear search" variant="ghost" @click="clearFilters" />
-    </div>
-
-    <!--
-      The same grid as the gallery: one column on a phone, two from md, three
-      from lg, four from 2xl, in the shell's 1240px column.
-    -->
-    <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      <FeedCard
-        v-for="item in visible"
-        :key="`${item.username}/${item.slug}`"
-        :prototype="item"
-      />
-    </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>
