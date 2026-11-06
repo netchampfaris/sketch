@@ -2,7 +2,7 @@
 // One render of the whole app in a given page, state and variant. Offscreen, it is drawn, captured and
 // dropped. Live, it stays in a tile. `app` is App.vue's own component, handed over so there is no cycle.
 import { nextTick, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef } from 'vue'
-import { routeLocationKey, routerViewLocationKey, useRouter } from 'vue-router'
+import { routeLocationKey, routerKey, routerViewLocationKey, useRouter } from 'vue-router'
 import { Alert } from 'frappe-ui'
 import { sandboxKey } from './state'
 import type { Sandbox } from './state'
@@ -29,6 +29,11 @@ const resolved = router.resolve(props.path)
 // App's RouterView and RouterLink follow this page, not the live one.
 provide(routerViewLocationKey, shallowRef(resolved))
 provide(routeLocationKey, resolved as any)
+// A tile never moves the live page: a page that redirects as it mounts would drop `?canvas=` and close the canvas.
+// Navigating from a tile does nothing.
+const stay = () => Promise.resolve()
+const still = Object.assign(Object.create(router), { push: stay, replace: stay, go: () => {}, back: () => {}, forward: () => {} })
+provide(routerKey, still)
 provide(sandboxKey, props.sandbox)
 
 const el = ref<HTMLElement | null>(null)
