@@ -14,13 +14,12 @@
  *
  * The token is never on screen unless the prompt is unfolded and Show is on.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import AgentStatus from './AgentStatus.vue'
 import CopyPromptButton from './CopyPromptButton.vue'
 import SetupSteps from './SetupSteps.vue'
-import { connected } from '../agents'
-import { usePoll } from '../poll'
+import { useConnectionPoll } from '../poll'
 import { fillPrompt } from '../setupPrompt'
 import { agentToken } from '../store'
 
@@ -38,28 +37,7 @@ const shown = computed(() =>
   revealed.value || !token.value ? prompt.value : prompt.value.split(token.value).join('•'.repeat(token.value.length)),
 )
 
-/**
- * Watch for the agent's first request (`poll.ts`, the loop the gallery uses
- * too). It retires on the connection: after that `last_used` only ages.
- *
- * A read finds the connection already there when the session landed after
- * the loop armed, which is every direct load. It then returns at once, and
- * the loop retires instead of reading the token a second time.
- */
-const poll = usePoll(
-  async () => {
-    if (connected.value) return
-    await agentToken.reload()
-    // `reload()` resolves on a failed request, so the error ref is the only signal.
-    return !agentToken.error
-  },
-  { interval: 5000, done: () => connected.value },
-)
-
-/** A reset clears the connection on the server; the retired loop cannot see that, so this arms it again. */
-watch(connected, (value) => {
-  if (!value) poll.restart()
-})
+useConnectionPoll()
 
 onMounted(() => agentToken.reload())
 </script>

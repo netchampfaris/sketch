@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
- * The connection's status line, with "Reset token…" in a ⋯ menu on its right.
+ * The connection's status line, with "Reset token…" in a ⋯ menu right after it.
  *
  * It tops the setup block (`AgentConnect.vue`), and stands alone over the
  * starter requests on an empty gallery whose agent already connected.
  *
  * The dot carries the state at a glance and the sentence names it: gray and
  * still before Copy, gray and pulsing while Sketch waits for the agent's first
- * request, green once it arrived. The row is a fixed h-7, so a poll landing
- * never moves what sits under it.
+ * request, green once it arrived. The row is at least h-7, so a poll landing
+ * never moves what sits under it; on a phone a long line wraps, with the dot
+ * and ⋯ on its first line, rather than cutting the apps off.
  */
 import { computed, ref } from 'vue'
 import { Button, Dropdown, dialog, toast, useCall, type ImperativeDialogAction } from 'frappe-ui'
@@ -25,9 +26,10 @@ const names = computed(() => clients.value.map((client) => client.name))
 const text = computed(() => {
   if (connected.value) {
     // The moment it connects, the app is the news; "used just now" would only repeat it.
-    const parts = ['Connected', names.value.join(', ')]
-    if (!justConnected.value && lastUsedPretty.value) parts.push(`used ${lastUsedPretty.value}`)
-    return parts.filter(Boolean).join(' · ')
+    const used = !justConnected.value && lastUsedPretty.value ? `used ${lastUsedPretty.value}` : ''
+    // One app is a short label, "Connected · Claude Code". Several are a sentence, so the apps read as a list.
+    if (names.value.length > 1) return [`Connected to ${listNames(names.value)}`, used].filter(Boolean).join(', ')
+    return ['Connected', names.value[0], used].filter(Boolean).join(' · ')
   }
   return waiting.value ? 'Waiting for your agent…' : 'Not connected yet'
 })
@@ -52,7 +54,7 @@ function askToReset(): void {
   dialog.danger({
     title: 'Reset token?',
     message: names.value.length
-      ? `${listNames(names.value)} will stop working until you paste the new prompt into them.`
+      ? `${listNames(names.value)} will stop working until you paste the new prompt into ${names.value.length > 1 ? 'them' : 'it'}.`
       : 'A prompt you already copied will stop working.',
     actions: [
       // `autofocus` falls through to the button, and frappe-ui's Dialog focuses it on open.
@@ -114,11 +116,11 @@ async function reset(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-7 items-center justify-between gap-3">
-    <p class="flex min-w-0 items-center gap-2 text-p-sm" :class="connected ? 'text-ink-gray-8' : 'text-ink-gray-5'">
+  <div class="flex min-h-7 w-fit max-w-full items-start gap-2">
+    <p class="flex min-w-0 items-start gap-2 py-1 text-p-sm text-pretty" :class="connected ? 'text-ink-gray-8' : 'text-ink-gray-5'">
       <span
         aria-hidden="true"
-        class="size-2 shrink-0 rounded-full"
+        class="mt-1.5 size-2 shrink-0 rounded-full"
         :class="
           connected
             ? 'bg-surface-green-7'
@@ -128,7 +130,7 @@ async function reset(): Promise<void> {
         "
       />
       <!-- Polite, so a screen reader hears "Connected" arrive without a focus move. -->
-      <span aria-live="polite" class="truncate" :title="text">{{ text }}</span>
+      <span aria-live="polite">{{ text }}</span>
     </p>
     <!-- Only once an app connected: before that, there is nothing a reset would fix. -->
     <Dropdown v-if="!props.readOnly && (connected || wasReset)" align="end" :options="menu">

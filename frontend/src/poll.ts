@@ -20,7 +20,9 @@
  *    again, for the screen that finds out the state came back.
  * 5. Unmount clears the timer and removes the listener.
  */
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
+import { connected } from './agents'
+import { agentToken, signedIn } from './store'
 
 /** The gallery's interval, and the default for everything else. */
 const DEFAULT_INTERVAL = 4000
@@ -184,4 +186,33 @@ export function usePoll(
   })
 
   return { stop, restart }
+}
+
+/**
+ * Watch for the agent's first request, on the screens that show the setup
+ * (the setup block and About). It retires on the connection: after that
+ * `last_used` only ages.
+ *
+ * A read finds the connection already there when the session landed after
+ * the loop armed, which is every direct load. It then returns at once, and
+ * the loop retires instead of reading the token a second time. A Guest has
+ * no token, so a read for one is a no-op.
+ *
+ * A reset clears the connection on the server; the retired loop cannot see
+ * that, so the loop is armed again when the connection goes.
+ */
+export function useConnectionPoll(): Poll {
+  const poll = usePoll(
+    async () => {
+      if (connected.value || !signedIn.value) return
+      await agentToken.reload()
+      // `reload()` resolves on a failed request, so the error ref is the only signal.
+      return !agentToken.error
+    },
+    { interval: 5000, done: () => connected.value },
+  )
+  watch(connected, (value) => {
+    if (!value) poll.restart()
+  })
+  return poll
 }

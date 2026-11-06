@@ -33,14 +33,14 @@ import AgentConnect from '../components/AgentConnect.vue'
     a phone): the gallery's 24px page padding, its 16px toolbar gap, then the
     column's own 48px (24px).
   -->
-  <div class="px-3 pb-10 pt-10 sm:px-5">
+  <main class="px-3 pb-10 pt-10 sm:px-5">
     <div class="mx-auto max-w-[620px] py-6 sm:py-12">
-      <h1 class="text-2xl-semibold text-ink-gray-8">Settings</h1>
+      <h1 class="text-xl-semibold text-ink-gray-8">Settings</h1>
       <!-- Unboxed under the title: one task, not a card of its own. -->
       <section class="mt-6">
         <h2 class="text-base-semibold text-ink-gray-8">Agent connection</h2>
         <AgentConnect class="mt-3" />
       </section>
     </div>
-  </div>
+  </main>
 </template>

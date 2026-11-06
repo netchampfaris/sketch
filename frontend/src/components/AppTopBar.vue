@@ -180,6 +180,7 @@ const menu = computed<DropdownOptions>(() => [
         :class="account ? 'hidden sm:flex sm:flex-1 sm:basis-0' : 'flex'"
       >
         <router-link
+          aria-label="Sketch"
           class="flex items-center gap-2 rounded-4 focus-visible:ring-0 focus-visible:focus-ring"
           :to="home"
         >
@@ -263,15 +264,15 @@ const menu = computed<DropdownOptions>(() => [
                  never moves. The Avatar holds its size with no label and no
                  image.
 
-                 The 32px target is 4px wider than the 24px `md` Avatar inside
-                 it (frappe-ui Avatar.vue:109, `w-6 h-6`), so centring the
-                 Avatar pushed it 4px inside the right rail that the page
-                 header, the card menus and the dropdowns all share. `-mr-1`
-                 hangs that 4px past the gutter and puts the Avatar back on
-                 the rail. -->
+                 The 28px target (the bar's one control height) is 4px wider
+                 than the 24px `md` Avatar inside it (frappe-ui Avatar.vue:109,
+                 `w-6 h-6`), so centring the Avatar pushed it 2px inside the
+                 right rail that the page header, the card menus and the
+                 dropdowns all share. `-mr-0.5` hangs that 2px past the gutter
+                 and puts the Avatar back on the rail. -->
             <button
               aria-label="Account"
-              class="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full transition focus-visible:ring-0 focus-visible:focus-ring"
+              class="-mr-0.5 flex size-7 shrink-0 items-center justify-center rounded-full transition focus-visible:ring-0 focus-visible:focus-ring"
               :class="open ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'"
               type="button"
             >

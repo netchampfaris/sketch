@@ -38,8 +38,8 @@ const items = computed(() => publicPrototypes.data ?? [])
 /**
  * Where each hero logo sits: mirrored left and right of the centred text, in
  * three rows that run from the Sketch tile down to the buttons, never over the
- * text. From 1024px all five; from 768px the four corner ones, near the edges,
- * as the side space is about 100px there. Below 768px there is no side space,
+ * text. From 768px all five, near the edges, as the side space is about 100px
+ * there; the middle row holds Codex on the left. Below 768px there is no side space,
  * so they sit in one still row under the buttons.
  *
  * Solid marks draw at 28px and line marks at 32px, so the two weigh the same.
@@ -48,7 +48,7 @@ const items = computed(() => publicPrototypes.data ?? [])
 const floating = [
   { place: 'md:grid md:left-[3%] md:top-16 lg:left-[16%]', size: 'size-8', period: '8s', phase: '0s' },
   { place: 'md:grid md:right-[3%] md:top-16 lg:right-[16%]', size: 'size-7', period: '9.5s', phase: '-3s' },
-  { place: 'lg:grid lg:left-[6%] lg:top-[132px]', size: 'size-7', period: '7s', phase: '-5s' },
+  { place: 'md:grid md:left-[3%] md:top-[132px] lg:left-[6%]', size: 'size-7', period: '7s', phase: '-5s' },
   { place: 'md:grid md:right-[3%] md:top-[200px] lg:right-[13%]', size: 'size-7', period: '6.5s', phase: '-2.5s' },
   { place: 'md:grid md:left-[3%] md:top-[200px] lg:left-[13%]', size: 'size-8', period: '8.5s', phase: '-6s' },
 ].map((spot, index) => ({ ...spot, app: heroApps[index] }))

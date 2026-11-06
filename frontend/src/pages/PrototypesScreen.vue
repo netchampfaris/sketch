@@ -285,10 +285,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- No visible title: the top bar's "My prototypes" already names the page. Screen readers still get one. -->
-  <h1 class="sr-only">Prototypes</h1>
+  <main class="px-3 pb-10 pt-6 sm:px-5">
+    <!-- No visible title: the top bar's "My prototypes" already names the page. Screen readers still get one. -->
+    <h1 class="sr-only">Prototypes</h1>
 
-  <div class="px-3 pb-10 pt-6 sm:px-5">
     <!--
       One toolbar: the tabs on the left; the search (once the tab holds more than ten) and "New prototype" on the right
       edge. All 28px, so the row is one height whatever is in it. With nothing shared there are no tabs and the right
@@ -299,7 +299,8 @@ onMounted(() => {
       below never repeats it. It waits for the first list only so the row does not offer an action over skeleton cards.
 
       Hidden on the empty gallery until an agent connects: the setup below is the one thing to do there, and a
-      Prototype made before that is a page nothing can write to. With cards already here (after a token reset) it
+      Prototype made before that is a page nothing can write to. It is hidden with `invisible`, so it keeps its
+      row and the setup's heading does not drop 44px the moment the agent connects. With cards already here (after a token reset) it
       stays, inert, with a tooltip saying why. `aria-disabled`, not `disabled`, so the tooltip still opens.
     -->
     <div v-if="!firstLoad" class="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
@@ -318,10 +319,10 @@ onMounted(() => {
         >
           <template #prefix><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" /></template>
         </TextInput>
-        <Tooltip v-if="connected || !setup" :disabled="connected" text="Connect your agent first">
+        <Tooltip :disabled="connected || setup" text="Connect your agent first">
           <Button
             :aria-disabled="!connected || undefined"
-            :class="{ 'cursor-default !bg-surface-gray-2 !text-ink-gray-4 hover:!bg-surface-gray-2 active:!bg-surface-gray-2': !connected }"
+            :class="{ invisible: setup && !connected, 'cursor-default !bg-surface-gray-2 !text-ink-gray-4 hover:!bg-surface-gray-2 active:!bg-surface-gray-2': !connected }"
             icon-left="lucide-plus"
             label="New prototype"
             theme="gray"
@@ -423,7 +424,7 @@ onMounted(() => {
         </template>
       </div>
     </Transition>
-  </div>
+  </main>
 
   <NewPrototypeDialog v-model:open="showPicker" @created="prototypes.reload()" />
 </template>

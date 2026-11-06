@@ -17,7 +17,8 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Button, Dialog } from 'frappe-ui'
 import WhatsNewClip from './WhatsNewClip.vue'
-import { signedIn } from '../store'
+import { connected } from '../agents'
+import { prototypes, signedIn } from '../store'
 import { cardGone, dismissCard, markSeen, openWhatsNew, seenRelease, slides, whatsNew, whatsNewOpen } from '../whatsnew'
 
 const route = useRoute()
@@ -68,12 +69,17 @@ watch(whatsNewOpen, (isOpen) => {
   }
 })
 
-/** The gallery is where it opens by itself, once the session read says who is here. A Guest never gets it unasked. */
+/**
+ * The gallery is where it opens by itself, once the session read says who is here. A Guest never gets it unasked.
+ * Nor does a user who is still connecting or has nothing built: the setup is their one task, so the release waits,
+ * unseen, for the first prototype.
+ */
 const onGallery = computed(() => route.path === '/')
+const hasBuilt = computed(() => connected.value && Boolean(prototypes.data?.length))
 watch(
-  [signedIn, onGallery],
-  ([yes, home]) => {
-    if (yes && home && !seenRelease()) whatsNewOpen.value = true
+  [signedIn, onGallery, hasBuilt],
+  ([yes, home, built]) => {
+    if (yes && home && built && !seenRelease()) whatsNewOpen.value = true
   },
   { immediate: true },
 )

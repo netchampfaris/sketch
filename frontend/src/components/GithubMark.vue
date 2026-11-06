@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** GitHub's mark, for "Continue with GitHub" on the feed hero and on About. Sized by the caller, coloured by `currentColor`. */
+/** GitHub's mark, for "Continue with GitHub" on the feed hero and "Sign in with GitHub" on About. Sized by the caller, coloured by `currentColor`. */
 </script>
 
 <template>

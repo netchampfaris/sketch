@@ -25,8 +25,9 @@ import AgentStatus from '../components/AgentStatus.vue'
 import CopyPromptButton from '../components/CopyPromptButton.vue'
 import GithubMark from '../components/GithubMark.vue'
 import SetupSteps from '../components/SetupSteps.vue'
-import { connected, heroApps } from '../agents'
-import { agentToken, continueWithProvider, prototypes, signedIn } from '../store'
+import { heroApps } from '../agents'
+import { useConnectionPoll } from '../poll'
+import { agentToken, continueWithProvider, signedIn } from '../store'
 
 const features = [
   { icon: 'lucide-columns-2', title: 'Compare options', body: 'Your agent can put versions side by side, and you pick one.' },
@@ -43,10 +44,8 @@ const features = [
   { icon: 'lucide-share-2', title: 'Share it', body: 'Send the link to your team so they can try it and leave comments.' },
 ]
 
-/** The setup is the empty gallery for a user with nothing built, else Settings. The list loads at boot (`App.vue`). */
-function setupRoute(): string {
-  return prototypes.data?.length ? '/settings' : '/'
-}
+// The status line under the steps is live: it turns to "Connected" while this page is open.
+useConnectionPoll()
 
 // The session can land after this page mounts (a direct load), so it waits for it.
 watch(
@@ -60,57 +59,40 @@ watch(
 
 <template>
   <!-- The setup's column and top offset (`SettingsScreen.vue`), content left-aligned. -->
-  <div class="px-3 pb-10 pt-10 sm:px-5">
+  <main class="px-3 pb-10 pt-10 sm:px-5">
     <div class="mx-auto max-w-[620px] py-6 sm:py-12">
       <h1 class="text-2xl-semibold text-ink-gray-8">About Sketch</h1>
-      <p class="mt-3 text-p-base text-ink-gray-6">
-        Sketch shows the prototypes your AI agent builds. You describe what you want in your agent, and it shows up
-        here, live, for you and your team to try.
+      <p class="mt-3 text-p-base text-pretty text-ink-gray-6">
+        Sketch shows the prototypes your AI agent builds, for you and your team to try.
       </p>
 
       <section class="mt-10">
-        <h2 class="text-base-semibold text-ink-gray-8">How it works</h2>
+        <h2 class="text-lg-semibold text-ink-gray-8">How it works</h2>
         <SetupSteps class="mt-3" :signed-out="!signedIn">
           <template #action>
             <CopyPromptButton v-if="signedIn" />
             <Button v-else theme="gray" variant="subtle" @click="continueWithProvider">
               <template #prefix><GithubMark class="size-4" /></template>
-              Continue with GitHub
+              Sign in with GitHub
             </Button>
           </template>
         </SetupSteps>
-        <!-- The next thing to do, for someone signed in: the setup, or where it stands once done. -->
-        <template v-if="signedIn">
-          <AgentStatus v-if="connected" class="mt-6" read-only />
-          <Button
-            v-else
-            class="mt-6"
-            label="Go to setup"
-            :route="setupRoute()"
-            theme="gray"
-            variant="subtle"
-          />
-        </template>
+        <!-- Where the connection stands, for someone signed in. The setup block's own line, so it reads the same. -->
+        <AgentStatus v-if="signedIn" class="mt-6" read-only />
       </section>
 
       <section class="mt-10">
-        <h2 class="text-base-semibold text-ink-gray-8">Works with</h2>
-        <div class="mt-3 flex flex-wrap gap-4">
-          <span
-            v-for="app in heroApps"
-            :key="app.name"
-            :aria-label="app.name"
-            class="size-6 text-ink-gray-5"
-            role="img"
-            :title="app.name"
-          >
-            <AgentLogo class="size-full" :svg="app.logo" />
-          </span>
-        </div>
+        <h2 class="text-lg-semibold text-ink-gray-8">Works with</h2>
+        <ul class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          <li v-for="app in heroApps" :key="app.name" class="flex items-center gap-2 text-p-sm text-ink-gray-6">
+            <AgentLogo class="size-4 shrink-0 text-ink-gray-6" :svg="app.logo" />
+            {{ app.name }}
+          </li>
+        </ul>
       </section>
 
       <section class="mt-10">
-        <h2 class="text-base-semibold text-ink-gray-8">In a prototype</h2>
+        <h2 class="text-lg-semibold text-ink-gray-8">In a prototype</h2>
         <ul class="mt-3 flex flex-col gap-4">
           <li v-for="feature in features" :key="feature.title" class="flex gap-3">
             <!-- 16px icon in the steps' 24px marker column, so both lists share one x. -->
@@ -118,15 +100,15 @@ watch(
               <span aria-hidden="true" class="size-4 text-ink-gray-6" :class="feature.icon" />
             </span>
             <div class="min-w-0">
-              <p class="text-base-medium text-ink-gray-8">{{ feature.title }}</p>
-              <p class="mt-1 text-p-sm text-ink-gray-5">{{ feature.body }}</p>
+              <p class="text-base-medium leading-6 text-ink-gray-8">{{ feature.title }}</p>
+              <p class="mt-1 text-p-sm text-pretty text-ink-gray-5">{{ feature.body }}</p>
             </div>
           </li>
         </ul>
       </section>
 
       <section class="mt-10">
-        <h2 class="text-base-semibold text-ink-gray-8">Something is broken</h2>
+        <h2 class="text-lg-semibold text-ink-gray-8">Report a problem</h2>
         <p class="mt-3 text-p-base text-ink-gray-7">
           Open an issue on
           <a
@@ -139,5 +121,5 @@ watch(
         </p>
       </section>
     </div>
-  </div>
+  </main>
 </template>
