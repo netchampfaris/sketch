@@ -28,8 +28,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   activate: [e: MouseEvent | KeyboardEvent]
   near: [near: boolean]
-  resize: [size: { w: number; h: number } | null]
+  resize: [size: { w: number; h: number; card?: string } | null]
 }>()
+
+// The labels are as wide as the tile on screen, but never under 160px: a long name on a narrow tile runs on into the gap
+// rather than clip to a few letters.
+const LABEL_WIDTH = 'max(calc(100% / var(--ls)), 160px)'
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -58,7 +62,7 @@ watch(
 )
 function onAnchor(box: Crop | null) {
   liveBox.value = box
-  emit('resize', box ? { w: box.w, h: box.h } : null)
+  emit('resize', box ? { w: box.w, h: box.h, card: box.card } : null)
 }
 const rect = computed(() => {
   if (!isSet.value) return { x: 0, y: 0, w: props.win.w, h: props.win.h }
@@ -74,6 +78,20 @@ function askMenu(e: MouseEvent) {
 }
 
 const margin = computed(() => (isSet.value ? MARGIN : 0))
+// A set that draws its own card sits on the canvas as itself: no tile surface and no resting border, the margin around it
+// is clear, and the hover and live ring follows the card's own box and corners.
+const bare = computed(() => props.tile.card !== undefined)
+const ring = computed(() => {
+  if (!bare.value) return {}
+  const bw = `calc(${props.live ? 2 : 1}px * var(--inv))`
+  return {
+    left: `calc(${margin.value}px - ${bw})`,
+    top: `calc(${margin.value}px - ${bw})`,
+    width: `calc(${rect.value.w}px + 2 * ${bw})`,
+    height: `calc(${rect.value.h}px + 2 * ${bw})`,
+    borderRadius: props.tile.card,
+  }
+})
 const clip = computed(() => ({ left: margin.value + 'px', top: margin.value + 'px', width: rect.value.w + 'px', height: rect.value.h + 'px' }))
 const shift = computed(() => ({ transform: `translate(${-rect.value.x}px, ${-rect.value.y}px)` }))
 
@@ -92,7 +110,7 @@ watch(
          option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
       class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
-      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
+      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="1" data-ui class="flex h-6 min-w-0 items-center gap-1.5 text-ink-gray-5">
         <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
@@ -116,7 +134,7 @@ watch(
     </div>
     <div
       class="absolute left-0 top-full origin-top-left text-p-sm"
-      :style="{ width: 'calc(100% / var(--ls))', transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
+      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="2" class="flex h-6 min-w-0 items-center gap-1">
         <span v-if="tile.author" class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-5">
@@ -132,25 +150,31 @@ watch(
       role="button"
       tabindex="0"
       :aria-label="`${tile.pageTitle} · ${tile.opt ?? tile.caption}${tile.isDefault ? ' (default)' : ''}, ${bridge.tool === 'comment' ? 'add a comment' : bridge.tool === 'note' ? 'add a note' : 'open live'}`"
-      class="group relative h-full w-full overflow-hidden rounded-4 bg-surface-base"
-      :class="bridge.tool ? 'cursor-crosshair' : 'cursor-pointer'"
-      :style="{ contentVisibility: 'auto', containIntrinsicSize: `${tile.w}px ${tile.h}px` }"
+      :data-tile-card="bare ? '' : undefined"
+      class="group relative h-full w-full"
+      :class="[bridge.tool ? 'cursor-crosshair' : 'cursor-pointer', bare ? '' : 'overflow-hidden rounded-4 bg-surface-base']"
+      :style="bare ? undefined : { contentVisibility: 'auto', containIntrinsicSize: `${tile.w}px ${tile.h}px` }"
       @click="emit('activate', $event)"
       @keydown.enter.self="emit('activate', $event)"
     >
-      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live. -->
+      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live. A set that draws its own
+           card has none until hovered or live. -->
       <div
-        class="pointer-events-none absolute inset-0 z-10 rounded-4 border-solid"
-        :class="live ? 'border-outline-blue-6' : 'border-outline-gray-2 group-hover:border-outline-gray-4'"
-        :style="{ borderWidth: `calc(${live ? 2 : 1}px * var(--inv))` }"
+        class="pointer-events-none absolute z-10 border-solid"
+        :class="[
+          bare ? '' : 'inset-0 rounded-4',
+          live ? 'border-outline-blue-6' : bare ? 'border-transparent group-hover:border-outline-gray-4' : 'border-outline-gray-2 group-hover:border-outline-gray-4',
+        ]"
+        :style="{ borderWidth: `calc(${live ? 2 : 1}px * var(--inv))`, ...ring }"
         aria-hidden="true"
       />
-      <!-- Only the set's own box shows; the rest of the tile is the tile background. -->
-      <div class="absolute overflow-hidden" :style="clip">
-        <div v-if="live && sandbox" data-live class="absolute left-0 top-0 cursor-auto" :style="shift">
+      <!-- Only the set's own box shows; the rest of the tile is the tile background. A card's shadow spills past its box, so
+           the drawing's own box is empty (size-0): the rest of the page, hidden, must not catch the pointer over the next tile. -->
+      <div class="absolute" :class="bare ? '' : 'overflow-hidden'" :style="clip">
+        <div v-if="live && sandbox" data-live class="absolute left-0 top-0 size-0 cursor-auto" :style="shift">
           <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" :grow="!!tile.setOption" @anchor="onAnchor" />
         </div>
-        <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0" :style="shift">
+        <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0 size-0" :style="shift">
           <div
             ref="snapEl"
             inert

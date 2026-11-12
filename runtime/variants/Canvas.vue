@@ -117,8 +117,8 @@ useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
 // The live tile's set as it is now, while it differs from its drawing: the grid follows it, and goes back when it closes.
-const liveSize = reactive<Record<string, { w: number; h: number }>>({})
-const onResize = (t: TileBox, size: { w: number; h: number } | null) => {
+const liveSize = reactive<Record<string, { w: number; h: number; card?: string }>>({})
+const onResize = (t: TileBox, size: { w: number; h: number; card?: string } | null) => {
   if (size) liveSize[t.cacheId] = size
   else delete liveSize[t.cacheId]
 }
@@ -138,7 +138,7 @@ const layout = computed(() =>
     phone: phone.value,
     sizeOf: (id, key) => {
       const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
-      return r ? { w: r.w, h: r.h } : null
+      return r ? { w: r.w, h: r.h, card: r.card } : null
     },
     statesOf: statesOfOption,
   }),

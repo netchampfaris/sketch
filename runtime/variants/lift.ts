@@ -80,6 +80,28 @@ export function boxIn(root: HTMLElement, els: Element[]): Crop | null {
   return { x: round((x - fr.left) / k), y: round((y - fr.top) / k), w: round((right - x) / k), h: round((bottom - y) / k) }
 }
 
+// A set that draws its own card: one outermost element with a background of its own and an edge to it (a visible border
+// or a shadow). Its corner radius, else null. Several roots, no background, or a background with no edge do not count.
+const clear = (c: string) => c === 'transparent' || /(,|\/)\s*0(\.0+)?\s*\)$/.test(c)
+export function ownCard(els: Element[]): string | null {
+  if (els.length !== 1) return null
+  const cs = getComputedStyle(els[0])
+  if (clear(cs.backgroundColor)) return null
+  const edged = (['Top', 'Right', 'Bottom', 'Left'] as const).some((side) => {
+    const style = cs[`border${side}Style`]
+    return style !== 'none' && style !== 'hidden' && parseFloat(cs[`border${side}Width`]) > 0 && !clear(cs[`border${side}Color`])
+  })
+  if (!edged && cs.boxShadow === 'none') return null
+  return cs.borderRadius || '0px'
+}
+
+// `box` with the set's own card marked, when it has one.
+export function withCard(box: Crop | null, els: Element[]): Crop | null {
+  if (!box) return null
+  const card = ownCard(els)
+  return card === null ? box : { ...box, card }
+}
+
 // The first copy of a set as the page reads, top to bottom, then left to right: a set drawn many times (a card in a v-for)
 // shows one, whatever order the code mounts them in. Document order breaks ties, and decides for copies not laid out.
 export function firstCopy(copies: (() => Element[])[]): Element[] {
@@ -118,7 +140,7 @@ export function follow(root: HTMLElement, els: () => Element[], report: (box: Cr
       watched = now
     }
     lift(root, now, grow)
-    const box = boxIn(root, now)
+    const box = withCard(boxIn(root, now), now)
     const key = JSON.stringify(box)
     if (key !== last) {
       last = key
