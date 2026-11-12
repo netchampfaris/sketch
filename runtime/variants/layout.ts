@@ -1,4 +1,4 @@
-// The canvas world for one pick: one even grid of tiles in canvas units (CSS px at 100% zoom). It is computed
+// The canvas world for one pick: one grid of tiles in canvas units (CSS px at 100% zoom). It is computed
 // once per view, window size and panel state, with the largest gaps it needs, and zoom never touches it.
 import { defaultOf, type DGroup, type Opt } from './state'
 import { MIN_ZOOM } from './panzoom'
@@ -59,6 +59,8 @@ export type TileBox = {
   isDefault?: boolean
   // Set tiles: the set's box when the page was first drawn.
   meta?: Crop
+  // The set draws its own card (lift.ts `ownCard`): its corner radius. The tile drops its frame and shows it as it is.
+  card?: string
   x: number
   y: number
   w: number
@@ -74,7 +76,7 @@ export type LayoutCtx = {
   vp: { w: number; h: number }
   phone: boolean
   // The size of one option's own set box once it has been drawn.
-  sizeOf: (cacheId: string, setKey: string) => { w: number; h: number } | null
+  sizeOf: (cacheId: string, setKey: string) => { w: number; h: number; card?: string } | null
   // The states a drawn page declared, by tile: null until it is drawn, 'error' when it could not be.
   statesOf: (cacheId: string) => StateInfo[] | 'error' | null
 }
@@ -171,25 +173,28 @@ function runsOf(descs: Desc[]) {
 }
 
 // Each tile's size: a set's own box (its real size only once every option has been drawn, so the grid settles once)
-// with the margin around it, else the whole window.
-function dimsOf(descs: Desc[], ctx: LayoutCtx) {
+// with the margin around it, else the whole window. A set that draws its own card says so (`card`).
+type Dim = { w: number; h: number; card?: string }
+function dimsOf(descs: Desc[], ctx: LayoutCtx): Dim[] {
   const sizes = descs.map((d) => (d.setKey ? ctx.sizeOf(d.cacheId, d.setKey) : null))
   const known = sizes.every((s, i) => s || !descs[i].setKey)
   return descs.map((d, i) => {
     if (!d.setKey) return { w: ctx.win.w, h: ctx.win.h }
     const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
-    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2 }
+    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2, card: s.card }
   })
 }
 
-// The grid: sections one under another, a heading over each that has one, the same columns in all of them. Tiles share
-// the column width; each row is as tall as its tallest tile (`hs`, one height per desc), and its tiles share that height.
-function build(descs: Desc[], cell: { w: number; hs: number[] }, cols: number, inv: number) {
+// The grid: sections one under another, a heading over each that has one, the same column count in all of them. Each tile
+// is its own size: a row's tiles sit left to right with a gap between, sharing the row's top edge, and the row is as tall
+// as its tallest tile. The grid is as wide as its widest row.
+function build(descs: Desc[], dims: Dim[], cols: number, inv: number) {
   const rowGap = GAP + (LABEL + AUTHOR) * inv
   const sections = runsOf(descs)
   const tiles: TileBox[] = []
   const heads: Head[] = []
   let y = 0
+  let w = 0
   sections.forEach((sec, si) => {
     if (si) y += GAP
     if (descs[sec[0]].section) {
@@ -199,14 +204,18 @@ function build(descs: Desc[], cell: { w: number; hs: number[] }, cols: number, i
     y += LABEL * inv
     for (let r = 0; r < sec.length; r += cols) {
       const row = sec.slice(r, r + cols)
-      const h = Math.max(...row.map((i) => cell.hs[i]))
       if (r) y += rowGap
-      row.forEach((i, c) => tiles.push({ ...descs[i], x: c * (cell.w + GAP), y, w: cell.w, h }))
-      y += h
+      let x = 0
+      for (const i of row) {
+        tiles.push({ ...descs[i], x, y, ...dims[i] })
+        x += dims[i].w + GAP
+      }
+      w = Math.max(w, x - GAP)
+      y += Math.max(...row.map((i) => dims[i].h))
     }
     y += AUTHOR * inv
   })
-  return { tiles, heads, bounds: { w: cols * cell.w + (cols - 1) * GAP, h: y } }
+  return { tiles, heads, bounds: { w, h: y } }
 }
 
 function fitOf(b: { w: number; h: number }, ctx: LayoutCtx, byWidth: boolean): Fit {
@@ -253,7 +262,7 @@ function layoutRows(descs: Desc[], ctx: LayoutCtx): Layout {
     w = Math.max(w, x - GAP)
     y += Math.max(...row.map((i) => dims[i].h)) + AUTHOR * inv
   })
-  const sig = `rows|${dims.map((d) => `${d.w}x${d.h}`).join(',')}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}`
+  const sig = `rows|${dims.map((d) => `${d.w}x${d.h}${d.card === undefined ? '' : 'c'}`).join(',')}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}`
   return { tiles, heads, bounds: { w, h: y }, fit, invFit: inv, sig }
 }
 
@@ -263,7 +272,6 @@ export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
   if (pick?.kind === 'opt') return layoutRows(descs, ctx)
   const isSet = !!descs[0].setKey
   const dims = dimsOf(descs, ctx)
-  const cell = { w: Math.max(...dims.map((d) => d.w)), hs: dims.map((d) => d.h) }
   const n = descs.length
 
   let cols = 1
@@ -273,7 +281,7 @@ export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
       // The column count that lets the whole grid fit at the largest zoom.
       let bestZ = -1
       for (let c = 1; c <= n; c++) {
-        const z = fitOf(build(descs, cell, c, 1).bounds, ctx, false).z
+        const z = fitOf(build(descs, dims, c, 1).bounds, ctx, false).z
         if (z >= bestZ - 0.005) {
           bestZ = Math.max(bestZ, z)
           cols = c
@@ -285,12 +293,12 @@ export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
   // Captions keep their on-screen size at the fit zoom, so the room under a tile is sized for it: the
   // largest the layout needs. Zoom afterwards only scales this layout.
   let inv = 1
-  let out = build(descs, cell, cols, inv)
+  let out = build(descs, dims, cols, inv)
   for (let i = 0; i < 4; i++) {
     inv = Math.max(1, 1 / fitOf(out.bounds, ctx, isSet).z)
-    out = build(descs, cell, cols, inv)
+    out = build(descs, dims, cols, inv)
   }
   const fit = fitOf(out.bounds, ctx, isSet)
   inv = Math.max(inv, 1 / fit.z)
-  return { ...out, fit, invFit: inv, sig: `${cols}|${cell.w}x${cell.hs.join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}` }
+  return { ...out, fit, invFit: inv, sig: `${cols}|${dims.map((d) => `${d.w}x${d.h}${d.card === undefined ? '' : 'c'}`).join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}` }
 }
