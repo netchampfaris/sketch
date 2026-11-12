@@ -105,36 +105,57 @@ export const fromQuery = (route: any, param: 'v' | 's', key: string) =>
     .find((p) => p.startsWith(key + '.'))
     ?.slice(key.length + 1)
 
-// Mirror non-default picks into one query param as `<key>.<option>`, comma separated, with no new
-// history entry. Keys this module has ever seen are replaced; anything else (another `v`, such as a
-// cache-buster) is left alone.
-function mirrorParam(router: any, param: 'v' | 's', known: Set<string>, chosen: string[]) {
-  const route = router.currentRoute.value
-  const was = fromQueryRaw(route, param)
-  const foreign = was.split(',').filter((p) => p && !known.has(p.split('.')[0]))
-  const next = [...foreign, ...chosen].join(',')
-  if (next === was) return
-  const query = { ...route.query }
-  if (next) query[param] = next
-  else delete query[param]
-  router.replace({ query })
-}
+const partsOf = (raw: string) => raw.split(',').filter(Boolean)
+const keyOfPart = (p: string) => p.split('.')[0]
 const knownS = new Set<string>()
 const knownV = new Set<string>()
 
-export function mirrorStates(router: any) {
-  const route = router.currentRoute.value
+// The non-default picks that belong in `route`'s URL, as `<key>.<option>`.
+function stateParts(route: any) {
   const mine = Object.values(states).filter((s) => onPage(route, s.path))
   mine.forEach((s) => knownS.add(s.key))
-  const chosen = mine.filter((s) => stateOf(s) !== s.options[0]).map((s) => `${s.key}.${slugOf(stateOf(s))}`)
-  mirrorParam(router, 's', knownS, chosen)
+  return mine.filter((s) => stateOf(s) !== s.options[0]).map((s) => `${s.key}.${slugOf(stateOf(s))}`)
 }
-export function mirrorSets(router: any) {
-  const route = router.currentRoute.value
+function setParts(route: any) {
   const mine = sets.filter((s) => onPage(route, s.path))
   mine.forEach((s) => knownV.add(s.key))
-  const chosen = mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
-  mirrorParam(router, 'v', knownV, chosen)
+  return mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
+}
+
+// Mirror non-default picks into one query param as `<key>.<option>`, comma separated, with no new
+// history entry. Keys this module has ever seen are replaced; anything else (another `v`, such as a
+// cache-buster) is left alone. The same parts in another order need no navigation.
+function mirrorParam(router: any, param: 'v' | 's', known: Set<string>, chosen: string[]) {
+  const route = router.currentRoute.value
+  const was = partsOf(fromQueryRaw(route, param))
+  const next = [...was.filter((p) => !known.has(keyOfPart(p))), ...chosen]
+  if (next.length === was.length && next.every((p) => was.includes(p))) return
+  const query = { ...route.query }
+  if (next.length) query[param] = next.join(',')
+  else delete query[param]
+  router.replace({ query })
+}
+
+export const mirrorStates = (router: any) => mirrorParam(router, 's', knownS, stateParts(router.currentRoute.value))
+export const mirrorSets = (router: any) => mirrorParam(router, 'v', knownV, setParts(router.currentRoute.value))
+
+// A navigation that leaves out picks the mirror would write back (a page redirecting to a bare path) gets them
+// here, so it lands with them. Writing them back after it lands is a second navigation, and that closes what the
+// page opened as it redirected. A key the target already names is left as named.
+function carryPicks(router: any, to: any) {
+  let query: Record<string, any> | null = null
+  for (const [param, chosen] of [['s', stateParts(to)], ['v', setParts(to)]] as const) {
+    const was = partsOf(fromQueryRaw(to, param))
+    const named = new Set(was.map(keyOfPart))
+    const missing = chosen.filter((p) => !named.has(keyOfPart(p)))
+    if (!missing.length) continue
+    query ??= { ...to.query }
+    query[param] = [...was, ...missing].join(',')
+  }
+  if (!query) return true
+  // Back and Forward have already moved the history to `to`: replace that entry rather than push after it.
+  const popped = router.options.history.location === to.fullPath
+  return { path: to.path, query, hash: to.hash, ...(popped ? { replace: true } : {}) }
 }
 
 // Opening a link like #/requests?s=requests.loading: the name's slug picks the state, the option's slug
@@ -172,6 +193,7 @@ let hooked = false
 export function hookRouter(router: any) {
   if (hooked) return
   hooked = true
+  router.beforeEach((to: any) => carryPicks(router, to))
   // A navigation without the query puts it back, and drops the page we left.
   router.afterEach(() => setTimeout(() => { mirrorStates(router); mirrorSets(router) }, 0))
 }
