@@ -31,9 +31,6 @@ const emit = defineEmits<{
   resize: [size: { w: number; h: number; card?: string } | null]
 }>()
 
-// The labels are as wide as the tile on screen, but never under 160px: a long name on a narrow tile runs on into the gap
-// rather than clip to a few letters.
-const LABEL_WIDTH = 'max(calc(100% / var(--ls)), 160px)'
 
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
@@ -81,6 +78,16 @@ const margin = computed(() => (isSet.value ? MARGIN : 0))
 // A set that draws its own card sits on the canvas as itself: no tile surface and no resting border, the margin around it
 // is clear, and the hover and live ring follows the card's own box and corners.
 const bare = computed(() => props.tile.card !== undefined)
+// The labels line up with the tile's frame, or with the card's own edge when it has no frame, and are as wide as that on
+// screen, but never under 160px: a long name on a narrow tile runs on into the gap rather than clip to a few letters.
+const labels = computed(() => {
+  const inset = bare.value ? MARGIN : 0
+  return {
+    left: inset + 'px',
+    width: `max(calc(${bare.value ? rect.value.w + 'px' : '100%'} / var(--ls)), 160px)`,
+    above: `calc(100% - ${inset}px)`,
+  }
+})
 const ring = computed(() => {
   if (!bare.value) return {}
   const bw = `calc(${props.live ? 2 : 1}px * var(--inv))`
@@ -109,8 +116,8 @@ watch(
          the right, holding Make default (owner), Open page, States, Keep only this, Delete variant. Under it: on a teammate's
          option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
-      class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
-      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
+      class="absolute origin-bottom-left text-p-sm"
+      :style="{ left: labels.left, bottom: labels.above, width: labels.width, transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="1" data-ui class="flex h-6 min-w-0 items-center gap-1.5 text-ink-gray-5">
         <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
@@ -133,8 +140,8 @@ watch(
       </div>
     </div>
     <div
-      class="absolute left-0 top-full origin-top-left text-p-sm"
-      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
+      class="absolute origin-top-left text-p-sm"
+      :style="{ left: labels.left, top: labels.above, width: labels.width, transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="2" class="flex h-6 min-w-0 items-center gap-1">
         <span v-if="tile.author" class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-5">
