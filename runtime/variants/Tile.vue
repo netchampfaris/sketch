@@ -32,6 +32,14 @@ const emit = defineEmits<{
 }>()
 
 
+// The labels are as wide as the tile on screen, but never under 160px: a long name on a narrow tile runs on into the gap
+// rather than clip to a few letters.
+const LABEL_WIDTH = 'max(calc(100% / var(--ls)), 160px)'
+// The tile's width as the labels see it, and the live tile's ⋯ at its right edge. The name stops short of the ⋯ (never under
+// 80px), so only a name that is long runs on past the card.
+const edge = computed(() => `calc(${props.tile.w}px / var(--ls))`)
+const nameRoom = computed(() => (props.live ? `calc(max(${edge.value}, 160px) - max(${edge.value} - 28px, 80px))` : '0px'))
+
 const box = ref<HTMLElement | null>(null)
 const snapEl = ref<HTMLElement | null>(null)
 const near = ref(false)
@@ -65,7 +73,7 @@ const rect = computed(() => {
   if (!isSet.value) return { x: 0, y: 0, w: props.win.w, h: props.win.h }
   if (props.live && liveBox.value) return liveBox.value
   const own = props.snap && !props.snap.error ? props.snap.sets.find((s) => s.key === props.tile.setKey) : null
-  return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - MARGIN * 2, h: props.tile.h - MARGIN * 2 }
+  return own ?? props.tile.meta ?? { x: 0, y: 0, w: props.tile.w - margin.value * 2, h: props.tile.h - margin.value * 2 }
 })
 // The live tile's ⋯: its menu (Make default, Open page, Keep only this, Delete variant) is the Viewer shell's
 // (runtime/shell/TileMenu.vue), which knows who is reading and saves over the session. The ⋯ only says where it is.
@@ -74,26 +82,16 @@ function askMenu(e: MouseEvent) {
   bridge.tileMenu?.(props.tile.id, { x: r.left, y: r.top, w: r.width, h: r.height })
 }
 
-const margin = computed(() => (isSet.value ? MARGIN : 0))
-// A set that draws its own card sits on the canvas as itself: no tile surface and no resting border, the margin around it
-// is clear, and the hover and live ring follows the card's own box and corners.
+// A set that draws its own card sits on the canvas as itself: its tile is the card's box, with no surface and no resting
+// border. Its shadow bleeds outside the tile, and the hover and live ring follows the card's corners.
 const bare = computed(() => props.tile.card !== undefined)
-// The labels line up with the tile's frame, or with the card's own edge when it has no frame, and are as wide as that on
-// screen, but never under 160px: a long name on a narrow tile runs on into the gap rather than clip to a few letters.
-const labels = computed(() => {
-  const inset = bare.value ? MARGIN : 0
-  return {
-    left: inset + 'px',
-    width: `max(calc(${bare.value ? rect.value.w + 'px' : '100%'} / var(--ls)), 160px)`,
-    above: `calc(100% - ${inset}px)`,
-  }
-})
+const margin = computed(() => (isSet.value && !bare.value ? MARGIN : 0))
 const ring = computed(() => {
   if (!bare.value) return {}
   const bw = `calc(${props.live ? 2 : 1}px * var(--inv))`
   return {
-    left: `calc(${margin.value}px - ${bw})`,
-    top: `calc(${margin.value}px - ${bw})`,
+    left: `calc(0px - ${bw})`,
+    top: `calc(0px - ${bw})`,
     width: `calc(${rect.value.w}px + 2 * ${bw})`,
     height: `calc(${rect.value.h}px + 2 * ${bw})`,
     borderRadius: props.tile.card,
@@ -116,17 +114,18 @@ watch(
          the right, holding Make default (owner), Open page, States, Keep only this, Delete variant. Under it: on a teammate's
          option, their face and "by Arohi" (the owner's own options say nothing there). Other tiles keep that row empty, so tiles line up. -->
     <div
-      class="absolute origin-bottom-left text-p-sm"
-      :style="{ left: labels.left, bottom: labels.above, width: labels.width, transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
+      class="absolute bottom-full left-0 origin-bottom-left text-p-sm"
+      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingBottom: '8px', lineHeight: '1.3' }"
     >
-      <div data-tile-row="1" data-ui class="flex h-6 min-w-0 items-center gap-1.5 text-ink-gray-5">
+      <div data-tile-row="1" data-ui class="relative flex h-6 min-w-0 items-center gap-1.5 text-ink-gray-5" :style="{ paddingRight: nameRoom }">
         <span v-if="tile.n" class="shrink-0 tabular-nums text-ink-gray-4">{{ tile.n }}</span>
         <span class="truncate" :title="tile.caption">{{ tile.caption }}</span>
         <Badge v-if="tile.isDefault" class="shrink-0" label="Default" theme="gray" variant="subtle" size="sm" />
         <Badge v-if="tile.author && tile.option && isNew(tile.option)" class="shrink-0" label="New" theme="blue" variant="subtle" size="sm" />
         <Button
           v-if="live"
-          class="-mr-1.5 ml-auto shrink-0"
+          class="absolute top-1/2 shrink-0"
+          :style="{ left: `calc(${edge} + 6px)`, transform: 'translate(-100%, -50%)' }"
           variant="ghost"
           size="xs"
           icon="lucide-ellipsis"
@@ -140,8 +139,8 @@ watch(
       </div>
     </div>
     <div
-      class="absolute origin-top-left text-p-sm"
-      :style="{ left: labels.left, top: labels.above, width: labels.width, transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
+      class="absolute left-0 top-full origin-top-left text-p-sm"
+      :style="{ width: LABEL_WIDTH, transform: 'scale(var(--ls))', paddingTop: '8px', lineHeight: '1.3' }"
     >
       <div data-tile-row="2" class="flex h-6 min-w-0 items-center gap-1">
         <span v-if="tile.author" class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-5">

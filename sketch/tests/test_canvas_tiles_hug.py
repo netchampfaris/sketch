@@ -8,9 +8,10 @@ and `layout.ts`; no server is needed):
 
 - A set is self-framed when its drawn content is one outermost element with a background of its own and an edge to it
   (a visible border or a shadow). Several root elements, no background, or a background with no edge keep the frame.
-- In a set's grid, each tile is its own size (the set's box plus the margin), not the widest option's. A row's tiles sit
-  left to right with a gap between, share the row's top edge, and the grid is as wide as its widest row. The tile carries
-  the self-framed flag so the canvas can draw it without the frame.
+- In a set's grid, each tile is its own size, not the widest option's: the set's box plus the frame's margin, and for a
+  self-framed set the card's own box (its shadow bleeds outside the tile). A row's tiles sit left to right with the same
+  gap between, share the row's top edge, and the grid is as wide as its widest row. The tile carries the self-framed flag
+  so the canvas can draw it without the frame.
 
 Skips when node, Playwright or esbuild (from a built Runtime's node_modules) is absent. A skip is not a pass.
 """
@@ -76,11 +77,12 @@ class TestCanvasTilesHug(IntegrationTestCase):
 
 	def test_each_tile_is_its_own_size_in_a_row(self):
 		tiles = {t["id"]: t for t in self.answer["wide"]["tiles"]}
-		sizes = {"a": (420, 400), "b": (420, 320), "c": (420, 480), "d": (840, 360)}
+		# b is the framed one: it keeps the margin. The others are cards and sit at their own box.
+		sizes = {"a": (420, 400, 0), "b": (420, 320, MARGIN), "c": (420, 480, 0), "d": (840, 360, 0)}
 		x = 0
-		for key, (w, h) in sizes.items():
+		for key, (w, h, margin) in sizes.items():
 			tile = tiles[key]
-			self.assertEqual((tile["x"], tile["w"], tile["h"]), (x, w + MARGIN * 2, h + MARGIN * 2), key)
+			self.assertEqual((tile["x"], tile["w"], tile["h"]), (x, w + margin * 2, h + margin * 2), key)
 			self.assertEqual(tile["y"], tiles["a"]["y"], "a row shares its top edge")
 			x += tile["w"] + GAP
 
@@ -93,8 +95,8 @@ class TestCanvasTilesHug(IntegrationTestCase):
 	def test_a_phone_stacks_tiles_at_their_own_widths(self):
 		phone = self.answer["phone"]
 		self.assertEqual([t["x"] for t in phone["tiles"]], [0] * 5)
-		self.assertEqual(sorted({t["w"] for t in phone["tiles"]}), [320 + 32, 420 + 32, 840 + 32])
-		self.assertEqual(phone["bounds"]["w"], 840 + 32)
+		self.assertEqual(sorted({t["w"] for t in phone["tiles"]}), [320, 420, 420 + 32, 840])
+		self.assertEqual(phone["bounds"]["w"], 840)
 
 	def test_a_tile_carries_the_self_framed_flag_of_its_option(self):
 		flags = {t["id"]: t["card"] for t in self.answer["wide"]["tiles"]}
