@@ -14,7 +14,8 @@ export const PAD = 32
 export const TOP = 60
 // A heading over a section of tiles: its row (24) and the room under it (16), in on-screen px at the fit zoom.
 export const HEAD = 40
-// A set tile shows the set's own box with this much tile background around it.
+// A set tile shows the set's own box with this much tile background around it. A set that draws its own card has no
+// frame: its tile is the card's box, and a margin this size only bleeds outside it for the shadow (Tile.vue).
 export const MARGIN = 16
 
 // A state switch the canvas found: `options` is the flat list, first one the default. `of` is set on a component state
@@ -173,7 +174,8 @@ function runsOf(descs: Desc[]) {
 }
 
 // Each tile's size: a set's own box (its real size only once every option has been drawn, so the grid settles once)
-// with the margin around it, else the whole window. A set that draws its own card says so (`card`).
+// with the margin around it (none for a card that draws itself), else the whole window. A set that draws its own card
+// says so (`card`).
 type Dim = { w: number; h: number; card?: string }
 function dimsOf(descs: Desc[], ctx: LayoutCtx): Dim[] {
   const sizes = descs.map((d) => (d.setKey ? ctx.sizeOf(d.cacheId, d.setKey) : null))
@@ -181,7 +183,8 @@ function dimsOf(descs: Desc[], ctx: LayoutCtx): Dim[] {
   return descs.map((d, i) => {
     if (!d.setKey) return { w: ctx.win.w, h: ctx.win.h }
     const s = known ? sizes[i]! : d.meta ?? { w: 480, h: 320 }
-    return { w: s.w + MARGIN * 2, h: s.h + MARGIN * 2, card: s.card }
+    const m = s.card === undefined ? MARGIN : 0
+    return { w: s.w + m * 2, h: s.h + m * 2, card: s.card }
   })
 }
 
