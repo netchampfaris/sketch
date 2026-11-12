@@ -453,6 +453,8 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 	const spot = spotOfThread(t)
 	if (spot) return openOnCanvas(spot, a.offset, (x, y) => openThreadAt(t, x, y), row)
 	await leaveCanvas()
+	// A page just arrived at has nowhere to glide from: its element is brought in at once, as a note's is (reveal).
+	const arrived = key.value !== a.route
 	await goTo(a.route)
 	// Made on other options than the Demo shows: show those first, so its element is on the page to be found.
 	if (!picksShown(a.picks)) {
@@ -460,8 +462,8 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 		await sleep(50)
 	}
 	const found = await until(async () => !!(await resolveRect(a.selector)), 1500)
-	if (found) post('scrollTo', { selector: a.selector, smooth: true })
-	await sleep(found ? 250 : 0)
+	if (found) post('scrollTo', { selector: a.selector, smooth: !arrived })
+	await sleep(found ? (arrived ? 50 : 250) : 0)
 	const r = found ? await resolveRect(a.selector) : null
 	openThreadAt(t, r ? r.x + a.offset.x * r.w : a.rect.x + a.offset.x * a.rect.w, r ? r.y + a.offset.y * r.h : a.rect.y + a.offset.y * a.rect.h)
 }
@@ -494,7 +496,7 @@ onMounted(openCommenting)
 
 // The canvas layer draws the pins and the panel's extra tabs from components registered here. The pins call back into
 // `handlers`; the tabs are the lists with this toolbar's actions wired in.
-const commentsTab = markRaw(defineComponent({ setup: () => () => h(CanvasComments, { route: key.value, onChoose: openFromList }) }))
+const commentsTab = markRaw(defineComponent({ setup: () => () => h(CanvasComments, { onChoose: openFromList }) }))
 const notesTab = markRaw(defineComponent({ setup: () => () => h(CanvasNotes, { selected: canvasUi.noteId, onChoose: openNoteFromList }) }))
 canvas.canComment = !guest
 canvas.canNote = noter
@@ -1337,11 +1339,11 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 			leave-to-class="opacity-0"
 		>
 			<div v-if="showPanel && !sheetMode && !canvasOpen && panelOpen" ref="panelEl" class="pointer-events-none fixed right-3 z-[2147482995]" :style="panelBox">
-				<CommentsPanel :route="key" @choose="openFromList" @hide="panelOpen = false" />
+				<CommentsPanel @choose="openFromList" @hide="panelOpen = false" />
 			</div>
 		</Transition>
 		<BottomSheet v-if="showPanel && sheetMode" v-model:open="sheetOpen" title="Comments">
-			<CommentsPanel embedded :route="key" @choose="openFromList" />
+			<CommentsPanel embedded @choose="openFromList" />
 		</BottomSheet>
 
 		<Transition

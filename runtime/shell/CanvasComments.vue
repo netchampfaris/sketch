@@ -6,7 +6,6 @@ import { query, type Thread } from './comments'
 import CommentsList from './CommentsList.vue'
 import ResolvedMenu from './ResolvedMenu.vue'
 
-defineProps<{ route: string }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }>()
 </script>
 
@@ -24,6 +23,6 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }
 				<Button variant="ghost" icon="lucide-panel-right" aria-label="Hide panel" @click="emit('hide')" />
 			</Tooltip>
 		</div>
-		<CommentsList :route="route" width="16.5rem" max="100%" @choose="(t, el) => emit('choose', t, el)" />
+		<CommentsList width="16.5rem" max="100%" @choose="(t, el) => emit('choose', t, el)" />
 	</div>
 </template>

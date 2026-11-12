@@ -7,7 +7,7 @@ import { query, type Thread } from './comments'
 import CommentsList from './CommentsList.vue'
 import ResolvedMenu from './ResolvedMenu.vue'
 
-defineProps<{ embedded?: boolean; route: string }>()
+defineProps<{ embedded?: boolean }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }>()
 </script>
 
@@ -33,7 +33,6 @@ const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement]; hide: [] }
 		</div>
 
 		<CommentsList
-			:route="route"
 			:embedded="embedded"
 			:width="embedded ? 'calc(100vw - 1rem)' : '17rem'"
 			:max="embedded ? 'calc(100dvh - 15rem)' : 'var(--comments-list-max, 60vh)'"

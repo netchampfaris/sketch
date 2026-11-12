@@ -4,7 +4,7 @@
 import { ago, isClosed, plain, type Thread } from './comments'
 import AuthorAvatar from './AuthorAvatar.vue'
 
-defineProps<{ thread: Thread; selected: boolean }>()
+defineProps<{ thread: Thread; selected: boolean; page?: string }>()
 const emit = defineEmits<{ choose: [el: HTMLElement] }>()
 const replies = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`
 </script>
@@ -37,6 +37,7 @@ const replies = (n: number) => `${n} ${n === 1 ? 'reply' : 'replies'}`
 					</template>
 				</span>
 			</span>
+			<span v-if="page" class="mt-0.5 block truncate text-xs text-ink-gray-5" :title="page">{{ page }}</span>
 		</span>
 	</button>
 </template>

@@ -1,15 +1,16 @@
 <script setup lang="ts">
-// The comments: one row per thread under a header per page. Resolved ones show when asked for (ResolvedMenu.vue).
-// The canvas opens its own list first ("This view"). A thread whose option or state has gone counts as resolved
-// (comments.ts isGone). The live page's floating panel, the canvas panel's Comments tab and the phone sheet all draw this.
-import { computed } from 'vue'
+// The comments: one flat list, newest first, one row per thread. Nothing depends on the page or view in view, so a click
+// never moves the list. Resolved ones show when asked for (ResolvedMenu.vue). A thread whose option or state has gone counts as
+// resolved (comments.ts isGone). The live page's floating panel, the canvas panel's Comments tab and the phone sheet all draw this.
+import { computed, nextTick, ref, watch } from 'vue'
 import { Button, ScrollArea, Skeleton } from 'frappe-ui'
-import { canvas, findTile } from './canvas'
-import { load, matching, openThread, query, spotOfThread, status, threads, type Thread } from './comments'
+import { canvas } from './canvas'
+import { load, matching, openThread, query, status, threads, type Thread } from './comments'
 import CommentRow from './CommentRow.vue'
+import { page } from './frame'
 import { pageNameOf } from './host'
 
-const props = defineProps<{ route: string; embedded?: boolean; width: string; max: string }>()
+defineProps<{ embedded?: boolean; width: string; max: string }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement] }>()
 
 const searching = computed(() => !!query.value.trim())
@@ -20,50 +21,35 @@ const empty = computed(() => {
 	return threads.value.length ? 'resolved' : 'first'
 })
 
-type Group = { key: string; name: string; threads: Thread[] }
 const onCanvas = computed(() => canvas.open)
-
-// On the canvas, whether a thread sits on a tile in view.
-function isHere(t: Thread) {
-	const spot = spotOfThread(t)
-	return !!spot && !!findTile(canvas.tiles, spot)
-}
-const pageOrder = (route: string) => {
-	const i = canvas.model?.findIndex((p) => p.path === route) ?? -1
-	return i < 0 ? 1e6 : i
-}
 const nameOfRoute = (t: Thread) => t.anchor.tile?.page || pageNameOf(t.anchor.route)
+// A row names its page when the prototype has more than one: what the page headers used to say.
+const paged = computed(() => page.pages.length > 1)
 
-const groups = computed<Group[]>(() => {
-	const list = matching.value
-	if (onCanvas.value) {
-		const here = list.filter(isHere)
-		const rest = list.filter((t) => !here.includes(t))
-		const by = new Map<string, Thread[]>()
-		for (const t of rest) by.set(t.anchor.route, [...(by.get(t.anchor.route) ?? []), t])
-		const pages = [...by.keys()].sort((a, b) => pageOrder(a) - pageOrder(b))
-		return [
-			...(here.length ? [{ key: 'here', name: 'This view', threads: here }] : []),
-			...pages.map((r) => ({ key: r, name: nameOfRoute(by.get(r)![0]), threads: by.get(r)! })),
-		]
-	}
-	// This page's threads first, then each other page's; within a page the list's own order (newest unresolved first).
-	const by = new Map<string, Thread[]>()
-	for (const t of list) by.set(t.anchor.route, [...(by.get(t.anchor.route) ?? []), t])
-	const routes = [...by.keys()].sort((a, b) => Number(b === props.route) - Number(a === props.route))
-	return routes.map((r) => ({ key: r, name: r === props.route ? 'This page' : pageNameOf(r), threads: by.get(r)! }))
-})
-// A header names the group when there is more than one, and always on the canvas, where "This view" is one of them.
-const headers = computed(() => onCanvas.value || groups.value.length > 1)
-// A view with no comments still gets its header, so the list does not start at another page without saying so.
-const noneHere = computed(() => onCanvas.value && !searching.value && !groups.value.some((g) => g.key === 'here'))
+// The open thread's row stays in view. A row that was clicked is already there, so nothing moves.
+const area = ref<{ viewportElement: HTMLElement | null }>()
+watch(
+	openThread,
+	async (id) => {
+		if (!id) return
+		await nextTick()
+		const box = area.value?.viewportElement
+		const row = box?.querySelector('[aria-current="true"]')
+		if (!box || !row) return
+		const b = box.getBoundingClientRect()
+		const r = row.getBoundingClientRect()
+		if (r.top < b.top) box.scrollTop -= b.top - r.top
+		else if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom
+	},
+	{ immediate: true, flush: 'post' },
+)
 
 // A phone has no hover or Escape; the words say what a finger does.
 const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches
 </script>
 
 <template>
-	<ScrollArea class="mt-1 min-h-0 shrink" :style="{ maxHeight: max }">
+	<ScrollArea ref="area" class="mt-1 flex min-h-0 shrink flex-col" :style="{ maxHeight: max }">
 		<!-- A fixed width: the scroll area sizes its content to the widest row, which would push long names out of the card.
 			In the sheet the toolbar floats over the bottom, so the last row scrolls clear of it. -->
 		<div :style="{ width }" class="min-w-0" :class="embedded && 'pb-20'">
@@ -88,16 +74,9 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			<p v-else-if="empty === 'search'" class="break-words px-2 py-2 text-p-sm text-ink-gray-5">Nothing matches “{{ query.trim() }}”</p>
 			<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
-			<template v-else-if="status === 'ready'">
-				<section v-if="noneHere" class="flex flex-col gap-0.5" aria-label="This view">
-					<p class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">This view</p>
-					<p class="px-2 py-1.5 text-p-sm text-ink-gray-5">No comments here yet</p>
-				</section>
-				<section v-for="g in groups" :key="g.key" class="flex flex-col gap-0.5" :aria-label="headers ? g.name : undefined">
-					<p v-if="headers" class="px-2 pb-1 pt-2 text-xs font-medium text-ink-gray-5">{{ g.name }}</p>
-					<CommentRow v-for="t in g.threads" :key="t.id" :thread="t" :selected="openThread === t.id" @choose="emit('choose', t, $event)" />
-				</section>
-			</template>
+			<div v-else-if="status === 'ready'" class="flex flex-col gap-0.5">
+				<CommentRow v-for="t in matching" :key="t.id" :thread="t" :page="paged ? nameOfRoute(t) : undefined" :selected="openThread === t.id" @choose="emit('choose', t, $event)" />
+			</div>
 		</div>
 	</ScrollArea>
 </template>

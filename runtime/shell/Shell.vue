@@ -62,7 +62,7 @@ watch(
 	(ok) => {
 		if (!ok) return
 		shown.value = toolbar
-		// The page names, for the comments list's groups (host.ts pageNameOf). Nothing renders from it.
+		// The page names, for the comments list's rows (host.ts pageNameOf). Nothing renders from it.
 		host.router = createRouter({
 			history: createMemoryHistory(),
 			routes: page.pages.map((p) => ({ path: p.path, component: { render: () => null }, meta: { title: p.title } })),
