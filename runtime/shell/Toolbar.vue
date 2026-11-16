@@ -1375,7 +1375,7 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 						>
 							<span
 								class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
-								:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
+								:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-violet-7'"
 							>{{ noteNumber(n) }}</span>
 							<div class="min-w-0 flex-1">
 								<p class="flex items-baseline gap-2">

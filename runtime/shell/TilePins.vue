@@ -3,7 +3,8 @@
 // on the tile through pan, zoom, the panel closing and a new layout. The canvas draws this inside its scaled
 // world; each pin undoes the zoom (`--inv`), so it keeps its size on screen. Comment pins show in Comment mode,
 // note pins in Note mode, and none while browsing.
-// Pins that land on each other fan out sideways, so every one of them stays reachable by pointer.
+// A pin that would overlap another steps to the right, side by side with a small gap, so every one of them stays
+// reachable by pointer.
 // While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
 // typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
 import { computed } from 'vue'
@@ -17,9 +18,11 @@ import PinShape from './PinShape.vue'
 
 const props = defineProps<{ tiles: ShellTile[]; zoom: number }>()
 
-// Within this many screen px two pins count as one pile; each further pin in a pile steps this far to the right.
-const PILE = 20
-const STEP = 22
+// A pin with its 2px ring on each side is 32px wide (comment) or 28px (note). One that would overlap an earlier pin
+// steps right by its width and a 4px gap, until it is clear.
+const WIDTH = { comment: 32, note: 28 }
+const gap = 4
+const stepOf = (kind: Item['kind']) => WIDTH[kind] + gap
 
 type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean; held?: boolean }
 const items = computed<Item[]>(() => {
@@ -44,25 +47,34 @@ const draftNumber = computed(() => notes.value.filter((n) => n.tile).length + 1)
 
 const pins = computed(() => {
 	const placed: { x: number; y: number }[] = []
-	const out: (Item & { x: number; y: number; k: number })[] = []
+	const out: (Item & { x: number; y: number; dx: number })[] = []
 	for (const it of items.value) {
 		const t = props.tiles.find((x) => sameTile(x.spot, it.spot))
 		if (!t) continue
 		const x = t.x + it.fx * t.w
 		const y = t.y + it.fy * t.h
-		const near = (p: { x: number; y: number }) => Math.abs(p.x - x) * props.zoom < PILE && Math.abs(p.y - y) * props.zoom < PILE
-		// The draft sits exactly where the click was, on top of whatever is there.
-		const k = it.draft ? 0 : placed.filter(near).length
-		if (!it.draft) placed.push({ x, y })
-		out.push({ ...it, x, y, k })
+		// Screen px, so the gap holds at any zoom. The draft sits exactly where the click was, on top of whatever is there.
+		const w = WIDTH[it.kind]
+		const sx = x * props.zoom
+		const sy = y * props.zoom
+		let at = sx
+		if (!it.draft) {
+			const blocker = () => placed.find((p) => Math.abs(p.x - at) < w && Math.abs(p.y - sy) < w)
+			for (let hit = blocker(); hit; hit = blocker()) at = hit.x + stepOf(it.kind)
+			placed.push({ x: at, y: sy })
+		}
+		out.push({ ...it, x, y, dx: at - sx })
 	}
 	return out
 })
 
-function open(p: Item & { k: number }, e: MouseEvent) {
-	// The wrapper is a point at the pin's tip; the fan-out is on-screen px from there.
+// The pin whose box is open, or the draft being written: the same pin, lifted.
+const isSelected = (p: Item) => p.draft || (p.thread ? openThread.value === p.id : canvasUi.noteId === p.id)
+
+function open(p: Item & { dx: number }, e: MouseEvent) {
+	// The wrapper is a point at the pin's tip; the step to the right is on-screen px from there.
 	const r = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect()
-	const x = r.left + p.k * STEP
+	const x = r.left + p.dx
 	if (p.thread) handlers.thread?.(p.thread, x, r.top)
 	else if (p.note) handlers.note?.(p.note, x, r.top)
 	else if (p.held) handlers.draft?.(p.id, x, r.top)
@@ -82,7 +94,7 @@ const label = (p: Item) =>
 				v-for="p in pins"
 				:key="p.id"
 				class="absolute size-0 origin-top-left"
-				:class="p.draft || (p.thread ? openThread === p.id : canvasUi.noteId === p.id) ? 'z-10' : ''"
+				:class="isSelected(p) ? 'z-10' : ''"
 				:style="{ left: `${p.x}px`, top: `${p.y}px`, transform: 'scale(var(--inv))' }"
 			>
 				<component
@@ -93,9 +105,9 @@ const label = (p: Item) =>
 					:data-comment-pin="p.thread ? '' : undefined"
 					:aria-label="p.draft ? undefined : label(p)"
 					:aria-hidden="p.draft ? 'true' : undefined"
-					class="absolute left-0 top-0 flex -translate-x-1/2 items-center justify-center transition-transform duration-150 hover:z-10 hover:scale-110 focus-visible:z-10 motion-reduce:transition-none motion-reduce:hover:scale-100"
-					:class="[p.draft ? 'pointer-events-none' : 'pointer-events-auto', p.kind === 'comment' ? 'size-7 origin-[50%_34px] -translate-y-[34px]' : 'size-6 origin-[50%_29px] -translate-y-[29px]', p.thread?.resolved && 'opacity-60', p.note?.sent && 'opacity-60']"
-					:style="{ marginLeft: `${p.k * STEP}px` }"
+					class="absolute left-0 top-0 flex -translate-x-1/2 items-center justify-center transition-transform duration-150 ease-out hover:z-10 focus-visible:z-10 motion-reduce:transition-none"
+					:class="[p.draft ? 'pointer-events-none' : 'pointer-events-auto', isSelected(p) ? 'scale-[1.15] motion-reduce:scale-100' : 'hover:scale-110 motion-reduce:hover:scale-100', p.kind === 'comment' ? 'size-7 origin-[50%_34px] -translate-y-[34px]' : 'size-6 origin-[50%_29px] -translate-y-[29px]', p.thread?.resolved && 'opacity-60', p.note?.sent && 'opacity-60']"
+					:style="{ marginLeft: `${p.dx}px` }"
 					@click.stop="!p.draft && open(p, $event)"
 				>
 					<PinShape
@@ -103,7 +115,7 @@ const label = (p: Item) =>
 						:username="p.draft || p.held ? host.me : p.thread?.author"
 						:number="p.draft ? draftNumber : p.note ? noteNumber(p.note) : undefined"
 						:muted="p.thread ? p.thread.resolved : !!p.note?.sent"
-						:selected="p.draft || (p.thread ? openThread === p.id : canvasUi.noteId === p.id)"
+						:selected="isSelected(p)"
 						:draft="p.held"
 					/>
 				</component>
