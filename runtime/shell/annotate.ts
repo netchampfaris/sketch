@@ -6,7 +6,7 @@ import { ref } from 'vue'
 import { whereOf, type TileRef } from '../shared/tiles'
 import { subject } from './host'
 import { elementLine } from '../shared/tweak'
-import type { BoxInfo, ElInfo, Mode } from '../shared/protocol'
+import type { BoxInfo, ElInfo, Mode, RevealStep } from '../shared/protocol'
 
 export type Note = {
   id: string
@@ -21,6 +21,9 @@ export type Note = {
   state?: string
   extras?: ElInfo[]
   box?: BoxInfo
+  // What was open around the element when the note was made (a popover, a section, a tab), outermost first, so its pin
+  // can open it again once it has closed.
+  reveal?: RevealStep[]
   note: string
   sent?: boolean
   offset: { x: number; y: number }

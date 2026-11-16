@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // One avatar pin per thread on this page, in Comment mode only, drawn by the shell over the frame from the rects
-// it reports. Each follows its element as the frame re-measures it. Pins that
+// it reports. Each follows its element as the frame re-measures it; one whose element has gone (its popover, section
+// or tab closed) sits faded on the nearest thing still on the page (frame.ts nearOf), or hides with nothing near. Pins that
 // would overlap another step to the right, side by side with a small gap, so every one of them stays reachable by
 // pointer; the panel lists them all as well. A new comment typed and not sent stays as a Draft pin: a dashed outline and the author's avatar dimmed;
 // clicking it reopens the box with the words.
@@ -10,11 +11,12 @@ import { host } from './host'
 import AuthorAvatar from './AuthorAvatar.vue'
 import PinShape from './PinShape.vue'
 import { picksShown } from './canvas'
-import { rects, track, type Target } from './frame'
+import { nearOf, pinAt, rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'
 
 const props = defineProps<{ route: string }>()
-const emit = defineEmits<{ open: [thread: Thread, x: number, y: number]; draft: [id: string, x: number, y: number] }>()
+// `found`: the pin is on its own element, so the thread opens there; else the toolbar finds the element first.
+const emit = defineEmits<{ open: [thread: Thread, x: number, y: number, found: boolean]; draft: [id: string, x: number, y: number] }>()
 
 // Pins follow the panel's filter, so a search narrows the page as well.
 // Threads on canvas tiles have their pins on the canvas.
@@ -25,8 +27,8 @@ const heldId = (h: HeldDraft) => `held:${h.id}`
 onBeforeUnmount(
 	track(() =>
 		Object.fromEntries([
-			...visible.value.map((t): [string, Target] => [idOf(t), { sel: t.anchor.selector }]),
-			...drafts.value.map((h): [string, Target] => [heldId(h), { sel: h.anchor.selector }]),
+			...visible.value.map((t): [string, Target] => [idOf(t), { sel: t.anchor.selector, near: nearOf(t.anchor) }]),
+			...drafts.value.map((h): [string, Target] => [heldId(h), { sel: h.anchor.selector, near: nearOf(h.anchor) }]),
 		]),
 	),
 )
@@ -38,34 +40,25 @@ const WIDTH = 32
 const STEP = WIDTH + 4
 
 type Pos = { x: number; y: number; found: boolean }
-const last: Record<string, { x: number; y: number }> = {}
 const pos = computed(() => {
 	const next: Record<string, Pos> = {}
 	const placed: { x: number; y: number }[] = []
 	const blocker = (x: number, y: number) => placed.find((p) => Math.abs(p.x - x) < WIDTH && Math.abs(p.y - y) < WIDTH)
 	for (const t of visible.value) {
-		if (!(idOf(t) in rects)) continue
-		const a = t.anchor
-		const r = rects[idOf(t)]
-		let at: { x: number; y: number }
-		if (r) {
-			at = { x: r.x + a.offset.x * r.w, y: r.y + a.offset.y * r.h }
-			last[t.id] = at
-		} else at = last[t.id] ?? { x: a.rect.x + a.offset.x * a.rect.w, y: a.rect.y + a.offset.y * a.rect.h }
+		const at = pinAt(idOf(t), t.anchor.offset)
+		if (!at) continue
 		let x = at.x
 		for (let hit = blocker(x, at.y); hit; hit = blocker(x, at.y)) x = hit.x + STEP
 		placed.push({ x, y: at.y })
-		next[t.id] = { x, y: at.y, found: !!r }
+		next[t.id] = { x, y: at.y, found: at.found }
 	}
 	return next
 })
 const heldPos = computed(() => {
 	const held: Record<string, Pos> = {}
 	for (const h of drafts.value) {
-		if (!(heldId(h) in rects)) continue
-		const a = h.anchor
-		const r = rects[heldId(h)]
-		held[h.id] = r ? { x: r.x + a.offset.x * r.w, y: r.y + a.offset.y * r.h, found: true } : { x: a.rect.x + a.offset.x * a.rect.w, y: a.rect.y + a.offset.y * a.rect.h, found: false }
+		const at = pinAt(heldId(h), h.anchor.offset)
+		if (at) held[h.id] = at
 	}
 	return held
 })
@@ -76,7 +69,7 @@ function enter(t: Thread) {
 }
 function click(t: Thread, e: MouseEvent) {
 	const p = pos.value[t.id]
-	emit('open', t, p?.x ?? e.clientX, p?.y ?? e.clientY)
+	emit('open', t, p?.x ?? e.clientX, p?.y ?? e.clientY, !!p?.found)
 }
 function reopen(h: HeldDraft) {
 	const p = heldPos.value[h.id]

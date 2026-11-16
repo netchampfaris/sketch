@@ -50,13 +50,13 @@ import NotePopover from './NotePopover.vue'
 import TilePins from './TilePins.vue'
 import { canvasUi, handlers, tileAnchor } from './tiles'
 import { tileExists, tileLabel, whereOf, type TileHit, type TileSpot } from '../shared/tiles'
-import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline } from '../shared/protocol'
+import type { BoxInfo, ComponentInfo, ElInfo, Pick, Rect, Redline, RevealStep } from '../shared/protocol'
 import type { DemoPick } from '../shared/picks'
 import CommentPins from './CommentPins.vue'
 import NotePins from './NotePins.vue'
 import TweakLayer from './TweakLayer.vue'
 import { buildTweakPrompt, findRow, highlight, inspect, removeTweak, resetAll, routeOfRow, tweakCount, tweakItems } from './tweaks'
-import { labels, onFrame, onRefsGone, page, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
+import { labels, onFrame, onRefsGone, page, pinAt, post, rects, resolveRect, resolveRects, track, type Target } from './frame'
 import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
@@ -114,6 +114,8 @@ type Draft = {
 	rect?: Rect
 	picks?: DemoPick[]
 	box?: BoxInfo
+	// What was open around the first element (a popover, a section, a tab), outermost first.
+	reveal?: RevealStep[]
 	// A note made from a thread ("Add to notes"): the thread's own anchor, kept as it is.
 	anchor?: PinAnchor
 	// The note or thread the box is open on; none for a new one.
@@ -207,7 +209,7 @@ const elOf = (p: Pick): El => ({ sel: p.el.selector, ref: p.ref, info: p.el })
 // `first` is the pick of the first element: what the box names and where it is.
 function show(els: El[], x: number, y: number, first: Pick, box?: BoxInfo) {
 	const fresh = !draft.value
-	draft.value = { x, y, els, comp: first.component, rect: first.rect, picks: first.picks, box, component: first.label, extra: els.length - 1 }
+	draft.value = { x, y, els, comp: first.component, rect: first.rect, picks: first.picks, box, reveal: first.reveal, component: first.label, extra: els.length - 1 }
 	if (fresh) {
 		text.value = ''
 		draftKey.value++
@@ -218,7 +220,7 @@ function show(els: El[], x: number, y: number, first: Pick, box?: BoxInfo) {
 // What a draft's first element was picked as, when it is opened again from its parts.
 const firstOf = (d: Draft): Pick | null =>
 	d.els[0]?.info && d.comp && d.rect
-		? { kind: 'click', ref: d.els[0].ref ?? '', el: d.els[0].info, label: d.component, component: d.comp, rect: d.rect, x: d.x, y: d.y, shift: false, keyboard: false, picks: d.picks ?? [] }
+		? { kind: 'click', ref: d.els[0].ref ?? '', el: d.els[0].info, label: d.component, component: d.comp, rect: d.rect, x: d.x, y: d.y, shift: false, keyboard: false, picks: d.picks ?? [], reveal: d.reveal }
 		: null
 
 const noteRefs = new Map<string, string[]>()
@@ -247,6 +249,7 @@ function anchorOf(d: Draft): PinAnchor {
 		state: info.state || undefined,
 		extras: rest.length ? rest : undefined,
 		box: d.box,
+		reveal: d.reveal?.length ? d.reveal : undefined,
 		offset: {
 			x: r.w ? clamp((d.x - r.x) / r.w, 0, 1) : 0,
 			y: r.h ? clamp((d.y - r.y) / r.h, 0, 1) : 0,
@@ -346,6 +349,27 @@ const until = async (ok: () => boolean | Promise<boolean>, ms = 4000) => {
 	for (const t0 = Date.now(); !(await ok()); await sleep(50)) if (Date.now() - t0 > ms || unmounted) return false
 	return true
 }
+
+// Bring an anchor's element onto the page. First a moment for the page to draw it, or the first control on the way to
+// it; then, when it sits inside something closed (a popover, a section, another tab), the way to it is opened as it was
+// when the pin was made: each control in turn, pressed only when closed, with a second for what it opens. True once the
+// element is on the page; false when it never came or a step failed.
+async function bringOut(a: { selector: string; reveal?: RevealStep[] }, ms = 1500): Promise<boolean> {
+	const here = async (sel: string) => !!(await resolveRect(sel))
+	const first = a.reveal?.[0]?.sel
+	if (!(await until(async () => (await here(a.selector)) || (!!first && (await here(first))), ms))) return false
+	if (await here(a.selector)) return true
+	for (const step of a.reveal ?? []) {
+		if (!(await until(() => here(step.sel), 1000))) return false
+		post('open', step)
+	}
+	return !!a.reveal?.length && until(() => here(a.selector), 1000)
+}
+// Where a pin is drawn now (its element, else its stand-in), for a box whose element could not be brought out.
+const pinSpot = (id: string, a: { offset: Point; rect: Rect }): Point => pinAt(id, a.offset) ?? { x: a.rect.x + a.offset.x * a.rect.w, y: a.rect.y + a.offset.y * a.rect.h }
+// A pin on its element opens the box there; one sitting in for an element that has gone first opens the way to it.
+const onNotePin = (n: Note, x: number, y: number, found: boolean) => (found ? openEdit(n, x, y) : edit(n))
+const onThreadPin = (t: Thread, x: number, y: number, found: boolean) => (found ? openThreadAt(t, x, y) : openFromList(t))
 
 function openThreadAt(t: Thread, x: number, y: number) {
 	if (!picksShown(t.anchor.picks)) return void showPicksThen(t, x, y)
@@ -461,11 +485,12 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 		applyPicks(a.picks)
 		await sleep(50)
 	}
-	const found = await until(async () => !!(await resolveRect(a.selector)), 1500)
+	const found = await bringOut(a)
 	if (found) post('scrollTo', { selector: a.selector, smooth: !arrived })
 	await sleep(found ? (arrived ? 50 : 250) : 0)
 	const r = found ? await resolveRect(a.selector) : null
-	openThreadAt(t, r ? r.x + a.offset.x * r.w : a.rect.x + a.offset.x * a.rect.w, r ? r.y + a.offset.y * r.h : a.rect.y + a.offset.y * a.rect.h)
+	const p = r ? { x: r.x + a.offset.x * r.w, y: r.y + a.offset.y * r.h } : pinSpot(`thread:${t.id}`, a)
+	openThreadAt(t, p.x, p.y)
 }
 
 // A link from the gallery ("Arohi mentioned you") opens the prototype on that thread: `?comment=<id>`. The link is
@@ -1141,15 +1166,10 @@ useEventListener(
 async function reveal(n: Note, smooth: boolean): Promise<Rect | null> {
 	await leaveCanvas()
 	await goTo(n.route)
-	for (let i = 0; i < 30 && !unmounted; i++) {
-		if (await resolveRect(n.selector)) {
-			post('scrollTo', { selector: n.selector, smooth })
-			await sleep(smooth ? 0 : 50)
-			return resolveRect(n.selector)
-		}
-		await sleep(50)
-	}
-	return null
+	if (!(await bringOut(n)) || unmounted) return null
+	post('scrollTo', { selector: n.selector, smooth })
+	await sleep(smooth ? 0 : 50)
+	return resolveRect(n.selector)
 }
 
 async function jump(n: Note) {
@@ -1164,7 +1184,7 @@ async function edit(n: Note) {
 	listOpen.value = false
 	if (n.tile) return openNoteFromList(n)
 	const r = await reveal(n, false)
-	const p = r ? { x: r.x + n.offset.x * r.w, y: r.y + n.offset.y * r.h } : { x: n.rect.x + n.offset.x * n.rect.w, y: n.rect.y + n.offset.y * n.rect.h }
+	const p = r ? { x: r.x + n.offset.x * r.w, y: r.y + n.offset.y * r.h } : pinSpot(`note:${n.id}`, n)
 	openEdit(n, p.x, p.y)
 }
 
@@ -1221,8 +1241,8 @@ const noteSelected = computed(() => (draft.value?.editing?.kind === 'note' ? dra
 	<TweakLayer v-if="noter" :live="tweakLive" />
 
 	<template v-if="enabled">
-		<NotePins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="noteSelected" :refs="noteRefs" @open="(n, x, y) => openEdit(n, x, y)" />
-		<CommentPins v-if="active && mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="openThreadAt" @draft="reopenDraft" />
+		<NotePins v-if="mode === 'note' && !canvasOpen" :route="key" :selected="noteSelected" :refs="noteRefs" @open="onNotePin" />
+		<CommentPins v-if="active && mode === 'comment' && !guest && !canvasOpen && !(phone && sheetOpen)" :route="key" @open="onThreadPin" @draft="reopenDraft" />
 
 		<!-- The hover outline: one element that glides, fades out when picking ends. -->
 		<div

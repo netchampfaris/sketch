@@ -11,14 +11,19 @@ import {
 	childOf,
 	clamp,
 	componentOf,
+	drawn,
 	fracRect,
 	infoOf,
+	isOpen,
+	isOpener,
 	isOurs,
 	labelOf,
 	listen,
 	parentOf,
+	press,
 	redlines,
 	resolve,
+	revealOf,
 	tagOf,
 	targetOf,
 	type Redline,
@@ -53,6 +58,7 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 			// On the live page a thread also keeps what the Demo shows, so it can be put back that way.
 			picks: picksNow(),
 			...(more.box ? { box: more.box } : {}),
+			reveal: revealOf(el),
 		}
 	}
 
@@ -63,6 +69,8 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 	let hoverEl: Element | null = null
 	let alt = false
 	let shift = false
+	// A press the shell asked for (`open`) is the page's, not a pick.
+	let passthrough = false
 
 	// ---- Hover: the element under the pointer, and with Alt the distances in px ------------------
 	let lastHover = ''
@@ -185,8 +193,8 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 		off = null
 		resetDrag()
 		alt = shift = false
-		if (on)
-			off = listen([
+		if (on) {
+			const handlers: [string, (e: any) => void][] = [
 				['pointermove', onMove],
 				['mousedown', onDown],
 				['mouseup', onUp],
@@ -196,8 +204,9 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 				['dblclick', swallow],
 				['contextmenu', swallow],
 				['auxclick', swallow],
-			])
-		else setHover(null)
+			]
+			off = listen(handlers.map(([type, fn]) => [type, (e) => passthrough || fn(e)]))
+		} else setHover(null)
 		document.body.style.cursor = on ? 'crosshair' : ''
 	}
 
@@ -218,27 +227,44 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 	window.addEventListener('keyup', onKeys, true)
 
 	// ---- Tracking: the rects of what the shell draws on, kept fresh ------------------------------
-	let tracked: ToFrame['track'] = { map: {}, refs: {} }
+	let tracked: ToFrame['track'] = { map: {}, refs: {}, near: {} }
 	let lastTrack = ''
 	const labels = new WeakMap<Element, string>()
 	function measure() {
 		const map: Record<string, Rect | null> = {}
 		const named: Record<string, string> = {}
+		const near: Record<string, Rect> = {}
 		for (const [id, sel] of Object.entries(tracked.map)) {
-			const el = elOf(tracked.refs[id]) ?? resolve(sel)
+			const found = elOf(tracked.refs[id]) ?? resolve(sel)
+			const el = drawn(found) ? found : null
 			map[id] = el ? toRect(el.getBoundingClientRect()) : null
 			if (el) {
 				let l = labels.get(el)
 				if (l === undefined) labels.set(el, (l = tagOf(el)))
 				named[id] = l
+			} else {
+				const stand = standIn(tracked.near[id] ?? [])
+				if (stand) near[id] = stand
 			}
 		}
-		const key = JSON.stringify(map)
+		const key = JSON.stringify([map, near])
 		if (key !== lastTrack) {
 			lastTrack = key
-			post('track', { map, labels: named })
+			post('track', { map, labels: named, near })
 		}
 		if (picking && hoverEl) postHover()
+	}
+	// The first stand-in on the page takes the place: itself, or its nearest ancestor drawn when it is hidden (a closed
+	// section's body). Never more than half the page (the app's root, a whole column).
+	function standIn(sels: string[]): Rect | null {
+		for (const sel of sels) {
+			let el = resolve(sel)
+			while (el && !drawn(el) && el.parentElement !== document.body) el = el.parentElement
+			if (!drawn(el)) continue
+			const r = el.getBoundingClientRect()
+			return r.width * r.height > (innerWidth * innerHeight) / 2 ? null : toRect(r)
+		}
+		return null
 	}
 	let raf = 0
 	const schedule = () => {
@@ -289,9 +315,20 @@ export function startPicking(post: Post, picksNow: () => DemoPick[]) {
 			const map: Record<string, Rect | null> = {}
 			for (const sel of d.selectors) {
 				const el = resolve(sel)
-				map[sel] = el ? toRect(el.getBoundingClientRect()) : null
+				map[sel] = drawn(el) ? toRect(el.getBoundingClientRect()) : null
 			}
 			post('rects', { req: d.req, map })
+		},
+		open(d: ToFrame['open']) {
+			const el = resolve(d.sel)
+			if (!drawn(el) || !isOpener(el, d.kind) || isOpen(el, d.kind)) return
+			passthrough = true
+			try {
+				press(el)
+			} finally {
+				passthrough = false
+			}
+			schedule()
 		},
 		scrollTo(d: ToFrame['scrollTo']) {
 			resolve(d.selector)?.scrollIntoView({ block: 'center', behavior: d.smooth ? 'smooth' : 'auto' })
