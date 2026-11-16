@@ -7,8 +7,6 @@ import { Button, ScrollArea, Skeleton } from 'frappe-ui'
 import { canvas } from './canvas'
 import { load, matching, openThread, query, status, threads, type Thread } from './comments'
 import CommentRow from './CommentRow.vue'
-import { page } from './frame'
-import { pageNameOf } from './host'
 
 defineProps<{ embedded?: boolean; width: string; max: string }>()
 const emit = defineEmits<{ choose: [thread: Thread, el: HTMLElement] }>()
@@ -22,9 +20,6 @@ const empty = computed(() => {
 })
 
 const onCanvas = computed(() => canvas.open)
-const nameOfRoute = (t: Thread) => t.anchor.tile?.page || pageNameOf(t.anchor.route)
-// A row names its page when the prototype has more than one: what the page headers used to say.
-const paged = computed(() => page.pages.length > 1)
 
 // The open thread's row stays in view. A row that was clicked is already there, so nothing moves.
 const area = ref<{ viewportElement: HTMLElement | null }>()
@@ -75,7 +70,7 @@ const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').ma
 			<p v-else-if="empty === 'resolved'" class="px-2 py-3 text-p-sm font-medium text-ink-gray-8">Nothing left open</p>
 
 			<div v-else-if="status === 'ready'" class="flex flex-col gap-0.5">
-				<CommentRow v-for="t in matching" :key="t.id" :thread="t" :page="paged ? nameOfRoute(t) : undefined" :selected="openThread === t.id" @choose="emit('choose', t, $event)" />
+				<CommentRow v-for="t in matching" :key="t.id" :thread="t" :selected="openThread === t.id" @choose="emit('choose', t, $event)" />
 			</div>
 		</div>
 	</ScrollArea>
