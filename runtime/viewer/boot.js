@@ -4,7 +4,7 @@
 // Nothing here acts as anyone: the page holds no credential, and the chrome that
 // writes is the shell's (runtime/shell), on Sketch's own origin.
 import { createApp, h } from 'vue'
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createMemoryHistory, createRouter, createWebHashHistory } from 'vue-router'
 import { FrappeUI, FrappeUIProvider } from 'frappe-ui'
 import { compileSFC, compileTS, toCJS } from 'sketch:compiler'
 import { start as startTailwind, stats as twStats } from 'sketch:tailwind'
@@ -384,10 +384,12 @@ function namedImports(code) {
 // -------------------------------------------------------------- the registry
 // Each module runs once, into its own exports object, and that object is
 // registered before the body runs. An import cycle therefore sees the partly
-// filled exports, the way Node and a bundler resolve one.
+// filled exports, the way Node and a bundler resolve one. A second registry
+// over the same factories runs every module again, into new instances. A
+// stylesheet is injected once, whichever registry asks first.
+const styles = new Map()
 function makeRegistry(files, factories, bare, wrap) {
   const modules = new Map()
-  const styles = new Map()
 
   function inject(path) {
     if (!styles.has(path)) {
@@ -469,7 +471,7 @@ function variantsOf(data, compiled, blocks, skip, loader) {
       skip(path, `${component} is not a component of this prototype.`)
       continue
     }
-    out.push({ value: path.slice('src/variants/'.length, -'.vue'.length), label: name, author, set, component, lead, load: () => loader(path) })
+    out.push({ value: path.slice('src/variants/'.length, -'.vue'.length), label: name, author, set, component, lead, load: (via) => loader(path, via) })
   }
   return out
 }
@@ -621,7 +623,7 @@ async function run() {
 
   // The variants teammates made, and the ones the owner adopted: options of the set each one names. They
   // load on first use, inside a boundary (runtime/variants/Variants.vue).
-  const extras = variantsOf(data, compiled, blocks, skip, (path) => load(path).default)
+  const extras = variantsOf(data, compiled, blocks, skip, (path, via = load) => via(path).default)
   if (extras.length && !bare.has('sketch:variants')) {
     try {
       await load1('sketch:variants')
@@ -631,18 +633,22 @@ async function run() {
     }
   }
   const targets = new Set(extras.map((e) => e.component).filter(Boolean))
-  const wrapped = new Map()
-  // A component a teammate made a variant for becomes a set whose first option is the component itself.
-  const wrap = (path, mod) => {
-    if (!targets.has(path) || !mod.default) return mod
-    if (!wrapped.has(path))
-      wrapped.set(
-        path,
-        Object.freeze({ ...mod, __esModule: true, default: bare.get('sketch:variants').wrapComponent(mod.default, path) }),
-      )
-    return wrapped.get(path)
+  // A component a teammate made a variant for becomes a set whose first option is the component itself. Each
+  // registry wraps its own instance of it.
+  const wrapper = () => {
+    const wrapped = new Map()
+    return (path, mod) => {
+      if (!targets.has(path) || !mod.default) return mod
+      if (!wrapped.has(path))
+        wrapped.set(
+          path,
+          Object.freeze({ ...mod, __esModule: true, default: bare.get('sketch:variants').wrapComponent(mod.default, path) }),
+        )
+      return wrapped.get(path)
+    }
   }
-  const load = makeRegistry(view, factories, bare, wrap)
+  const load = makeRegistry(view, factories, bare, wrapper())
+  const routerFile = files['src/router.ts'] !== undefined ? 'src/router.ts' : 'src/router.js'
   // When each option first appeared, so every set shows its options oldest first (sketch/variant_order.py).
   bare.get('sketch:variants')?.registerSeen?.(data.variant_seen)
   if (extras.length)
@@ -666,16 +672,24 @@ async function run() {
   //    src/App.vue and src/router.ts and no entry file.
   t.mountStart = performance.now()
   const App = load('src/App.vue').default
-  const routes = load(files['src/router.ts'] !== undefined ? 'src/router.ts' : 'src/router.js').default
+  const routes = load(routerFile).default
   router = createRouter({ history: createWebHashHistory(), routes })
+  // Each canvas frame draws a clean copy of the Prototype: its own module instances, run as at boot, so an open panel
+  // or a store change on the live page, or on another frame's page, never shows in a tile. Its router is never
+  // started: a frame resolves its page through it.
+  const cleanCopy = () => {
+    const own = makeRegistry(view, factories, bare, wrapper())
+    const app = own('src/App.vue').default
+    return { app, router: createRouter({ history: createMemoryHistory(), routes: own(routerFile).default }), load: own }
+  }
   // FrappeUIProvider mounts the imperative dialog and toast surfaces. Without
   // it `dialog.confirm()` and `toast.success()` do nothing and report no
   // error, so the Runtime mounts it rather than trusting every Prototype to.
   // It renders no wrapper element of its own.
   // A Prototype that imports `sketch:variants` gets the Demo pill and the canvas beside its App. The canvas draws
-  // that App in frames, so it is handed the component. It is inside the provider, so its toasts and dialogs work.
+  // a clean copy of that App in each frame, so it is handed the way to make one. It is inside the provider, so its toasts and dialogs work.
   const Chrome = bare.get('sketch:variants')?.Chrome
-  const app = createApp(() => h(FrappeUIProvider, null, { default: () => [h(App), Chrome && h(Chrome, { shell: App })] }))
+  const app = createApp(() => h(FrappeUIProvider, null, { default: () => [h(App), Chrome && h(Chrome, { copy: cleanCopy })] }))
   app.config.errorHandler = (err, _i, info) =>
     errors.push({ kind: 'vue', message: String(err?.message || err), info })
   app.use(router).use(FrappeUI)

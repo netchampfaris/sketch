@@ -32,9 +32,9 @@ import {
   states,
   titleOfRoute,
 } from './state'
-import type { Sandbox } from './state'
+import type { Copy, Sandbox } from './state'
 
-const props = defineProps<{ app: any }>()
+const props = defineProps<{ copy: () => Copy }>()
 const route = useRoute()
 const router = useRouter()
 
@@ -607,7 +607,7 @@ watch(
             :snap="cache[keyOf(t.cacheId)]"
             :live="liveId === t.id"
             :sandbox="liveId === t.id ? liveSandbox : undefined"
-            :app="app"
+            :copy="copy"
             :win="win"
             @activate="(e) => activate(t, e)"
             @near="(n: boolean) => onNear(t.id, n)"
@@ -707,7 +707,7 @@ watch(
     v-if="job"
     :key="job.n"
     mode="offscreen"
-    :app="app"
+    :copy="copy"
     :path="job.path"
     :w="win.w"
     :h="win.h"

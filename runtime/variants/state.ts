@@ -43,6 +43,10 @@ export type Sandbox = {
   live: boolean
 }
 export const sandboxKey: InjectionKey<Sandbox> = Symbol('sketch-sandbox')
+// A clean copy of the Prototype, as at boot (viewer/boot.js): App.vue, a router over the copy's own routes, and the
+// copy's module loader, so a teammate's variant in a frame loads from the copy too. Each frame makes its own.
+export type Copy = { app: any; router: any; load: (path: string) => any }
+export const copyKey: InjectionKey<Copy> = Symbol('sketch-copy')
 
 // What `useDemoState` was given: a flat list, or an object of groups. The first option of the first group is the default.
 export function readOptions<T extends string>(input: readonly T[] | Record<string, readonly T[]>): { options: T[]; groups?: DGroup[] } {

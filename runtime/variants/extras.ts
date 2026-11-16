@@ -15,8 +15,9 @@ export type Extra = {
   component: string
   // An adopted variant the owner made the default of its set.
   lead: boolean
-  // Evaluates the module (once) and returns the Vue component. Throws when the file's own code fails.
-  load: () => unknown
+  // Evaluates the module (once per registry: the live page's, or `via`, the canvas's clean copy) and returns the Vue
+  // component. Throws when the file's own code fails.
+  load: (via?: (path: string) => any) => unknown
 }
 export type Person = { name: string; image: string }
 

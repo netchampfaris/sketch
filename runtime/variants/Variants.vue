@@ -9,7 +9,7 @@ import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { extraOf, failed, mergeOptions } from './extras'
 import { firstCopy } from './lift'
-import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
+import { choices, copyKey, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
 
 type Forward = { attrs: Record<string, unknown>; slots: Record<string, (...a: any[]) => VNodeChild> }
 
@@ -29,7 +29,7 @@ const Inner = defineComponent({
   setup(props) {
     const extra = extraOf(props.value)
     if (!extra) throw new Error('This variant is gone.')
-    const Comp = extra.load() as any
+    const Comp = extra.load(inject(copyKey, null)?.load) as any
     return () => h(Comp, props.forward?.attrs ?? {}, props.forward?.slots ?? {})
   },
 })

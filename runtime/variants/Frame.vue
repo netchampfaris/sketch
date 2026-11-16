@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // One render of the whole app in a given page, state and variant. Offscreen, it is drawn, captured and
-// dropped. Live, it stays in a tile. `app` is App.vue's own component, handed over so there is no cycle.
+// dropped. Live, it stays in a tile. `copy` makes a clean copy of the app (viewer/boot.js), handed over so there is no
+// cycle. Each frame draws its own copy: nothing the person did on the live page, and nothing another frame's page did
+// as it mounted (an /inbox that opens a panel), shows in it.
 import { nextTick, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef } from 'vue'
-import { routeLocationKey, routerKey, routerViewLocationKey, useRouter } from 'vue-router'
+import { routeLocationKey, routerKey, routerViewLocationKey } from 'vue-router'
 import { Alert } from 'frappe-ui'
-import { sandboxKey } from './state'
-import type { Sandbox } from './state'
+import { copyKey, sandboxKey } from './state'
+import type { Copy, Sandbox } from './state'
 import { follow } from './lift'
 import { capture, errorSnap, nextFrames } from './snapshot'
 import type { Crop, Snap } from './snapshot'
 
 const props = defineProps<{
-  app: any
+  copy: () => Copy
   path: string
   w: number
   h: number
@@ -24,15 +26,25 @@ const props = defineProps<{
 // `anchor`, live only: where the lifted set sits in the page each time it moves or resizes.
 const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null] }>()
 
-const router = useRouter()
+// The copy's router, so the page is the copy's own component. App's RouterView and RouterLink follow this page, not the
+// live one.
+const copy = props.copy()
+provide(copyKey, copy)
+const router = copy.router
 const resolved = router.resolve(props.path)
-// App's RouterView and RouterLink follow this page, not the live one.
 provide(routerViewLocationKey, shallowRef(resolved))
 provide(routeLocationKey, resolved as any)
 // A tile never moves the live page: a page that redirects as it mounts would drop `?canvas=` and close the canvas.
 // Navigating from a tile does nothing.
 const stay = () => Promise.resolve()
-const still = Object.assign(Object.create(router), { push: stay, replace: stay, go: () => {}, back: () => {}, forward: () => {} })
+const still = Object.assign(Object.create(router), {
+  currentRoute: shallowRef(resolved),
+  push: stay,
+  replace: stay,
+  go: () => {},
+  back: () => {},
+  forward: () => {},
+})
 provide(routerKey, still)
 provide(sandboxKey, props.sandbox)
 
@@ -94,7 +106,7 @@ onMounted(async () => {
       <div v-if="failed" class="p-4">
         <Alert theme="red" title="Could not render this page" :description="failed" />
       </div>
-      <component :is="app" v-else />
+      <component :is="copy.app" v-else />
     </div>
   </Teleport>
 </template>
