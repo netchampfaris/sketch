@@ -40,8 +40,8 @@ function ensureStyle() {
 // scrolls its overflow grow to their full content, so the whole of it shows.
 export function lift(root: HTMLElement, els: Element[], grow = false) {
   ensureStyle()
+  unlift(root)
   root.setAttribute(ROOT, '')
-  for (const a of MARKS) root.querySelectorAll(`[${a}]`).forEach((n) => n.removeAttribute(a))
   for (const el of els) {
     el.setAttribute(SHOW, '')
     for (let n = el.parentElement; n && n !== root; n = n.parentElement) {
@@ -54,6 +54,12 @@ export function lift(root: HTMLElement, els: Element[], grow = false) {
     }
     if (grow) for (const n of [el, ...el.querySelectorAll('*')]) unclip(n)
   }
+}
+
+// Clears every mark, so the whole page shows again.
+export function unlift(root: HTMLElement) {
+  root.removeAttribute(ROOT)
+  for (const a of MARKS) root.querySelectorAll(`[${a}]`).forEach((n) => n.removeAttribute(a))
 }
 
 // A box that scrolls its overflow grows to its content. Outer boxes go first (document order), so an inner one is judged
@@ -119,6 +125,8 @@ export function follow(root: HTMLElement, els: () => Element[], report: (box: Cr
     }
     lift(root, now, grow)
     const box = boxIn(root, now)
+    // A set with no box of its own (it renders only a hidden element) shows the whole page, as its snapshot does.
+    if (!box) unlift(root)
     const key = JSON.stringify(box)
     if (key !== last) {
       last = key
