@@ -70,7 +70,9 @@ export type TileBox = {
 export type Fit = { x: number; y: number; z: number }
 // `small`: a state group's label at the start of its row in one option's states, rather than a section heading.
 export type Head = { text: string; x: number; y: number; small?: boolean }
-export type Layout = { tiles: TileBox[]; heads: Head[]; bounds: { w: number; h: number }; fit: Fit; invFit: number; sig: string }
+// `all`: the zoom that fits the whole layout on screen, width and height. `fit` is where the view opens, which for a
+// set fits the width only; `all` is how far out the view may go (Canvas.vue).
+export type Layout = { tiles: TileBox[]; heads: Head[]; bounds: { w: number; h: number }; fit: Fit; all: number; invFit: number; sig: string }
 export type LayoutCtx = {
   win: { w: number; h: number }
   // The room the grid has on screen.
@@ -87,7 +89,7 @@ export const fullOptionId = (path: string, setKey: string, value: string) => `${
 
 type Desc = Omit<TileBox, 'x' | 'y' | 'w' | 'h'>
 
-const empty: Layout = { tiles: [], heads: [], bounds: { w: 0, h: 0 }, fit: { x: 0, y: 0, z: 1 }, invFit: 1, sig: '' }
+const empty: Layout = { tiles: [], heads: [], bounds: { w: 0, h: 0 }, fit: { x: 0, y: 0, z: 1 }, all: 1, invFit: 1, sig: '' }
 
 // The tiles of some state switches, in sections: one per switch, or per group of a grouped switch. A switch's first option
 // is the default, so it has no tile of its own. A state that belongs to a set nobody has any more is headed by that
@@ -266,7 +268,7 @@ function layoutRows(descs: Desc[], ctx: LayoutCtx): Layout {
     y += Math.max(...row.map((i) => dims[i].h)) + AUTHOR * inv
   })
   const sig = `rows|${dims.map((d) => `${d.w}x${d.h}${d.card === undefined ? '' : 'c'}`).join(',')}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}`
-  return { tiles, heads, bounds: { w, h: y }, fit, invFit: inv, sig }
+  return { tiles, heads, bounds: { w, h: y }, fit, all: fitOf({ w, h: y }, ctx, false).z, invFit: inv, sig }
 }
 
 export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
@@ -303,5 +305,5 @@ export function layoutPick(pick: Pick | null, ctx: LayoutCtx): Layout {
   }
   const fit = fitOf(out.bounds, ctx, isSet)
   inv = Math.max(inv, 1 / fit.z)
-  return { ...out, fit, invFit: inv, sig: `${cols}|${dims.map((d) => `${d.w}x${d.h}${d.card === undefined ? '' : 'c'}`).join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}` }
+  return { ...out, fit, all: fitOf(out.bounds, ctx, false).z, invFit: inv, sig: `${cols}|${dims.map((d) => `${d.w}x${d.h}${d.card === undefined ? '' : 'c'}`).join(',')}|${n}|${ctx.vp.w}x${ctx.vp.h}|${ctx.phone}|${descs.map((d) => d.id).join(',')}` }
 }

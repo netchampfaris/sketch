@@ -1,11 +1,13 @@
 // Pan and zoom for the canvas viewport: wheel and trackpad, drag and touch pinch. Fit is the layout's (layout.ts).
 import { reactive } from 'vue'
 
+// The least any view may be fit to. What the user can zoom out to is the canvas's own floor (Canvas.vue): the smaller of
+// half size and the fit zoom, never under this.
 export const MIN_ZOOM = 0.05
 const MAX_ZOOM = 2
-const clamp = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
 
-export function usePanZoom(getEl: () => HTMLElement | null) {
+export function usePanZoom(getEl: () => HTMLElement | null, getMin: () => number = () => MIN_ZOOM) {
+  const clamp = (z: number) => Math.min(MAX_ZOOM, Math.max(getMin(), z))
   const view = reactive({ x: 0, y: 0, z: 1 })
   let travel = 0
   // Set once the user pans or zooms, so a late re-fit doesn't undo it.
