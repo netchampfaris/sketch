@@ -61,25 +61,19 @@ function click(n: Note, e: MouseEvent) {
 			data-annotate-pin
 			type="button"
 			:aria-label="`Note ${numberOf(n)}: ${n.note}`"
-			class="pointer-events-auto fixed z-[2147482995] flex size-6 -translate-x-1/2 -translate-y-[29px] items-center justify-center text-xs font-semibold tabular-nums text-white transition-transform duration-150 origin-[50%_29px] hover:scale-110 motion-reduce:transition-none motion-reduce:hover:scale-100"
-			:class="pos[n.id]?.found === false && 'opacity-50'"
+			class="pointer-events-auto fixed flex size-6 -translate-x-1/2 -translate-y-[29px] items-center justify-center text-xs font-semibold tabular-nums text-white transition-transform duration-150 ease-out origin-[50%_29px] motion-reduce:transition-none"
+			:class="[selected === n.id ? 'z-[2147482997] scale-[1.15] motion-reduce:scale-100' : 'z-[2147482995] hover:scale-110 motion-reduce:hover:scale-100', pos[n.id]?.found === false && 'opacity-50']"
 			:style="{ left: `${pos[n.id].x}px`, top: `${pos[n.id].y}px` }"
 			@mousedown.prevent
 			@mouseenter="enter(n)"
 			@mouseleave="clearHover"
 			@click.stop="click(n, $event)"
 		>
-			<!-- A map pin: a square rounded on three corners, turned so the sharp one points at the spot. -->
+			<!-- A map pin: a square rounded on three corners, turned so the sharp one points at the spot. The pin being
+			     edited is the same pin lifted: scaled from its tip, with a deeper shadow. -->
 			<span
-				class="absolute inset-0 rotate-45 rounded-full rounded-br-none shadow ring-2 ring-surface-base transition-colors duration-150"
-				:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
-				aria-hidden="true"
-			/>
-			<!-- The pin being edited: a 2px ring in its own colour, 2px off the edge. -->
-			<span
-				v-if="selected === n.id"
-				class="pointer-events-none absolute -inset-1 rotate-45 rounded-full rounded-br-none border-2"
-				:class="n.sent ? 'border-outline-gray-5' : 'border-outline-blue-6'"
+				class="absolute inset-0 rotate-45 rounded-full rounded-br-none ring-2 ring-[color:var(--surface-base)] transition duration-150 ease-out"
+				:class="[selected === n.id ? 'shadow-lg' : 'shadow', n.sent ? 'bg-surface-gray-6' : 'bg-surface-violet-7']"
 				aria-hidden="true"
 			/>
 			<span class="relative">{{ numberOf(n) }}</span>

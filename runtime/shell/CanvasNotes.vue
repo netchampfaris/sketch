@@ -74,7 +74,7 @@ const titleOf = (n: Note, g: { key: string }) => (n.tile ? tileLabel(n.tile, g.k
 					>
 						<span
 							class="mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums text-white"
-							:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
+							:class="n.sent ? 'bg-surface-gray-6' : 'bg-surface-violet-7'"
 						>{{ noteNumber(n) }}</span>
 						<span class="min-w-0 flex-1">
 							<span class="block truncate text-p-sm font-medium text-ink-gray-8">{{ titleOf(n, g) }}</span>

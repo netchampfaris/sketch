@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // One avatar pin per thread on this page, in Comment mode only, drawn by the shell over the frame from the rects
 // it reports. Each follows its element as the frame re-measures it. Pins that
-// land on each other fan out sideways, so every one of them stays reachable by pointer; the panel lists them all
-// as well. A new comment typed and not sent stays as a Draft pin: a dashed outline and the author's avatar dimmed;
+// would overlap another step to the right, side by side with a small gap, so every one of them stays reachable by
+// pointer; the panel lists them all as well. A new comment typed and not sent stays as a Draft pin: a dashed outline and the author's avatar dimmed;
 // clicking it reopens the box with the words.
 import { computed, onBeforeUnmount } from 'vue'
 import { heldDrafts, matching, openThread, plain, type HeldDraft, type Thread } from './comments'
@@ -32,15 +32,17 @@ onBeforeUnmount(
 )
 onBeforeUnmount(clearHover)
 
-// Within this distance two pins count as one pile; each further pin in a pile steps to the right.
-const PILE = 20
-const STEP = 22
+// A pin is 28px with its 2px ring on each side. One that would overlap an earlier pin steps right by this much,
+// the pin's width and a 4px gap, until it is clear.
+const WIDTH = 32
+const STEP = WIDTH + 4
 
 type Pos = { x: number; y: number; found: boolean }
 const last: Record<string, { x: number; y: number }> = {}
 const pos = computed(() => {
 	const next: Record<string, Pos> = {}
 	const placed: { x: number; y: number }[] = []
+	const blocker = (x: number, y: number) => placed.find((p) => Math.abs(p.x - x) < WIDTH && Math.abs(p.y - y) < WIDTH)
 	for (const t of visible.value) {
 		if (!(idOf(t) in rects)) continue
 		const a = t.anchor
@@ -50,9 +52,10 @@ const pos = computed(() => {
 			at = { x: r.x + a.offset.x * r.w, y: r.y + a.offset.y * r.h }
 			last[t.id] = at
 		} else at = last[t.id] ?? { x: a.rect.x + a.offset.x * a.rect.w, y: a.rect.y + a.offset.y * a.rect.h }
-		const k = placed.filter((p) => Math.abs(p.x - at.x) < PILE && Math.abs(p.y - at.y) < PILE).length
-		placed.push(at)
-		next[t.id] = { x: at.x + k * STEP, y: at.y, found: !!r }
+		let x = at.x
+		for (let hit = blocker(x, at.y); hit; hit = blocker(x, at.y)) x = hit.x + STEP
+		placed.push({ x, y: at.y })
+		next[t.id] = { x, y: at.y, found: !!r }
 	}
 	return next
 })
@@ -94,24 +97,19 @@ const label = (t: Thread) => `Comment from ${t.name}${t.replies.length ? `, ${t.
 			data-comment-pin
 			type="button"
 			:aria-label="label(t)"
-			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 hover:z-[2147482997] hover:scale-110 focus-visible:z-[2147482997] motion-reduce:transition-none motion-reduce:hover:scale-100"
-			:class="[openThread === t.id ? 'z-[2147482997]' : 'z-[2147482995]', (pos[t.id]?.found === false || !picksShown(t.anchor.picks)) && 'opacity-50', t.resolved && 'opacity-60']"
+			class="pointer-events-auto fixed flex size-7 origin-[50%_34px] -translate-x-1/2 -translate-y-[34px] items-center justify-center transition-transform duration-150 ease-out hover:z-[2147482997] focus-visible:z-[2147482997] motion-reduce:transition-none"
+			:class="[openThread === t.id ? 'z-[2147482997] scale-[1.15] motion-reduce:scale-100' : 'z-[2147482995] hover:scale-110 motion-reduce:hover:scale-100', (pos[t.id]?.found === false || !picksShown(t.anchor.picks)) && 'opacity-50', t.resolved && 'opacity-60']"
 			:style="{ left: `${pos[t.id].x}px`, top: `${pos[t.id].y}px` }"
 			@mousedown.prevent
 			@mouseenter="enter(t)"
 			@mouseleave="clearHover"
 			@click.stop="click(t, $event)"
 		>
-			<!-- The note pin's shape, so the tip is the spot and the words beside it stay readable; the avatar sits in it. -->
+			<!-- The note pin's shape, so the tip is the spot and the words beside it stay readable; the avatar sits in it.
+			     The thread being read is the same pin lifted: scaled from its tip, with a deeper shadow. -->
 			<span
-				class="absolute inset-0 rotate-45 rounded-full rounded-br-none shadow ring-2 ring-surface-base transition-colors duration-150"
-				:class="t.resolved ? 'bg-surface-gray-6' : 'bg-surface-blue-7'"
-				aria-hidden="true"
-			/>
-			<!-- The thread being read: a 2px ring in the pin's own colour, 2px off the edge. -->
-			<span
-				v-if="openThread === t.id"
-				class="pointer-events-none absolute -inset-1 rotate-45 rounded-full rounded-br-none border-2 border-outline-blue-6"
+				class="absolute inset-0 rotate-45 rounded-full rounded-br-none ring-2 ring-[color:var(--surface-base)] transition duration-150 ease-out"
+				:class="[openThread === t.id ? 'shadow-lg' : 'shadow', t.resolved ? 'bg-surface-gray-6' : 'bg-surface-blue-7']"
 				aria-hidden="true"
 			/>
 			<span class="relative flex"><AuthorAvatar :username="t.author" size="sm" /></span>
