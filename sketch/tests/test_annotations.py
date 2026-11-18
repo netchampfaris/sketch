@@ -87,6 +87,23 @@ class TestSaveAnnotations(IntegrationTestCase):
 		self.assertNotIn("extra", saved)
 		self.assertNotEqual(saved["updated"], "1999")
 
+	def test_a_notes_way_back_is_kept_only_when_it_reads(self):
+		"""`reveal`: the controls open around a note's element. A step that does not read drops the whole way."""
+		way = [{"sel": '#app [aria-label="Filters"]', "kind": "expanded"}, {"sel": "section > button", "kind": "tab"}]
+		bad = [
+			[{"sel": "x", "kind": "hover"}],
+			[{"sel": ""}],
+			"open it",
+			[{"sel": "x", "kind": "tab"}] * 7,
+			[{"sel": "x" * 2000, "kind": "tab"}],
+		]
+		notes = [{**NOTE, "id": "good", "reveal": way}] + [{**NOTE, "id": f"bad{i}", "reveal": r} for i, r in enumerate(bad)]
+		self.save(json.dumps({"notes": notes, "tweaks": []}))
+		saved = {n["id"]: n for n in annotations.read(self.doc.name)["notes"]}
+		self.assertEqual(saved["good"]["reveal"], way)
+		for i in range(len(bad)):
+			self.assertNotIn("reveal", saved[f"bad{i}"])
+
 	def test_a_guest_is_refused(self):
 		before = annotations.read(self.doc.name)
 		with self.assertRaises(frappe.PermissionError):

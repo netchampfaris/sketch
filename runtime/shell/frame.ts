@@ -4,7 +4,7 @@
 //
 // Nothing sent from here is secret (runtime/shared/protocol.ts): selectors, refs, modes and rects only.
 import { reactive, shallowRef, watch } from 'vue'
-import { envelope, type FromFrame, type Rect, type ToFrame } from '../shared/protocol'
+import { envelope, NEAR, type FromFrame, type Rect, type RevealStep, type ToFrame } from '../shared/protocol'
 import type { DemoEntry } from '../shared/picks'
 
 const win = shallowRef<Window | null>(null)
@@ -47,9 +47,11 @@ export function onFrame<K extends keyof FromFrame>(type: K, fn: Handler<K>): () 
 
 // ---- Tracked rects: id -> the element's box now, null when it is not on the page ---------------
 // Each layer (the pins, the box's outline) adds its own entries; they are sent as one map, and the frame
-// answers whenever any of them moves.
-export type Target = { sel: string; ref?: string }
+// answers whenever any of them moves. A pin's `near` is what stands in for its element while it is gone.
+export type Target = { sel: string; ref?: string; near?: string[] }
 export const rects = reactive<Record<string, Rect | null>>({})
+// id -> the stand-in's box, for an element that is gone and has one on the page.
+export const nearRects = reactive<Record<string, Rect>>({})
 export const labels = reactive<Record<string, string>>({})
 const sources = reactive(new Map<symbol, () => Record<string, Target>>())
 
@@ -61,12 +63,30 @@ export function track(source: () => Record<string, Target>): () => void {
 function collect(): ToFrame['track'] {
 	const map: Record<string, string> = {}
 	const refs: Record<string, string> = {}
+	const near: Record<string, string[]> = {}
 	for (const source of sources.values())
 		for (const [id, t] of Object.entries(source())) {
 			map[id] = t.sel
 			if (t.ref) refs[id] = t.ref
+			if (t.near?.length) near[id] = t.near
 		}
-	return { map, refs }
+	return { map, refs, near }
+}
+
+// While a pin's element is gone (its popover, section or tab closed), the pin sits on the nearest thing still there: the
+// deepest control on the way to it, or, for a pin that kept no way (made before it was recorded), its nearest ancestor.
+export function nearOf(a: { selector: string; reveal?: RevealStep[] }): string[] {
+	if (a.reveal?.length) return a.reveal.map((s) => s.sel).reverse()
+	const parts = a.selector.split(' > ')
+	return parts.slice(1).map((_, i) => parts.slice(0, parts.length - 1 - i).join(' > ')).slice(0, NEAR)
+}
+// Where a pin sits now: on its element at the spot it was made, else on its stand-in's middle; null when neither is on
+// the page. `found` says it is on its own element.
+export function pinAt(id: string, offset: { x: number; y: number }): { x: number; y: number; found: boolean } | null {
+	const r = rects[id]
+	if (r) return { x: r.x + offset.x * r.w, y: r.y + offset.y * r.h, found: true }
+	const n = nearRects[id]
+	return n ? { x: n.x + n.w / 2, y: n.y + n.h / 2, found: false } : null
 }
 watch(() => JSON.stringify(collect()), () => post('track', collect()), { flush: 'post' })
 // A fresh frame knows nothing of what was tracked: tell it again.
@@ -113,6 +133,8 @@ export function receive<K extends keyof FromFrame>(type: K, data: FromFrame[K]) 
 		case 'track':
 			for (const k of Object.keys(rects)) if (!(k in d.map)) delete rects[k]
 			Object.assign(rects, d.map)
+			for (const k of Object.keys(nearRects)) if (!(k in d.near)) delete nearRects[k]
+			Object.assign(nearRects, d.near)
 			Object.assign(labels, d.labels)
 			break
 		case 'rects':
@@ -129,6 +151,7 @@ export const onGone = (fn: () => void) => (gone.add(fn), () => gone.delete(fn))
 export function frameGone() {
 	page.ready = false
 	for (const k of Object.keys(rects)) delete rects[k]
+	for (const k of Object.keys(nearRects)) delete nearRects[k]
 	forgetRefs()
 	gone.forEach((fn) => fn())
 }

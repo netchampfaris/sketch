@@ -77,6 +77,11 @@ PICK_KINDS = ("set", "state")
 PICK_TEXT = {"path": 512, "key": 200, "label": 200, "option": 200, "optionLabel": 200}
 MAX_PICKS = 24
 
+#: The way back to an element inside something that closes (a popover, a section, a tab): one step per control that
+#: opened it, outermost first, and how it shows it is open (runtime/shared/protocol.ts RevealStep).
+REVEAL_KINDS = ("expanded", "tab", "details")
+MAX_REVEAL = 6
+
 #: What a canvas tile is: a variant option, a page state, or a page's default.
 TILE_KINDS = ("set", "state", "default")
 #: Strings that name a tile in plain words, and how long each may be.
@@ -525,6 +530,10 @@ def clean_anchor(anchor) -> dict:
 	if picks:
 		out["picks"] = picks
 
+	reveal = clean_reveal(anchor.get("reveal"))
+	if reveal:
+		out["reveal"] = reveal
+
 	if len(json.dumps(out).encode()) > MAX_ANCHOR_BYTES:
 		frappe.throw(frappe._("That element description is too large"), CommentTooLarge)
 
@@ -553,6 +562,28 @@ def clean_picks(picks) -> list[dict]:
 		if named["key"] and named["option"]:
 			named["default"] = bool(pick.get("default"))
 			out.append(named)
+
+	return out
+
+
+def clean_reveal(reveal) -> list[dict]:
+	"""The controls that open the way to a pinned element, outermost first, or [] to ignore it.
+
+	A path with a step missing leads nowhere, so one bad step, or more than MAX_REVEAL, drops it all.
+	"""
+	if not isinstance(reveal, list) or len(reveal) > MAX_REVEAL:
+		return []
+
+	out = []
+	for step in reveal:
+		if not isinstance(step, dict) or step.get("kind") not in REVEAL_KINDS:
+			return []
+
+		selector = step.get("sel")
+		if not isinstance(selector, str) or not selector or len(selector) > ANCHOR_TEXT["selector"]:
+			return []
+
+		out.append({"sel": selector, "kind": step["kind"]})
 
 	return out
 

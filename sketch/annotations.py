@@ -35,6 +35,8 @@ from datetime import UTC, datetime
 
 import frappe
 
+from sketch.comments import clean_reveal
+
 PROTOTYPE = "Sketch Prototype"
 EDITOR = "Sketch Prototype Editor"
 
@@ -145,7 +147,7 @@ def save(name: str, raw: str, seen_epoch: int, editor: str | None = None) -> dic
 	if seen_epoch != epoch(name, editor):
 		frappe.throw(frappe._("Annotations changed since this page loaded"), AnnotationsStale)
 
-	doc["notes"] = [{k: v for k, v in n.items() if k != "author"} for n in doc["notes"]]
+	doc["notes"] = [_clean_note(n) for n in doc["notes"]]
 	doc["updated"] = _now()
 	_write(name, doc, editor)
 	return doc
@@ -194,6 +196,16 @@ def epoch(name: str, editor: str | None = None) -> int:
 
 
 # ------------------------------------------------------------------ internals
+
+
+def _clean_note(note: dict) -> dict:
+	"""A note as saved: never an author, and its way back to its element (`reveal`) only when it reads."""
+	out = {k: v for k, v in note.items() if k not in ("author", "reveal")}
+	reveal = clean_reveal(note.get("reveal"))
+	if reveal:
+		out["reveal"] = reveal
+
+	return out
 
 
 def _rows(notes) -> list[dict]:

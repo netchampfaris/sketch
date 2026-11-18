@@ -1,40 +1,32 @@
 <script setup lang="ts">
 // Numbered markers on the page, drawn by the shell over the frame from the rects it reports. Each
 // follows its element: the frame re-measures it on every scroll, resize, route change and (throttled) DOM change.
-// A pin whose element has gone stays where it last was, faded. Sent notes turn gray.
+// A pin whose element has gone (its popover, section or tab closed) sits faded on the nearest thing still on the page
+// (frame.ts nearOf), and follows that; with nothing near, it hides. Sent notes turn gray.
 import { computed, onBeforeUnmount } from 'vue'
 import { notes, type Note } from './annotate'
-import { rects, track, type Target } from './frame'
+import { nearOf, pinAt, rects, track, type Target } from './frame'
 import { clearHover, pinHover } from './pinHover'
 
 const props = defineProps<{ route: string; selected?: string; refs: Map<string, string[]> }>()
-const emit = defineEmits<{ open: [note: Note, x: number, y: number] }>()
+// `found`: the pin is on its own element, so the box opens there; else the toolbar finds the element first.
+const emit = defineEmits<{ open: [note: Note, x: number, y: number, found: boolean] }>()
 
 // Notes on canvas tiles have their pins on the canvas.
 const visible = computed(() => notes.value.filter((n) => n.route === props.route && !n.tile))
 const idOf = (n: Note) => `note:${n.id}`
-onBeforeUnmount(track(() => Object.fromEntries(visible.value.map((n): [string, Target] => [idOf(n), { sel: n.selector, ref: props.refs.get(n.id)?.[0] }]))))
+onBeforeUnmount(track(() => Object.fromEntries(visible.value.map((n): [string, Target] => [idOf(n), { sel: n.selector, ref: props.refs.get(n.id)?.[0], near: nearOf(n) }]))))
 onBeforeUnmount(clearHover)
 
 // Numbered by position among this page's notes, never stored: deleting one renumbers the rest.
 const numberOf = (n: Note) => visible.value.findIndex((x) => x.id === n.id) + 1
-const last: Record<string, { x: number; y: number }> = {}
 type Pos = { x: number; y: number; found: boolean }
 // A pin appears once the frame has answered for it, so it pops in instead of flashing at 0,0.
 const pos = computed(() => {
 	const out: Record<string, Pos> = {}
 	for (const n of visible.value) {
-		const id = idOf(n)
-		if (!(id in rects)) continue
-		const r = rects[id]
-		if (r) {
-			last[n.id] = { x: r.x + n.offset.x * r.w, y: r.y + n.offset.y * r.h }
-			out[n.id] = { ...last[n.id], found: true }
-		} else {
-			// Never seen this visit: fall back to where it was when the note was made.
-			const l = last[n.id] ?? { x: n.rect.x + n.offset.x * n.rect.w, y: n.rect.y + n.offset.y * n.rect.h }
-			out[n.id] = { ...l, found: false }
-		}
+		const p = pinAt(idOf(n), n.offset)
+		if (p) out[n.id] = p
 	}
 	return out
 })
@@ -46,7 +38,7 @@ function enter(n: Note) {
 }
 function click(n: Note, e: MouseEvent) {
 	const p = pos.value[n.id]
-	emit('open', n, p?.x ?? e.clientX, p?.y ?? e.clientY)
+	emit('open', n, p?.x ?? e.clientX, p?.y ?? e.clientY, !!p?.found)
 }
 </script>
 

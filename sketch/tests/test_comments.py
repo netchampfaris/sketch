@@ -777,6 +777,20 @@ class TestPicks(CommentCase):
 		self.assertNotIn("picks", thread["anchor"])
 
 
+class TestReveal(CommentCase):
+	"""A live-page comment keeps the controls that were open around its element, so its pin can open them again."""
+
+	WAY = [{"sel": '#app [aria-label="Filters"]', "kind": "expanded"}, {"sel": "summary", "kind": "details"}]
+
+	def test_the_way_comes_back_with_the_thread(self):
+		self.start(self.reader_name, anchor={**ANCHOR, "reveal": self.WAY})
+		self.assertEqual(self.call(viewer_api.comments_list, self.owner_name)["threads"][0]["anchor"]["reveal"], self.WAY)
+
+	def test_a_way_that_does_not_read_is_ignored(self):
+		for bad in ("open", [{"sel": "x", "kind": "hover"}], [{"kind": "tab"}], [{"sel": "x" * 2000, "kind": "tab"}], self.WAY * 4):
+			self.assertNotIn("reveal", self.start(self.reader_name, anchor={**ANCHOR, "reveal": bad})["anchor"], bad)
+
+
 class TestOutsidersLoseAccess(CommentCase):
 	"""Turning the link off keeps the outsiders' comments and says they cannot open it now (decision 46)."""
 

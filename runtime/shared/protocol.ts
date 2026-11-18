@@ -137,6 +137,19 @@ const elInfo = (v: unknown): ElInfo | null =>
 			})
 		: null
 
+// One step of the way back to an element inside something that closes (runtime/agent/dom.ts revealOf): the control
+// that opened it and how it shows it is open. A path is outermost first, at most MAX_REVEAL steps.
+export const REVEAL_KINDS = ['expanded', 'tab', 'details'] as const
+export const MAX_REVEAL = 6
+export type RevealStep = { sel: string; kind: (typeof REVEAL_KINDS)[number] }
+const revealStep = (v: unknown): RevealStep | null => (isObj(v) ? all<RevealStep>({ sel: str(v.sel, CAPS.selector), kind: oneOf(v.kind, REVEAL_KINDS) }) : null)
+// A path with a step missing leads nowhere: one unreadable step drops it all.
+const revealPath = (v: unknown): RevealStep[] | null => {
+	if (!Array.isArray(v) || v.length > MAX_REVEAL) return null
+	const out = list(v, MAX_REVEAL, revealStep)
+	return out && out.length === v.length ? out : null
+}
+
 export type BoxInfo = {
 	kind: 'content' | 'empty'
 	fx: number
@@ -229,7 +242,8 @@ export type FromFrame = {
 	// Every mounted Demo set and state, with what it shows.
 	demo: { entries: DemoEntry[] }
 	rects: { req: string; map: Record<string, Rect | null> }
-	track: { map: Record<string, Rect | null>; labels: Record<string, string> }
+	// `near`: for a tracked element that is gone, the box of what stands in for it (ToFrame track `near`).
+	track: { map: Record<string, Rect | null>; labels: Record<string, string>; near: Record<string, Rect> }
 	// The canvas as it is drawn: what it shows (`view`), the pan and zoom, how wide the zoom pill in the bottom-right
 	// corner is, and the boxes of the title and zoom pills (`pills`, with their corner radius), which the pins go under. `tiles` (in the canvas's own coordinates, before pan and zoom), `pages` and `items` (the Show list's rows)
 	// come only when they changed: the pan and zoom alone come once per frame while they move.
@@ -379,6 +393,8 @@ export type Pick = {
 	keyboard: boolean
 	picks: DemoPick[]
 	box?: BoxInfo
+	// What was open around it, for a pin to open it again once it has closed.
+	reveal?: RevealStep[]
 }
 
 const point = (v: unknown) => (isObj(v) ? all({ x: num(v.x), y: num(v.y) }) : null)
@@ -551,12 +567,12 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 			keyboard: bool(d.keyboard ?? false),
 			picks: list(d.picks ?? [], CAPS.sets, demoPick),
 		})
-		return base && some<Pick>({ ...base, box: d.box === undefined ? null : box(d.box) })
+		return base && some<Pick>({ ...base, box: d.box === undefined ? null : box(d.box), reveal: d.reveal === undefined ? null : revealPath(d.reveal) })
 	},
 	drag: (d) => ({ rect: d.rect === null ? null : rect(d.rect) }),
 	demo: (d) => all({ entries: list(d.entries, CAPS.sets, demoEntry) }),
 	rects: (d) => all({ req: str(d.req, 40), map: rectMap(d.map) }),
-	track: (d) => all({ map: rectMap(d.map), labels: record(d.labels ?? {}, CAPS.rects, (x) => str(x)) }),
+	track: (d) => all({ map: rectMap(d.map), labels: record(d.labels ?? {}, CAPS.rects, (x) => str(x)), near: record(d.near ?? {}, CAPS.rects, rect) }),
 	canvas: (d) => {
 		const base = all({
 			open: bool(d.open),
@@ -649,7 +665,11 @@ export type ToFrame = {
 	resolve: { req: string; selectors: string[] }
 	// What the shell draws on page elements (pins, outlines): id -> selector, and id -> ref for an element picked
 	// this visit, tried first. The frame answers with `track` now and whenever they move.
-	track: { map: Record<string, string>; refs: Record<string, string> }
+	// `near`: what may stand in for an element while it is gone, nearest first; the first one drawn, and no bigger than
+	// half the viewport, does.
+	track: { map: Record<string, string>; refs: Record<string, string>; near: Record<string, string[]> }
+	// Press a control on the way to an element (a RevealStep), unless it is open already.
+	open: RevealStep
 	nav: { path: string }
 	'state:set': { id: string; value: string }
 	'picks:apply': { picks: PickRef[] }
@@ -748,6 +768,8 @@ const tweakSync = (v: unknown): TweakSync | null => {
 }
 
 // The frame checks `e.source === parent` and these, so a message from anywhere else does nothing.
+// Stand-ins per tracked element: the steps of a reveal path, or the ancestors of a selector.
+export const NEAR = 24
 export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = {
 	tool: (d) => all({ mode: oneOf(d.mode, MODES), active: bool(d.active) }),
 	selection: (d) => {
@@ -759,8 +781,10 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	track: (d) => {
 		const map = record(d.map, CAPS.rects, (x) => str(x, CAPS.selector))
 		const refs = record(d.refs ?? {}, CAPS.rects, (x) => str(x, 40))
-		return map && refs && { map, refs }
+		const near = record(d.near ?? {}, CAPS.rects, (x) => strings(x, NEAR, CAPS.selector))
+		return map && refs && near && { map, refs, near }
 	},
+	open: revealStep,
 	nav: (d) => all({ path: str(d.path, CAPS.route) }),
 	'state:set': (d) => all({ id: str(d.id), value: str(d.value) }),
 	'picks:apply': (d) => all({ picks: list(d.picks, CAPS.sets, pickRef) }),

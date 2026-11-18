@@ -2,9 +2,9 @@
 // which of the Prototype's components drew it, what a dragged box covers, and the distances between two boxes.
 // It runs where the Prototype's document is, in the Viewer shell's frame (runtime/agent/pick.ts, tweakPick.ts). It
 // never draws and holds no state but the source file names.
-import type { BoxInfo, ElInfo, Rect } from '../shared/protocol'
+import { MAX_REVEAL, type BoxInfo, type ElInfo, type Rect, type RevealStep } from '../shared/protocol'
 
-export type { BoxInfo, ElInfo, Rect }
+export type { BoxInfo, ElInfo, Rect, RevealStep }
 
 // The Prototype's source paths, by component name (componentOf, labelOf). Set once the tree is known.
 let source: Record<string, string> = {}
@@ -53,7 +53,7 @@ export const targetOf = (e: Event) => {
 const UNSTABLE = /^data-(v-|state|orientation|highlighted|disabled|selected|side|align|reka|radix|annotate|motion|active|open|slot$)/
 
 // Ids a library makes up on each load (reka-popover-trigger-v-3, :r1:, headlessui-menu-2): not handles.
-export const generatedId = (id: string) => /^(reka-|radix-|v-|headlessui-)|-v-\d+$|:r\w+:|\d{3,}|-\d+$/.test(id)
+export const generatedId = (id: string) => /^(reka-|radix-|v-|headlessui-)|-v-\d+(-|$)|:r\w+:|\d{3,}|-\d+$/.test(id)
 
 function segmentOf(el: Element, byChild: boolean, stable = false): string {
   if (el.id && !(stable && generatedId(el.id))) return `#${CSS.escape(el.id)}`
@@ -97,6 +97,78 @@ export function resolve(selector: string): Element | null {
   } catch {
     return null
   }
+}
+
+// A handle for a control that survives a reload: the aria-label (under the nearest stable id, when it has one),
+// else the structural path with generated ids skipped. Each is kept only if it finds this element.
+export function openerSelector(o: Element): string {
+  const label = o.getAttribute('aria-label')
+  if (label) {
+    const q = `[aria-label="${CSS.escape(label)}"]`
+    let scope = ''
+    for (let p = o.parentElement; p && p !== document.body; p = p.parentElement) if (p.id && !generatedId(p.id)) { scope = `#${CSS.escape(p.id)} `; break }
+    for (const s of [scope + q, q]) if (resolve(s) === o) return s
+  }
+  return selectorOf(o, true)
+}
+
+// On the page and drawn: an element under a closed section (v-show) or an unpicked tab is in the DOM with no box.
+export const drawn = (el: Element | null): el is Element => !!el && el.getClientRects().length > 0
+
+// ---- The way back to an element inside something that closes ----------------------------------
+// What was open around an element, outermost first: a trigger with aria-expanded="true" whose aria-controls panel holds
+// it (a popover, menu, dialog or collapsible section; popovers and dialogs are portalled, so the panel is found by its
+// id, not by the DOM's ancestors), a selected tab whose panel holds it, or the summary of an open <details>. A trigger
+// may itself sit in something opened (a section inside a popover), so the walk goes on from it.
+export function revealOf(el: Element): RevealStep[] {
+  const steps: RevealStep[] = []
+  const seen = new Set<Element>()
+  let from: Element = el
+  for (let cur: Element | null = el.parentElement; cur && cur !== document.body && !seen.has(cur); cur = cur.parentElement) {
+    seen.add(cur)
+    const step = openerOf(cur, from)
+    from = cur
+    if (!step) continue
+    if (steps.length === MAX_REVEAL) return []
+    steps.unshift({ sel: openerSelector(step.el), kind: step.kind })
+    from = step.el
+    cur = step.el
+  }
+  return steps
+}
+function openerOf(panel: Element, child: Element): { el: Element; kind: RevealStep['kind'] } | null {
+  if (panel instanceof HTMLDetailsElement && panel.open) {
+    const summary = panel.querySelector(':scope > summary')
+    return summary && summary !== child ? { el: summary, kind: 'details' } : null
+  }
+  if (!panel.id) return null
+  for (const t of document.querySelectorAll(`[aria-controls~="${CSS.escape(panel.id)}"]`)) {
+    if (isOurs(t) || t.contains(panel)) continue
+    if (t.getAttribute('role') === 'tab' && t.getAttribute('aria-selected') === 'true') return { el: t, kind: 'tab' }
+    if (t.getAttribute('aria-expanded') === 'true') return { el: t, kind: 'expanded' }
+  }
+  return null
+}
+// The control a step names, as that kind of control: a selector that now finds something else is never pressed.
+export function isOpener(el: Element, kind: RevealStep['kind']): boolean {
+  if (kind === 'tab') return el.getAttribute('role') === 'tab'
+  if (kind === 'details') return el.tagName === 'SUMMARY'
+  return el.hasAttribute('aria-expanded')
+}
+// Already open, so pressing it again would close it.
+export function isOpen(trigger: Element, kind: RevealStep['kind']): boolean {
+  if (kind === 'tab') return trigger.getAttribute('aria-selected') === 'true'
+  if (kind === 'details') return !!trigger.parentElement?.hasAttribute('open')
+  return trigger.getAttribute('aria-expanded') === 'true'
+}
+// A press as a pointer makes it: reka's tabs change on mousedown, its popovers, menus and sections on click.
+export function press(el: Element) {
+  const at = { bubbles: true, cancelable: true, composed: true, button: 0 }
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }))
+  el.dispatchEvent(new MouseEvent('mousedown', at))
+  el.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }))
+  el.dispatchEvent(new MouseEvent('mouseup', at))
+  el.dispatchEvent(new MouseEvent('click', at))
 }
 
 // The Prototype's own components, by name: the runtime compiler names a <script setup> component
@@ -208,8 +280,10 @@ export function textOf(el: Element, max = 80): string {
   return ((el as HTMLElement).innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
+// The selector skips generated ids: a popover's or section's content gets a new one each time it opens, and a pin must
+// find its element again after that.
 export function infoOf(el: Element): ElInfo {
-  return { selector: selectorOf(el), component: componentOf(el).component, element: summaryOf(el), text: textOf(el), state: stateOf(el) }
+  return { selector: selectorOf(el, true), component: componentOf(el).component, element: summaryOf(el), text: textOf(el), state: stateOf(el) }
 }
 
 // The route a note belongs to: the full path without the ?v= cache-buster, the open canvas (and any old ?annotate).

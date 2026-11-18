@@ -242,6 +242,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		step: picker.step,
 		track: picker.track,
 		resolve: picker.resolve,
+		open: picker.open,
 		scrollTo: picker.scrollTo,
 		escape: escapeInPage,
 		outside: pressOutside,

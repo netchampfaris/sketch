@@ -14,10 +14,10 @@ import {
 	UI_ATTR,
 	componentOf,
 	fileOfName,
-	generatedId,
 	isOurs,
 	isOursName,
 	nameOfType,
+	openerSelector,
 	resolve,
 	selectorOf,
 	sourceFiles,
@@ -472,18 +472,6 @@ function recordOpener(e: Event) {
 	if (!(t instanceof Element) || !app?.contains(t) || isOurs(t)) return
 	const o = t.closest('[aria-expanded],[aria-haspopup],[aria-controls]')
 	if (o && app.contains(o)) lastOpener = openerSelector(o)
-}
-// A handle that survives a reload: the aria-label (under the nearest stable id, when it has one),
-// else the structural path with generated ids skipped. Each is kept only if it finds this element.
-function openerSelector(o: Element): string {
-	const label = o.getAttribute('aria-label')
-	if (label) {
-		const q = `[aria-label="${CSS.escape(label)}"]`
-		let scope = ''
-		for (let p = o.parentElement; p && p !== document.body; p = p.parentElement) if (p.id && !generatedId(p.id)) { scope = `#${CSS.escape(p.id)} `; break }
-		for (const s of [scope + q, q]) if (resolve(s) === o) return s
-	}
-	return selectorOf(o, true)
 }
 // The first of an element's texts, only when it has several.
 function firstOfMany(el: Element): string {
