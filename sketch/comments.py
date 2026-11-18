@@ -71,6 +71,9 @@ ANCHOR_TEXT = {
 }
 
 
+#: What finds a tile pin's element again besides its selector, and how long each may be.
+TARGET_TEXT = {"tag": 40, "text": 300, "label": 300}
+
 #: The Demo picks a live-page comment was made on: one entry per variant set or page state.
 PICK_KINDS = ("set", "state")
 #: Strings in a pick, and how long each may be.
@@ -638,7 +641,10 @@ def clean_tile_anchor(anchor: dict) -> dict:
 
 
 def clean_tile_target(target) -> dict | None:
-	"""The element a tile pin sits on, or None. A selector cut short finds another element, so one too long is dropped."""
+	"""The element a tile pin sits on, or None. A selector cut short finds another element, so one too long is dropped.
+
+	Its tag, words and aria-label find it again when a sibling added or removed above it has moved the selector's places.
+	"""
 	if not isinstance(target, dict):
 		return None
 
@@ -646,7 +652,12 @@ def clean_tile_target(target) -> dict | None:
 	if not isinstance(selector, str) or not selector or len(selector) > ANCHOR_TEXT["selector"]:
 		return None
 
-	return {"selector": selector, "x": _fraction(target.get("x")), "y": _fraction(target.get("y"))}
+	out = {"selector": selector, "x": _fraction(target.get("x")), "y": _fraction(target.get("y"))}
+	for key, limit in TARGET_TEXT.items():
+		value = target.get(key, "")
+		out[key] = value[:limit] if isinstance(value, str) else ""
+
+	return out
 
 
 def where_of(anchor: dict) -> str:
