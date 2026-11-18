@@ -45,7 +45,7 @@ try {
 
 	await frame.waitForFunction(() => document.querySelectorAll('[data-tile-id] [inert]').length >= 2, null, { timeout: BOOT_MS }).catch(why)
 	await frame.locator('[data-tile-id] [data-tile]').first().click()
-	await frame.locator('[data-live]').waitFor({ timeout: BOOT_MS }).catch(why)
+	await frame.locator('[data-live]').waitFor({ state: 'attached', timeout: BOOT_MS }).catch(why)
 	await sleep(SETTLE_MS)
 	answer.live = (await frame.locator('[data-live]').count()) > 0
 	answer.liveText = await frame.locator('[data-live]').innerText()
