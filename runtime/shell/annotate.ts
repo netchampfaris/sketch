@@ -3,7 +3,7 @@
 // frame, which picks them (runtime/agent/pick.ts); a note holds what the frame reported about them.
 // Saved state is restored by notes.ts from the shell's boot JSON.
 import { ref } from 'vue'
-import { whereOf, type TileRef } from '../shared/tiles'
+import { whereOf, type TileRef, type TileTarget } from '../shared/tiles'
 import { subject } from './host'
 import { elementLine } from '../shared/tweak'
 import type { BoxInfo, ElInfo, Mode, RevealStep } from '../shared/protocol'
@@ -29,8 +29,10 @@ export type Note = {
   offset: { x: number; y: number }
   rect: { x: number; y: number; w: number; h: number }
   // A note or comment on a canvas tile: `route` is its page, and the element fields are empty. `offset` is
-  // where on the tile, as a fraction of its width and height.
+  // where on the tile, as a fraction of its width and height; `target` the element clicked in the tile's drawing, which
+  // the pin sits on while the tile draws it.
   tile?: TileRef
+  target?: TileTarget
   createdAt: number
 }
 

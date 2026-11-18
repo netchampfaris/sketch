@@ -3,8 +3,8 @@
 // route, the theme, the viewport, the Demo and the canvas), and measures, picks and writes tweaks for it.
 // Messages go to the parent alone; one from anywhere else, or of a type it does not know, is dropped.
 import { watch } from 'vue'
-import { envelope, read, toFrame, type FromFrame, type Rect, type Theme, type ToFrame } from '../shared/protocol'
-import { isOurs, pageLayerOpen, routeKey, setSourceFiles, typing } from './dom'
+import { envelope, read, toFrame, type FromFrame, type Rect, type Theme, type TileSpot, type TileTracked, type ToFrame } from '../shared/protocol'
+import { clamp, findIn, isOurs, pageLayerOpen, routeKey, selectorIn, setSourceFiles, targetAt, traitsOf, typing } from './dom'
 import { startPicking } from './pick'
 import { startTweak } from './tweakPick'
 // `sketch:variants` as the Prototype's page loaded it (its types only: the module is the page's, imported at run time).
@@ -171,8 +171,19 @@ function postLayout() {
 // The canvas draws its tiles here; the shell draws its panel, its toolbar and the pins on the tiles. A tile clicked with
 // a tool in hand is a `tile:pick` (Canvas.vue `activate`), a click off the tiles a `canvas:click`. What the canvas shows
 // goes up at most once a frame: the pan and zoom every time, the tiles, pages and Show rows only when they changed.
-function startCanvas({ bridge, canvasReport }: Variants) {
-	bridge.pick = (hit) => post('tile:pick', { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y })
+// A tile click also names the element under it in the tile's drawing, so its pin can stay on that element whatever size
+// the tile becomes; the shell tracks those elements (`tile:track`) and hears where they sit in their tiles (`tile:rects`).
+function startCanvas({ bridge, canvasReport, findTile }: Variants) {
+	bridge.pick = (hit, box) => {
+		const at = { spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, x: hit.x, y: hit.y }
+		const drawing = drawingOf(box)
+		const el = drawing && targetAt(drawing, hit.x, hit.y)
+		const selector = el ? selectorIn(el, drawing!) : ''
+		if (!el || !selector) return post('tile:pick', at)
+		const r = el.getBoundingClientRect()
+		const x = clamp((hit.x - r.left) / r.width, 0, 1)
+		post('tile:pick', { ...at, target: { selector, x, y: clamp((hit.y - r.top) / r.height, 0, 1), ...traitsOf(el) } })
+	}
 	bridge.onEmptyClick = () => post('canvas:click', {})
 	// The live tile's ⋯: the shell opens its menu at the button (runtime/shell/TileMenu.vue).
 	bridge.tileMenu = (tileId, rect) => post('tile:menu', { tileId, rect })
@@ -212,6 +223,58 @@ function startCanvas({ bridge, canvasReport }: Variants) {
 		},
 		{ immediate: true },
 	)
+
+	let tracked: ToFrame['tile:track'] = { req: 0, list: [] }
+	let sentRects = ''
+	let measuring = false
+	const measure = () => {
+		measuring = false
+		const msg = { req: tracked.req, list: tracked.list.map(boxInTile) }
+		const json = JSON.stringify(msg)
+		if (json === sentRects) return
+		sentRects = json
+		post('tile:rects', msg)
+	}
+	const remeasure = () => {
+		if (measuring || !bridge.open) return
+		measuring = true
+		requestAnimationFrame(measure)
+	}
+	// A snapshot is drawn when its tile comes near the view and again for a new layout: either moves what it shows.
+	watch(() => [bridge.open, bridge.tiles, bridge.view], remeasure)
+	new MutationObserver(() => tracked.list.length && remeasure()).observe(document.body, { childList: true, subtree: true })
+	return {
+		track: (d: ToFrame['tile:track']) => {
+			tracked = d
+			remeasure()
+		},
+		// A tile's element on the screen now, for a pin brought into view.
+		pointOf: (spot: TileSpot, at: Omit<TileTracked, 'tile'>) => {
+			const { target } = at
+			const t = findTile(bridge.tiles, spot, bridge.view)
+			const box = t && boxInTile({ tile: t.id, ...at })
+			const tile = t && document.querySelector(`[data-tile-id="${CSS.escape(t.id)}"]`)?.getBoundingClientRect()
+			if (!box || !tile) return null
+			const k = tile.width / (t.w || 1)
+			return { x: tile.left + (box.x + target.x * box.w) * k, y: tile.top + (box.y + target.y * box.h) * k }
+		},
+	}
+}
+
+// The tile's drawing: its snapshot, or its live render.
+const drawingOf = (box: Element | null) => box?.querySelector<HTMLElement>('[data-tile-drawing]') ?? null
+// Where an element sits in its tile, in the canvas's own px from the tile's top left (the canvas may be zoomed). Null when
+// the tile does not draw it now: far from the view, or the element gone or hidden.
+function boxInTile({ tile: tileId, fx, fy, target }: TileTracked): Rect | null {
+	const tile = document.querySelector<HTMLElement>(`[data-tile-id="${CSS.escape(tileId)}"]`)
+	const t = tile?.getBoundingClientRect()
+	const drawing = drawingOf(tile)
+	const el = t && drawing && findIn(drawing, target, { x: t.left + fx * t.width, y: t.top + fy * t.height })
+	if (!tile || !t || !el || getComputedStyle(el).visibility !== 'visible') return null
+	const r = el.getBoundingClientRect()
+	if (!r.width || !r.height) return null
+	const k = tile.offsetWidth ? t.width / tile.offsetWidth : 1
+	return { x: (r.left - t.left) / k, y: (r.top - t.top) / k, w: r.width / k, h: r.height / k }
 }
 
 export async function startAgent({ status, routes, router, files, repaint }: AgentStart) {
@@ -226,6 +289,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 	const picker = startPicking(post, () => (variants && router ? variants.currentPicks(router.currentRoute.value) : []))
 	// Tweak hears its keys before forwardKeys below sends Escape on: started first, its window listener runs first.
 	const tweak = router ? startTweak(post, () => routeKey(router.currentRoute.value)) : null
+	let canvasAgent: ReturnType<typeof startCanvas> | null = null
 	const handlers: { [K in keyof ToFrame]?: (d: ToFrame[K]) => void } = {
 		tool: (d) => {
 			picker.tool(d)
@@ -274,10 +338,12 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		},
 		'canvas:close': () => router && variants?.bridge.open && variants.closeCanvas(router),
 		'canvas:tool': ({ tool }) => variants && (variants.bridge.tool = tool),
+		'tile:track': (d) => canvasAgent?.track(d),
 		'canvas:zoom': ({ to }) => variants?.bridge.zoomTo?.(to),
-		'canvas:reveal': async ({ req, spot, fx, fy }) => {
+		// A pin on an element of the tile is brought into view on that element, wherever it now sits.
+		'canvas:reveal': async ({ req, spot, fx, fy, target }) => {
 			const point = (await variants?.bridge.reveal?.(spot, { fx, fy }).catch(() => null)) ?? null
-			post('canvas:revealed', { req, point })
+			post('canvas:revealed', { req, point: (point && target && canvasAgent?.pointOf(spot, { fx, fy, target })) || point })
 		},
 		copy: (hints) => repaint(hints),
 		nav: ({ path }) => {
@@ -317,7 +383,7 @@ export async function startAgent({ status, routes, router, files, repaint }: Age
 		watch(() => JSON.stringify(demoEntries()), () => post('demo', { entries: demoEntries() }), { immediate: true })
 		// The Demo pill's rows, which the shell draws.
 		if (router) watch(() => JSON.stringify(variants.demoModel(router)), (json) => post('model', JSON.parse(json)), { immediate: true })
-		startCanvas(variants)
+		canvasAgent = startCanvas(variants)
 	}
 
 	// The Prototype may switch its own theme (a toggle in the page writes data-theme); the shell follows it.

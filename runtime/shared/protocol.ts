@@ -124,6 +124,21 @@ export const tileRef = (v: unknown): TileRef | null =>
 
 export type TileSpot = { route: string; tile: TileRef }
 const tileSpot = (v: unknown): TileSpot | null => (isObj(v) ? all<TileSpot>({ route: str(v.route, CAPS.route), tile: tileRef(v.tile) }) : null)
+// The element a tile click landed on: a selector inside the tile's drawing, and the click as a fraction of the element.
+// Its tag, its words and its aria-label find it again once the selector misses: a sibling added or removed above it
+// shifts the selector's places. Those three are '' on a target saved before they were kept.
+export type TileTarget = { selector: string; x: number; y: number; tag: string; text: string; label: string }
+const tileTarget = (v: unknown): TileTarget | null =>
+	isObj(v)
+		? all<TileTarget>({
+				selector: str(v.selector, CAPS.selector),
+				x: num(v.x),
+				y: num(v.y),
+				tag: str(v.tag ?? '', 40),
+				text: str(v.text ?? ''),
+				label: str(v.label ?? ''),
+			})
+		: null
 
 export type ElInfo = { selector: string; component: string; element: string; text: string; state: string }
 const elInfo = (v: unknown): ElInfo | null =>
@@ -266,7 +281,11 @@ export type FromFrame = {
 	'zoom:menu': { rect: Rect; keyboard: boolean }
 	// The phone's title pill: open the Show list under its name, at the name's box, or close it.
 	'canvas:show': { rect: Rect; open: boolean }
-	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number }
+	// `target`: the element under the click, when the tile's drawing has one there.
+	'tile:pick': { spot: TileSpot; fx: number; fy: number; x: number; y: number; target?: TileTarget }
+	// The answer to `tile:track` `req`, now and whenever the tiles move: each element's box in its tile, in the canvas's
+	// own px from the tile's top left, in the order asked; null when its tile does not draw it.
+	'tile:rects': { req: number; list: (Rect | null)[] }
 	// A click on the canvas off every tile while a tool is in hand: the shell's comment box closes, as a click outside does.
 	'canvas:click': Obj
 	// The answer to `canvas:reveal`: where the spot is on the screen now, or null when the canvas has no such tile.
@@ -598,7 +617,12 @@ export const fromFrame: { [K in keyof FromFrame]: (d: Obj) => FromFrame[K] | nul
 	'tile:menu': (d) => all({ tileId: str(d.tileId), rect: rect(d.rect) }),
 	'zoom:menu': (d) => all({ rect: rect(d.rect), keyboard: bool(d.keyboard ?? false) }),
 	'canvas:show': (d) => all({ rect: rect(d.rect), open: bool(d.open) }),
-	'tile:pick': (d) => all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) }),
+	'tile:pick': (d) => {
+		const target = d.target === undefined ? undefined : tileTarget(d.target)
+		const hit = all({ spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy), x: num(d.x), y: num(d.y) })
+		return hit && (target ? { ...hit, target } : hit)
+	},
+	'tile:rects': (d) => all({ req: num(d.req), list: Array.isArray(d.list) ? d.list.slice(0, CAPS.rects).map(rectOrNull) : null }),
 	'canvas:click': () => ({}),
 	'canvas:revealed': (d) => {
 		const req = str(d.req, 40)
@@ -654,6 +678,9 @@ export type PickRef = { kind: 'set' | 'state'; path: string; key: string; option
 const pickRef = (v: unknown): PickRef | null =>
 	isObj(v) ? all<PickRef>({ kind: oneOf(v.kind, ['set', 'state'] as const), path: str(v.path, CAPS.route), key: str(v.key), option: str(v.option) }) : null
 
+export type TileTracked = { tile: string; fx: number; fy: number; target: TileTarget }
+const NO_TILE: TileTracked = { tile: '', fx: 0, fy: 0, target: { selector: '', x: 0, y: 0, tag: '', text: '', label: '' } }
+
 export type ToFrame = {
 	// `active` is the tool picking in the page now: the frame catches the pointer only then.
 	tool: { mode: Mode; active: boolean }
@@ -676,8 +703,12 @@ export type ToFrame = {
 	// Open the canvas on a view, or show another view in it when it is open.
 	'canvas:open': { view?: string }
 	'canvas:close': Obj
-	// Bring a tile into view, `fx, fy` being the spot on it as a fraction. The frame answers with `canvas:revealed`.
-	'canvas:reveal': { req: string; spot: TileSpot; fx: number; fy: number }
+	// Bring a tile into view, `fx, fy` being the spot on it as a fraction, or on `target` when its tile draws it. The frame
+	// answers with `canvas:revealed`.
+	'canvas:reveal': { req: string; spot: TileSpot; fx: number; fy: number; target?: TileTarget }
+	// The elements pins sit on inside tiles: each tile's id, the pin's element and its fraction of the tile (where to look
+	// first among elements alike). The frame answers with `tile:rects`, in the same order.
+	'tile:track': { req: number; list: TileTracked[] }
 	// The zoom menu's pick: fit the tiles, or a zoom.
 	'canvas:zoom': { to: ZoomTo }
 	// The tool picking tiles, '' while browsing: a click on a tile is then a `tile:pick`, not opening it live.
@@ -790,7 +821,19 @@ export const toFrame: { [K in keyof ToFrame]: (d: Obj) => ToFrame[K] | null } = 
 	'picks:apply': (d) => all({ picks: list(d.picks, CAPS.sets, pickRef) }),
 	'canvas:open': (d) => some({ view: str(d.view, CAPS.route) }),
 	'canvas:close': () => ({}),
-	'canvas:reveal': (d) => all({ req: str(d.req, 40), spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy) }),
+	'canvas:reveal': (d) => {
+		const target = d.target === undefined ? undefined : tileTarget(d.target)
+		const at = all({ req: str(d.req, 40), spot: tileSpot(d.spot), fx: num(d.fx), fy: num(d.fy) })
+		return at && (target ? { ...at, target } : at)
+	},
+	// An unreadable entry stays as one that finds nothing, so the answer keeps the order.
+	'tile:track': (d) =>
+		all({
+			req: num(d.req),
+			list: Array.isArray(d.list)
+				? d.list.slice(0, CAPS.rects).map((x) => (isObj(x) && all<TileTracked>({ tile: str(x.tile), fx: num(x.fx), fy: num(x.fy), target: tileTarget(x.target) })) || NO_TILE)
+				: null,
+		}),
 	'canvas:zoom': (d) => all({ to: oneOf(d.to, ZOOM_TO) }),
 	'canvas:tool': (d) => all({ tool: oneOf(d.tool, ['', 'comment', 'note'] as const) }),
 	display: (d) =>

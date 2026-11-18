@@ -4,12 +4,12 @@
 //
 // The canvas's tiles, pan and zoom are the frame's; the shell draws the panel, the toolbar and the pins on the
 // tiles over it (CanvasLayer.vue), from the tiles' boxes in the canvas's own coordinates and the pan and zoom.
-import { shallowReactive, watch, type Component } from 'vue'
+import { shallowReactive, shallowRef, watch, type Component } from 'vue'
 import { lookAt } from './badges'
 import { onFrame, onGone, page, post } from './frame'
 import { picksShownIn, reachableIn, type DemoPick } from '../shared/picks'
-import { sameTile, type TileSpot } from '../shared/tiles'
-import type { CanvasPage, EmptyView, PickItem, Pill } from '../shared/protocol'
+import { sameTile, type TileSpot, type TileTarget } from '../shared/tiles'
+import type { CanvasPage, EmptyView, PickItem, Pill, Rect, TileTracked } from '../shared/protocol'
 
 export type Tab = 'browse' | 'comments' | 'notes'
 // A tile as the shell holds it: its box before pan and zoom, and the spot it is.
@@ -108,10 +108,48 @@ watch(
 export const findTile = (tiles: ShellTile[], spot: TileSpot) => tiles.find((t) => sameTile(t.spot, spot))
 
 // A spot on a tile on the screen now: pan + its place on the tile * zoom. Null when the canvas does not show the tile.
-export function pointOf(spot: TileSpot, at: { fx: number; fy: number }) {
+export function pointOf(spot: TileSpot, at: TileAt) {
 	const t = findTile(canvas.tiles, spot)
 	if (!t) return null
-	return { x: canvas.pan.x + (t.x + at.fx * t.w) * canvas.zoom, y: canvas.pan.y + (t.y + at.fy * t.h) * canvas.zoom }
+	const p = onTile(t, at)
+	return { x: canvas.pan.x + p.x * canvas.zoom, y: canvas.pan.y + p.y * canvas.zoom }
+}
+
+// ---- Elements in tiles: what a pin made on a tile sits on
+// A tile pin keeps the element it was clicked on (`target`: a selector in the tile's drawing, and the element's tag,
+// words and label to find it by once the selector misses). The frame finds where each tracked element is in its tile
+// (runtime/agent/index.ts `tile:track`), so the pin stays on it whatever size the tile becomes and whatever was added
+// around it. A pin whose element its tile does not draw, or that has none (made before elements were kept), sits at its
+// fraction of the tile.
+export type TileAt = { fx: number; fy: number; target?: Partial<TileTarget> & { selector: string; x: number; y: number } }
+// What the frame is asked to find for a pin with a target; a target saved before its traits were kept has them ''.
+export const trackedOf = (tile: string, at: TileAt): TileTracked => ({
+	tile,
+	fx: at.fx,
+	fy: at.fy,
+	target: { tag: '', text: '', label: '', ...at.target! },
+})
+const keyOf = (t: TileTracked) => JSON.stringify(t)
+let tracked: TileTracked[] = []
+let trackReq = 0
+const boxes = shallowRef(new Map<string, Rect>())
+export function trackTargets(list: TileTracked[]) {
+	if (JSON.stringify(list) === JSON.stringify(tracked)) return
+	tracked = list
+	post('tile:track', { req: ++trackReq, list })
+}
+onFrame('tile:rects', (d) => {
+	if (d.req !== trackReq) return
+	const map = new Map<string, Rect>()
+	d.list.forEach((r, i) => r && tracked[i] && map.set(keyOf(tracked[i]), r))
+	boxes.value = map
+})
+// A fresh frame knows nothing of what was tracked.
+onFrame('ready', () => tracked.length && post('tile:track', { req: ++trackReq, list: tracked }))
+// The place on a tile, in the canvas's own coordinates.
+export function onTile(t: ShellTile, at: TileAt) {
+	const r = at.target && boxes.value.get(keyOf(trackedOf(t.id, at)))
+	return r ? { x: t.x + r.x + at.target!.x * r.w, y: t.y + r.y + at.target!.y * r.h } : { x: t.x + at.fx * t.w, y: t.y + at.fy * t.h }
 }
 
 // Bring a tile into view (the frame pans to it) and give the spot's point on the screen. Null when the canvas no longer
@@ -122,7 +160,7 @@ onFrame('canvas:revealed', (d) => {
 	waiting.get(d.req)?.(d.point)
 	waiting.delete(d.req)
 })
-export function revealTile(spot: TileSpot, at: { fx: number; fy: number }, ms = 6000): Promise<{ x: number; y: number } | null> {
+export function revealTile(spot: TileSpot, at: TileAt, ms = 6000): Promise<{ x: number; y: number } | null> {
 	const id = `v${++req}`
 	return new Promise((done) => {
 		const t = setTimeout(() => {
@@ -133,7 +171,7 @@ export function revealTile(spot: TileSpot, at: { fx: number; fy: number }, ms = 
 			clearTimeout(t)
 			done(p)
 		})
-		post('canvas:reveal', { req: id, spot, fx: at.fx, fy: at.fy })
+		post('canvas:reveal', { req: id, spot, fx: at.fx, fy: at.fy, ...(at.target ? { target: trackedOf('', at).target } : {}) })
 	})
 }
 

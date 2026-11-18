@@ -1,10 +1,10 @@
 // A canvas tile in words: the pure half of runtime/variants/bridge.ts, shared with the Viewer shell, which
 // names tiles in its lists and prompts but never holds the canvas.
-import type { CanvasPage, TileRef, TileSpot } from './protocol'
+import type { CanvasPage, TileRef, TileSpot, TileTarget } from './protocol'
 
-export type { TileRef, TileSpot }
-// A click on a tile: the spot, where on it as a fraction, and where on the screen.
-export type TileHit = TileSpot & { fx: number; fy: number; x: number; y: number }
+export type { TileRef, TileSpot, TileTarget }
+// A click on a tile: the spot, where on it as a fraction, where on the screen, and the element under it, if any.
+export type TileHit = TileSpot & { fx: number; fy: number; x: number; y: number; target?: TileTarget }
 
 // The same tile, whichever view it was pinned in.
 export const sameTile = (a: TileSpot, b: TileSpot) =>

@@ -183,6 +183,7 @@ watch(
         <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0 size-0" :style="shift">
           <div
             ref="snapEl"
+            data-tile-drawing
             inert
             class="pointer-events-none"
             :data-sketch-lift="snap.lifted ? '' : undefined"

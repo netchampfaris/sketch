@@ -114,7 +114,8 @@ const handlers: { [K in keyof FromFrame]?: (d: FromFrame[K]) => void } = {
 	'theme:choose': ({ theme: next }) => chooseTheme(next),
 	// layout, demo, hover, pick, drag, rects, track, key, canvas, tile:pick, canvas:click and canvas:revealed go to
 	// frame.ts (`receive`), for the toolbar and the canvas layer; model to demo.ts (the Demo pill), tile:menu to
-	// TileMenu.vue, zoom:menu to ZoomMenu.vue, tweak:info and tweak:rects to tweaks.ts and TweakLayer.vue.
+	// TileMenu.vue, zoom:menu to ZoomMenu.vue, tile:rects to canvas.ts, tweak:info and tweak:rects to tweaks.ts and
+	// TweakLayer.vue.
 }
 
 function onMessage(e: MessageEvent) {
