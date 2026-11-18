@@ -3,8 +3,9 @@
 //
 //   node tile_pins_follow.mjs <playwright entry> <host> <port> <viewer path> <sid> <make|measure> [evidence file]
 //
-// `make` leaves a note and a comment on the Submit button of the first tile. Both runs then report, for the note and
-// comment pins and for an old note made without an element, where the pin's tip is, and the boxes of Submit and its tile.
+// `make` leaves a note and a comment on the Submit button of the first tile, and a comment on its No button. Both runs
+// then report, for those pins and for an old note made without an element, where the pin's tip is, and the boxes of
+// Submit, No and their tile.
 import { pathToFileURL } from 'node:url'
 
 const [, , playwrightEntry, host, port, viewerPath, sid, mode, evidence] = process.argv
@@ -45,17 +46,19 @@ try {
 		return { ...r, x: r.x + iframe.x, y: r.y + iframe.y }
 	}
 	const tile = frame.locator('[data-tile-id]').first()
-	const submit = tile.locator('[data-tile-drawing] button', { hasText: 'Submit' }).first()
+	const button = (name) => tile.locator('[data-tile-drawing] button').getByText(name, { exact: true }).first()
+	const submit = button('Submit')
+	const no = button('No')
 
-	async function leave(kind) {
+	async function leave(kind, on = submit, words = `${kind} on submit`) {
 		await tool(kind)
-		const r = await inPage(submit)
+		const r = await inPage(on)
 		await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2)
 		const box = page.getByPlaceholder(kind === 'note' ? 'What should change?' : 'Add a comment…').first()
 		await box.waitFor({ timeout: 5000 })
-		await box.fill(`${kind} on submit`)
+		await box.fill(words)
 		await box.press('Enter')
-		await page.getByLabel(new RegExp(`^(Note \\d+|Comment from .*): ${kind} on submit$`)).first().waitFor({ timeout: 10000 })
+		await page.getByLabel(new RegExp(`^(Note \\d+|Comment from .*): ${words}$`)).first().waitFor({ timeout: 10000 })
 		await page.keyboard.press('Escape')
 		await sleep(400)
 	}
@@ -66,14 +69,19 @@ try {
 		return pin.evaluate((b) => (({ left: x, top: y }) => ({ x, y }))(b.parentElement.getBoundingClientRect()))
 	}
 
-	if (mode === 'make') for (const kind of ['note', 'comment']) await leave(kind)
+	if (mode === 'make') {
+		for (const kind of ['note', 'comment']) await leave(kind)
+		await leave('comment', no, 'comment on no')
+	}
 
 	answer.tile = await inPage(tile)
 	answer.submit = await inPage(submit)
+	answer.no = await inPage(no)
 	for (const kind of ['note', 'comment']) {
 		await tool(kind)
 		answer.pins[kind] = await tipOf(`${kind} on submit`)
 		if (kind === 'note') answer.pins.old = await tipOf('old note')
+		else answer.pins.no = await tipOf('comment on no')
 	}
 	if (evidence) await page.screenshot({ path: evidence })
 	answer.errors = logs

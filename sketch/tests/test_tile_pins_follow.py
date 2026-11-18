@@ -5,11 +5,14 @@
 
 A tile pin used to keep only the click as a fraction of its tile. Tiles hug their variant, so a variant drawn at a new
 width moved every pin onto whatever now sat at that fraction. A tile click now also keeps the element under it
-(`target`: a selector inside the tile's drawing, and the click as a fraction of the element), and the pin sits on that
-element while its tile draws it. A pin made before, with no element, still sits at its fraction of the tile.
+(`target`: a selector inside the tile's drawing, the click as a fraction of the element, and the element's tag, words
+and label), and the pin sits on that element while its tile draws it. An agent adding a block above the element shifts
+the selector's places, so the element is then found by its tag, words and label. A pin made before, with no element,
+still sits at its fraction of the tile.
 
-`tile_pins_follow.mjs` leaves a note and a comment on the first tile's Submit button, and reports where the pins are.
-The card is then drawn wider, with a line more above Submit, and it reports again.
+`tile_pins_follow.mjs` leaves a note and a comment on the first tile's Submit button and a comment on its No button,
+and reports where the pins are. The card is then drawn wider, with a block of two lines inserted as its first child,
+before the header row, and it reports again.
 
 Skips when node, Playwright, the web server or the built shell is absent. A skip is not a pass.
 """
@@ -42,10 +45,16 @@ OLD = (0.8, 0.15)
 
 
 def home(width: int, extra: str = "") -> str:
+	verdict = "".join(
+		f"<button class='rounded border border-outline-gray-2 px-2 py-1'>{word}</button>"
+		for word in ("Strong yes", "Yes", "No", "Strong no")
+	)
 	card = (
 		f"<div class='w-[{width}px] rounded-lg border border-outline-gray-2 bg-surface-base p-4 shadow-lg'>\n"
-		"          <h2 class='text-lg font-semibold'>Priya Nair</h2>\n"
 		f"          {extra}\n"
+		"          <div class='flex items-center gap-3'><h2 class='text-lg font-semibold'>Priya Nair</h2></div>\n"
+		"          <div class='mt-3'><div class='text-p-sm text-ink-gray-5'>Your verdict</div>"
+		f"<div class='mt-2 flex gap-2'>{verdict}</div></div>\n"
 		"          <div class='my-4'><button class='rounded bg-surface-gray-7 px-3 py-1 text-ink-white'>Submit</button></div>\n"
 		"          <p class='text-p-base text-ink-gray-6'>Walked through the pricing page.</p>\n"
 		"        </div>"
@@ -72,9 +81,9 @@ TREE = {
 		"export default routes\n"
 	),
 }
-WIDE = home(
-	560, "<p class='mt-3 text-p-base text-ink-gray-6'>Owned the trade-offs and wrote them down for the team.</p>"
-)
+# What an agent's edit does to the variant: wider, and a block inserted before the header row, which moves every
+# element's place among its siblings.
+WIDE = home(560, "<div class='p-4 text-p-sm text-ink-gray-5'>An extra line.<br>And a second line.</div>")
 
 
 def old_note() -> dict:
@@ -170,6 +179,18 @@ class TestTilePinsFollowTheirElement(IntegrationTestCase):
 		for run in (self.narrow, self.wide):
 			for kind in ("note", "comment"):
 				self.assertTrue(self.on(run["pins"][kind], run["submit"]), self.say(run | {"pin": kind}))
+			self.assertTrue(self.on(run["pins"]["no"], run["no"]), self.say(run | {"pin": "no"}))
+
+	def test_a_block_inserted_above_moves_the_selector_and_the_pin_still_finds_no(self):
+		"""The saved selector now names another element, or none: the pin finds No by its tag and words."""
+		anchor = json.loads(
+			frappe.get_value("Sketch Comment", {"prototype": self.doc.name, "text": "comment on no"}, "anchor")
+		)
+		self.assertEqual({k: anchor["target"][k] for k in ("tag", "text", "label")}, {"tag": "button", "text": "No", "label": ""})
+		self.assertIn("nth-of-type", anchor["target"]["selector"], "a positional selector, which the insert shifts")
+		tile = self.wide["tile"]
+		fraction = {"x": tile["x"] + anchor["offset"]["x"] * tile["w"], "y": tile["y"] + anchor["offset"]["y"] * tile["h"]}
+		self.assertFalse(self.on(fraction, self.wide["no"]), self.say(fraction))
 
 	def test_a_pin_without_an_element_keeps_its_fraction_of_the_tile(self):
 		for run in (self.narrow, self.wide):
@@ -187,9 +208,16 @@ class TestTileTargetIsChecked(IntegrationTestCase):
 
 	def test_a_target_is_kept_with_its_fractions_held_to_the_element(self):
 		out = comments.clean_anchor(self.anchor({"selector": "div > button", "x": 1.5, "y": -1, "extra": "x"}))
-		self.assertEqual(out["target"], {"selector": "div > button", "x": 1.0, "y": 0.0})
+		self.assertEqual(
+			out["target"], {"selector": "div > button", "x": 1.0, "y": 0.0, "tag": "", "text": "", "label": ""}
+		)
 		self.assertEqual(out["offset"], {"x": 0.4, "y": 0.6})
 		self.assertEqual(out["selector"], "", "the page's own selector stays empty on a tile")
+
+	def test_the_traits_are_kept_and_bounded(self):
+		target = {"selector": "div > button", "x": 0.5, "y": 0.5, "tag": "button", "text": "N" * 900, "label": 7}
+		out = comments.clean_anchor(self.anchor(target))["target"]
+		self.assertEqual((out["tag"], len(out["text"]), out["label"]), ("button", 300, ""))
 
 	def test_a_bad_or_cut_short_target_is_dropped(self):
 		for bad in (None, "div", {"x": 0.5}, {"selector": ""}, {"selector": 3}, {"selector": "a" * 5000}):
