@@ -1,9 +1,11 @@
 // Snapshots: a rendered frame turned into a static HTML string plus the scroll positions to restore.
 import { shallowReactive, shallowRef } from 'vue'
-import { boxIn, lift } from './lift'
+import { boxIn, lift, withCard } from './lift'
 import type { DGroup, Opt, Reg, VSet } from './state'
 
-export type Crop = { x: number; y: number; w: number; h: number }
+// Where a set sits in its page. `card` is set when the set draws its own card (lift.ts `ownCard`): the corner radius of
+// the one element that has a background and an edge, so its tile drops the frame and shows the element as it is.
+export type Crop = { x: number; y: number; w: number; h: number; card?: string }
 export type SetMeta = { key: string; x: number; y: number; w: number; h: number }
 export type RegInfo = {
   states: { key: string; label: string; path: string; options: string[]; groups?: DGroup[]; of?: string }[]
@@ -53,7 +55,8 @@ export function capture(frame: HTMLElement, reg: Reg, target: VSet | null, grow 
 
   const sets: SetMeta[] = []
   for (const s of reg.sets) {
-    const c = s.page() ? whole : boxIn(frame, s.elements())
+    const els = s.elements()
+    const c = s.page() ? whole : withCard(boxIn(frame, els), els)
     if (c) sets.push({ key: s.key, ...c })
   }
   let lifted = false
@@ -61,7 +64,7 @@ export function capture(frame: HTMLElement, reg: Reg, target: VSet | null, grow 
     const els = target.elements()
     if (els.length) {
       lift(frame, els, grow)
-      const c = boxIn(frame, els)
+      const c = withCard(boxIn(frame, els), els)
       if (c) {
         const at = sets.findIndex((m) => m.key === target.key)
         if (at >= 0) sets[at] = { key: target.key, ...c }

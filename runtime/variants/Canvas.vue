@@ -14,7 +14,7 @@ import type { TileHit, TileSpot } from './bridge'
 import { fullOptionId, layoutPick } from './layout'
 import type { PageModel, StateInfo, TileBox } from './layout'
 import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
-import { usePanZoom } from './panzoom'
+import { MIN_ZOOM, usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
@@ -117,8 +117,8 @@ useResizeObserver(vp, ([e]) => {
   fullSize.value = { w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }
 })
 // The live tile's set as it is now, while it differs from its drawing: the grid follows it, and goes back when it closes.
-const liveSize = reactive<Record<string, { w: number; h: number }>>({})
-const onResize = (t: TileBox, size: { w: number; h: number } | null) => {
+const liveSize = reactive<Record<string, { w: number; h: number; card?: string }>>({})
+const onResize = (t: TileBox, size: { w: number; h: number; card?: string } | null) => {
   if (size) liveSize[t.cacheId] = size
   else delete liveSize[t.cacheId]
 }
@@ -138,12 +138,16 @@ const layout = computed(() =>
     phone: phone.value,
     sizeOf: (id, key) => {
       const r = liveSize[id] ?? cache[keyOf(id)]?.sets.find((s) => s.key === key)
-      return r ? { w: r.w, h: r.h } : null
+      return r ? { w: r.w, h: r.h, card: r.card } : null
     },
     statesOf: statesOfOption,
   }),
 )
-const pz = usePanZoom(() => vp.value)
+// Zooming out stops at half size, or at the zoom that fits the whole layout when that is smaller: a big set or page grid
+// can still be seen at once, but never shrinks past what it needs. It follows the layout, so a new pick or window moves it.
+const FLOOR = 0.5
+const minZoom = computed(() => Math.max(MIN_ZOOM, Math.min(FLOOR, layout.value.all)))
+const pz = usePanZoom(() => vp.value, () => minZoom.value)
 // The zoom pill's width, so the toolbar parked bottom right stands left of it (Annotate.vue).
 const zoomPill = ref<HTMLElement | null>(null)
 const { width: zoomW } = useElementSize(zoomPill, { width: 0, height: 0 }, { box: 'border-box' })
@@ -160,6 +164,9 @@ watchEffect(() => {
   )
 })
 const { view } = pz
+// A floor that rises past the zoom (the layout settled, the window changed) lifts the view to it.
+watch(minZoom, (m) => view.z < m && pz.zoomTo(m))
+const atMin = computed(() => view.z <= minZoom.value + 0.001)
 // Captions never grow past their size at the fit zoom, so the room the layout gave them always holds.
 const ls = computed(() => Math.min(1 / view.z, layout.value.invFit))
 
@@ -687,7 +694,7 @@ watch(
         class="absolute bottom-3 z-10 flex items-center rounded-5 border border-outline-gray-2 bg-surface-elevation-2 p-1.5 shadow-lg"
         :style="{ right: `${panelShown ? PANEL_W : 12}px` }"
       >
-        <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" @click="pz.zoomBy(1 / 1.25)" />
+        <Button variant="ghost" icon="lucide-minus" aria-label="Zoom out" :disabled="atMin" @click="pz.zoomBy(1 / 1.25)" />
         <Button
           variant="ghost"
           class="w-14 text-p-sm tabular-nums"
