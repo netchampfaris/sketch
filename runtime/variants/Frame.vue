@@ -84,6 +84,7 @@ onMounted(async () => {
     <div
       ref="el"
       :data-sketch-ui="mode === 'offscreen' ? 'canvas-frame' : undefined"
+      :data-tile-drawing="mode === 'live' ? '' : undefined"
       :aria-hidden="mode === 'offscreen' ? 'true' : undefined"
       :style="
         mode === 'offscreen'

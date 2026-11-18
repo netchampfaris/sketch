@@ -2,6 +2,7 @@
 // Annotate.vue fills `handlers` in; the pins live in the canvas's own tree, so they cannot emit to it.
 import { reactive } from 'vue'
 import type { TileSpot } from '../shared/tiles'
+import type { TileAt } from './canvas'
 import type { Note } from './annotate'
 import type { Anchor, Thread } from './comments'
 
@@ -14,12 +15,13 @@ export const handlers = {
 export const canvasUi = reactive({
 	noteId: '',
 	// The tile spot a new comment or note is being written for, so its pin shows where it was clicked.
-	draft: null as { spot: TileSpot; fx: number; fy: number } | null,
+	draft: null as ({ spot: TileSpot } & TileAt) | null,
 })
 
-// A spot on a tile, as a note or a comment stores it: the page in `route`, the element fields empty, and the
-// click as a fraction of the tile. The server checks it again (sketch/comments.py clean_tile_anchor).
-export function tileAnchor(spot: TileSpot, at: { fx: number; fy: number }): Anchor {
+// A spot on a tile, as a note or a comment stores it: the page in `route`, the element fields empty, the click as a
+// fraction of the tile, and the element under it in the tile's drawing (`target`) when there was one. The server checks
+// it again (sketch/comments.py clean_tile_anchor).
+export function tileAnchor(spot: TileSpot, at: TileAt): Anchor {
 	return {
 		route: spot.route,
 		viewport: `${window.innerWidth}x${window.innerHeight}`,
@@ -32,5 +34,6 @@ export function tileAnchor(spot: TileSpot, at: { fx: number; fy: number }): Anch
 		offset: { x: at.fx, y: at.fy },
 		rect: { x: 0, y: 0, w: 0, h: 0 },
 		tile: spot.tile,
+		...(at.target ? { target: at.target } : {}),
 	}
 }

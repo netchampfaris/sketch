@@ -500,7 +500,8 @@ function activate(t: TileBox, e?: MouseEvent | KeyboardEvent) {
     liveId.value = t.id
     return
   }
-  // Comment or Note: a click drops a pin on the tile, where the pointer is as a fraction of the tile.
+  // Comment or Note: a click drops a pin on the tile, where the pointer is as a fraction of the tile. The agent also
+  // finds the element under it in the tile's drawing.
   if (pz.moved() || !bridge.pick) return
   const spot = spotOf(t, pickValue.value)
   if (!spot) return
@@ -509,7 +510,7 @@ function activate(t: TileBox, e?: MouseEvent | KeyboardEvent) {
   const x = pointer ? e.clientX : r.left + r.width / 2
   const y = pointer ? e.clientY : r.top + r.height / 2
   const clamp01 = (n: number) => Math.min(1, Math.max(0, n))
-  bridge.pick({ ...spot, fx: clamp01((x - r.left) / (r.width || 1)), fy: clamp01((y - r.top) / (r.height || 1)), x, y } satisfies TileHit)
+  bridge.pick({ ...spot, fx: clamp01((x - r.left) / (r.width || 1)), fy: clamp01((y - r.top) / (r.height || 1)), x, y } satisfies TileHit, e.currentTarget as HTMLElement)
 }
 
 // ---- Comments and notes: what the toolbar asks of the canvas

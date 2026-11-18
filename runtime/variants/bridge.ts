@@ -35,7 +35,7 @@ export const bridge = shallowReactive({
   // ---- Set by the Viewer shell's agent (runtime/agent): the panel, the toolbar and the pins are the shell's, drawn
   // over the canvas. The tool picking tiles ('' while browsing), and where a tile clicked with it is sent.
   tool: '' as '' | 'comment' | 'note',
-  pick: null as ((hit: TileHit) => void) | null,
+  pick: null as ((hit: TileHit, box: HTMLElement) => void) | null,
   // `shellReserve` is the room the shell's panel takes on the right; `onEmptyClick` hears a click on the canvas off
   // every tile while a tool is in hand.
   shellReserve: 312,

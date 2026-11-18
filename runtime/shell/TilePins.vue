@@ -1,14 +1,15 @@
 <script setup lang="ts">
-// The pins on the canvas's tiles, in the world's own coordinates: a pin sits at a fraction of its tile, so it stays
-// on the tile through pan, zoom, the panel closing and a new layout. The canvas draws this inside its scaled
+// The pins on the canvas's tiles, in the world's own coordinates: a pin sits on the element it was clicked on while its
+// tile draws it, else at a fraction of its tile (canvas.ts onTile), so it stays on the tile through pan, zoom, the panel
+// closing, a new layout and a tile of another size. The canvas draws this inside its scaled
 // world; each pin undoes the zoom (`--inv`), so it keeps its size on screen. Comment pins show in Comment mode,
 // note pins in Note mode, and none while browsing.
 // A pin that would overlap another steps to the right, side by side with a small gap, so every one of them stays
 // reachable by pointer.
 // While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
 // typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
-import { computed } from 'vue'
-import { canvas, type ShellTile } from './canvas'
+import { computed, onBeforeUnmount, watchEffect } from 'vue'
+import { canvas, onTile, trackTargets, type ShellTile, type TileAt } from './canvas'
 import { sameTile, type TileSpot } from '../shared/tiles'
 import { noteNumber, notes, type Note } from './annotate'
 import { heldDrafts, matching, openThread, plain, spotOfThread, type Thread } from './comments'
@@ -24,24 +25,35 @@ const WIDTH = { comment: 32, note: 28 }
 const gap = 4
 const stepOf = (kind: Item['kind']) => WIDTH[kind] + gap
 
-type Item = { id: string; kind: 'comment' | 'note'; spot: TileSpot; fx: number; fy: number; thread?: Thread; note?: Note; draft?: boolean; held?: boolean }
+type Item = TileAt & { id: string; kind: 'comment' | 'note'; spot: TileSpot; thread?: Thread; note?: Note; draft?: boolean; held?: boolean }
+const at = (a: { offset: { x: number; y: number }; target?: TileAt['target'] }): TileAt => ({ fx: a.offset.x, fy: a.offset.y, target: a.target })
 const items = computed<Item[]>(() => {
 	const d = canvasUi.draft
 	if (canvas.tool === 'comment') {
 		const list: Item[] = matching.value.flatMap((t) => {
 			const spot = spotOfThread(t)
-			return spot ? [{ id: t.id, kind: 'comment' as const, spot, fx: t.anchor.offset.x, fy: t.anchor.offset.y, thread: t }] : []
+			return spot ? [{ id: t.id, kind: 'comment' as const, spot, ...at(t.anchor), thread: t }] : []
 		})
 		for (const h of heldDrafts.value)
-			if (h.anchor.tile) list.push({ id: h.id, kind: 'comment', spot: { route: h.anchor.route, tile: h.anchor.tile }, fx: h.anchor.offset.x, fy: h.anchor.offset.y, held: true })
-		return d ? [...list, { id: 'draft', kind: 'comment', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
+			if (h.anchor.tile) list.push({ id: h.id, kind: 'comment', spot: { route: h.anchor.route, tile: h.anchor.tile }, ...at(h.anchor), held: true })
+		return d ? [...list, { id: 'draft', kind: 'comment', ...d, draft: true }] : list
 	}
 	if (canvas.tool === 'note') {
-		const list: Item[] = notes.value.flatMap((n) => (n.tile ? [{ id: n.id, kind: 'note' as const, spot: { route: n.route, tile: n.tile }, fx: n.offset.x, fy: n.offset.y, note: n }] : []))
-		return d ? [...list, { id: 'draft', kind: 'note', spot: d.spot, fx: d.fx, fy: d.fy, draft: true }] : list
+		const list: Item[] = notes.value.flatMap((n) => (n.tile ? [{ id: n.id, kind: 'note' as const, spot: { route: n.route, tile: n.tile }, ...at(n), note: n }] : []))
+		return d ? [...list, { id: 'draft', kind: 'note', ...d, draft: true }] : list
 	}
 	return []
 })
+// The frame measures the elements the pins sit on, in their tiles.
+watchEffect(() =>
+	trackTargets(
+		items.value.flatMap((it) => {
+			const t = it.target && props.tiles.find((x) => sameTile(x.spot, it.spot))
+			return t ? [{ tile: t.id, selector: it.target!.selector }] : []
+		}),
+	),
+)
+onBeforeUnmount(() => trackTargets([]))
 // The number the draft note will have once it is saved.
 const draftNumber = computed(() => notes.value.filter((n) => n.tile).length + 1)
 
@@ -51,8 +63,7 @@ const pins = computed(() => {
 	for (const it of items.value) {
 		const t = props.tiles.find((x) => sameTile(x.spot, it.spot))
 		if (!t) continue
-		const x = t.x + it.fx * t.w
-		const y = t.y + it.fy * t.h
+		const { x, y } = onTile(t, it)
 		// Screen px, so the gap holds at any zoom. The draft sits exactly where the click was, on top of whatever is there.
 		const w = WIDTH[it.kind]
 		const sx = x * props.zoom

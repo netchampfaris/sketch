@@ -70,16 +70,17 @@ function segmentOf(el: Element, byChild: boolean, stable = false): string {
 }
 
 // Climb until the path matches exactly one element. Attribute and nth-of-type segments first;
-// if that never gets unique, nth-child all the way up, which always does.
-function climb(el: Element, byChild: boolean, stable = false): string | null {
+// if that never gets unique, nth-child all the way up, which always does. With `root`, the path is unique inside it
+// and never climbs past it.
+function climb(el: Element, byChild: boolean, stable = false, root?: Element): string | null {
   const parts: string[] = []
-  for (let cur: Element | null = el; cur && cur !== document.documentElement; cur = cur.parentElement) {
+  for (let cur: Element | null = el; cur && cur !== document.documentElement && cur !== root; cur = cur.parentElement) {
     if (cur === document.body) continue
     const seg = segmentOf(cur, byChild, stable)
     parts.unshift(seg)
     const path = parts.join(' > ')
     try {
-      if (document.querySelectorAll(path).length === 1) return path
+      if ((root ?? document).querySelectorAll(path).length === 1) return path
     } catch {}
     if (seg.startsWith('#')) break
   }
@@ -88,6 +89,32 @@ function climb(el: Element, byChild: boolean, stable = false): string | null {
 
 export function selectorOf(el: Element, stable = false): string {
   return climb(el, false, stable) ?? climb(el, true, stable) ?? el.tagName.toLowerCase()
+}
+
+// ---- Inside a canvas tile's drawing ----------------------------------------------------
+// A tile draws its page twice over its life: a snapshot (an inert copy, runtime/variants/snapshot.ts) and the live
+// render. A selector inside the drawing, without the ids a library makes up on each render, finds the same element in both.
+export const selectorIn = (el: Element, root: Element) => climb(el, false, true, root) ?? climb(el, true, true, root) ?? ''
+export function resolveIn(root: Element, selector: string): Element | null {
+  try {
+    return selector ? root.querySelector(selector) : null
+  } catch {
+    return null
+  }
+}
+// The element drawn under a point: the smallest visible box holding it, the deepest on a tie. A snapshot takes no
+// pointer, so this reads the boxes rather than asking the document what is under the point.
+export function elementAt(root: Element, x: number, y: number): Element | null {
+  let best: Element | null = null
+  let area = Infinity
+  for (const el of root.querySelectorAll('*')) {
+    const r = el.getBoundingClientRect()
+    if (!r.width || !r.height || x < r.left || x > r.right || y < r.top || y > r.bottom || r.width * r.height > area) continue
+    if (getComputedStyle(el).visibility !== 'visible') continue
+    best = el
+    area = r.width * r.height
+  }
+  return best
 }
 
 export function resolve(selector: string): Element | null {

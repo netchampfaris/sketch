@@ -60,7 +60,7 @@ import { labels, onFrame, onRefsGone, page, pinAt, post, rects, resolveRect, res
 import { demo } from './demo'
 import { pinHover } from './pinHover'
 import { saveState } from './notes'
-import { applyPicks, canvas, picksShown, pointOf, revealTile, showView } from './canvas'
+import { applyPicks, canvas, picksShown, pointOf, revealTile, showView, type TileAt } from './canvas'
 import { hasUnreadThreads } from './badges'
 
 const props = defineProps<{ noter: boolean }>()
@@ -133,7 +133,7 @@ const text = ref('')
 // The elements the frame keeps measuring for the box: its selection (outlines), and the element its pin rides on. On the
 // canvas the pin rides on a tile (`spot`), whose place the shell works out from the canvas's pan and zoom.
 type Point = { x: number; y: number }
-type Follow = Target & { fx: number; fy: number; spot?: TileSpot }
+type Follow = Target & TileAt & { spot?: TileSpot }
 const follow = shallowRef<Follow | null>(null)
 let nudge: Point | null = null
 let pendingAt: Point | null = null
@@ -176,7 +176,7 @@ function followPin(f: Follow | null, x: number, y: number) {
 watch(draft, (d) => !d && (follow.value = null))
 // What a pin rides on: its tile on the canvas, else its element.
 const followOf = (a: PinAnchor): Follow =>
-	a.tile ? { sel: '', spot: { route: a.route, tile: a.tile }, fx: a.offset.x, fy: a.offset.y } : { sel: a.selector, fx: a.offset.x, fy: a.offset.y }
+	a.tile ? { sel: '', spot: { route: a.route, tile: a.tile }, fx: a.offset.x, fy: a.offset.y, target: a.target } : { sel: a.selector, fx: a.offset.x, fy: a.offset.y }
 
 // Closing a new comment that has words keeps it as a Draft pin on the page (`heldDrafts`), whatever closed it: a click
 // outside, Escape, another tool. An empty one just goes. `as` is the tool the box was opened in, for a tool change.
@@ -319,13 +319,13 @@ function onTilePick(hit: TileHit) {
 		text.value = ''
 		draftKey.value++
 	}
-	followPin({ sel: '', spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy }, hit.x, hit.y)
+	followPin({ sel: '', spot: { route: hit.route, tile: hit.tile }, fx: hit.fx, fy: hit.fy, target: hit.target }, hit.x, hit.y)
 }
 onBeforeUnmount(
 	onFrame('tile:pick', (p) => {
 		if (!tilePicking.value) return
 		const clamp01 = (n: number) => clamp(n, 0, 1)
-		onTilePick({ ...p.spot, fx: clamp01(p.fx), fy: clamp01(p.fy), x: p.x, y: p.y })
+		onTilePick({ ...p.spot, fx: clamp01(p.fx), fy: clamp01(p.fy), x: p.x, y: p.y, target: p.target && { ...p.target, x: clamp01(p.target.x), y: clamp01(p.target.y) } })
 	}),
 )
 // A click on the canvas off every tile: a click outside the comment box, which closes it.
@@ -423,7 +423,7 @@ watch(
 	draft,
 	(d) => {
 		const t = d && !d.editing ? d.tile : undefined
-		canvasUi.draft = t ? { spot: { route: t.route, tile: t.tile }, fx: t.fx, fy: t.fy } : null
+		canvasUi.draft = t ? { spot: { route: t.route, tile: t.tile }, fx: t.fx, fy: t.fy, target: t.target } : null
 	},
 	{ immediate: true },
 )
@@ -459,12 +459,12 @@ async function leaveCanvas() {
 // Show something pinned to a tile: open the canvas if it is not, bring the tile into view, then open the box at
 // its pin. A tile that has gone has no pin to open at (its row sits under "Removed from canvas"), so the box opens beside
 // the row instead, and the thread can still be read and resolved.
-async function openOnCanvas(spot: TileSpot, at: { x: number; y: number }, show: (x: number, y: number) => void, row?: HTMLElement) {
+async function openOnCanvas(spot: TileSpot, at: TileAt, show: (x: number, y: number) => void, row?: HTMLElement) {
 	if (!canvasOpen.value) {
 		showView(spot.tile.view || `page:${spot.route}`)
 		if (!(await until(() => canvas.open && !!canvas.model))) return
 	}
-	const point = tileExists(canvas.model, spot) === false ? null : await revealTile(spot, { fx: at.x, fy: at.y })
+	const point = tileExists(canvas.model, spot) === false ? null : await revealTile(spot, at)
 	if (unmounted) return
 	if (point) return show(point.x, point.y)
 	const r = row?.getBoundingClientRect()
@@ -475,7 +475,7 @@ async function openFromList(t: Thread, row?: HTMLElement) {
 	sheetOpen.value = false
 	const a = t.anchor
 	const spot = spotOfThread(t)
-	if (spot) return openOnCanvas(spot, a.offset, (x, y) => openThreadAt(t, x, y), row)
+	if (spot) return openOnCanvas(spot, { fx: a.offset.x, fy: a.offset.y, target: a.target }, (x, y) => openThreadAt(t, x, y), row)
 	await leaveCanvas()
 	// A page just arrived at has nowhere to glide from: its element is brought in at once, as a note's is (reveal).
 	const arrived = key.value !== a.route
@@ -542,7 +542,7 @@ watch([tabCount, () => notes.value.length], ([c, n]) => (canvas.counts = { comme
 
 // A note from a list: on a tile, bring the tile into view; on the page, leave the canvas first.
 async function openNoteFromList(n: Note, row?: HTMLElement) {
-	if (n.tile) return openOnCanvas({ route: n.route, tile: n.tile }, n.offset, (x, y) => openEdit(n, x, y), row)
+	if (n.tile) return openOnCanvas({ route: n.route, tile: n.tile }, { fx: n.offset.x, fy: n.offset.y, target: n.target }, (x, y) => openEdit(n, x, y), row)
 	await leaveCanvas()
 	await edit(n)
 }
