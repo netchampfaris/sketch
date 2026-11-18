@@ -9,7 +9,7 @@
 // While a new comment or note is being written, a draft pin marks the spot clicked; it is not a button. A new comment
 // typed and not sent stays as a Draft pin (`held`), and clicking it reopens the box with the words.
 import { computed, onBeforeUnmount, watchEffect } from 'vue'
-import { canvas, onTile, trackTargets, type ShellTile, type TileAt } from './canvas'
+import { canvas, onTile, trackedOf, trackTargets, type ShellTile, type TileAt } from './canvas'
 import { sameTile, type TileSpot } from '../shared/tiles'
 import { noteNumber, notes, type Note } from './annotate'
 import { heldDrafts, matching, openThread, plain, spotOfThread, type Thread } from './comments'
@@ -49,7 +49,7 @@ watchEffect(() =>
 	trackTargets(
 		items.value.flatMap((it) => {
 			const t = it.target && props.tiles.find((x) => sameTile(x.spot, it.spot))
-			return t ? [{ tile: t.id, selector: it.target!.selector }] : []
+			return t ? [trackedOf(t.id, it)] : []
 		}),
 	),
 )

@@ -102,6 +102,38 @@ export function resolveIn(root: Element, selector: string): Element | null {
     return null
   }
 }
+// The element a click in a drawing is on: the control around the smallest box under it (a button's label is the button),
+// else that box.
+const CONTROL = 'button, a[href], input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="menuitem"], [role="option"]'
+export function targetAt(root: Element, x: number, y: number): Element | null {
+  const el = elementAt(root, x, y)
+  const control = el?.closest(CONTROL)
+  return control && root.contains(control) ? control : el
+}
+// What finds a tile's element again when its selector misses: its tag, its words and its aria-label.
+export const traitsOf = (el: Element) => ({ tag: el.tagName.toLowerCase(), text: textOf(el), label: el.getAttribute('aria-label') ?? '' })
+const alike = (el: Element, t: { tag: string; text: string; label: string }) => {
+  const own = traitsOf(el)
+  return own.tag === t.tag && own.text === t.text && own.label === t.label
+}
+// A tile's element in its drawing now. The selector first, while it finds the same element; else, a sibling added or
+// removed above it having shifted the selector's places, the visible element with the same tag, words and label nearest
+// to `near` (the pin's old spot on the screen). An element with no words and no label has nothing to be found by.
+export function findIn(root: Element, t: { selector: string; tag: string; text: string; label: string }, near: { x: number; y: number }): Element | null {
+  const at = resolveIn(root, t.selector)
+  if (!t.tag) return at
+  if (at && alike(at, t)) return at
+  if (!t.text && !t.label) return null
+  let best: Element | null = null
+  let far = Infinity
+  for (const el of root.querySelectorAll(t.tag)) {
+    const r = el.getBoundingClientRect()
+    if (!r.width || !r.height || !alike(el, t) || getComputedStyle(el).visibility !== 'visible') continue
+    const d = Math.hypot(r.left + r.width / 2 - near.x, r.top + r.height / 2 - near.y)
+    if (d < far) [best, far] = [el, d]
+  }
+  return best
+}
 // The element drawn under a point: the smallest visible box holding it, the deepest on a tie. A snapshot takes no
 // pointer, so this reads the boxes rather than asking the document what is under the point.
 export function elementAt(root: Element, x: number, y: number): Element | null {
