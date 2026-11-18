@@ -593,7 +593,9 @@ def clean_tile_anchor(anchor: dict) -> dict:
 
 	The tile is named by its page (`route`), and by the variant set and option, or the page state,
 	it shows. It has the same keys as an element anchor, empty where they mean nothing for a tile,
-	so everything that reads an anchor reads this one.
+	so everything that reads an anchor reads this one. `target`, when sent, is the element clicked
+	in the tile's drawing: a selector inside it and the click as a fraction of the element, which the
+	pin sits on while the tile draws it. The fraction of the tile stays as the fallback.
 	"""
 	tile = anchor.get("tile")
 	if not isinstance(tile, dict) or tile.get("kind") not in TILE_KINDS:
@@ -625,10 +627,26 @@ def clean_tile_anchor(anchor: dict) -> dict:
 		"rect": {"x": 0, "y": 0, "w": 0, "h": 0},
 		"tile": named,
 	}
+	target = clean_tile_target(anchor.get("target"))
+	if target:
+		out["target"] = target
+
 	if len(json.dumps(out).encode()) > MAX_ANCHOR_BYTES:
 		frappe.throw(frappe._("That element description is too large"), CommentTooLarge)
 
 	return out
+
+
+def clean_tile_target(target) -> dict | None:
+	"""The element a tile pin sits on, or None. A selector cut short finds another element, so one too long is dropped."""
+	if not isinstance(target, dict):
+		return None
+
+	selector = target.get("selector")
+	if not isinstance(selector, str) or not selector or len(selector) > ANCHOR_TEXT["selector"]:
+		return None
+
+	return {"selector": selector, "x": _fraction(target.get("x")), "y": _fraction(target.get("y"))}
 
 
 def where_of(anchor: dict) -> str:
