@@ -57,9 +57,31 @@ const target = () => (props.targetSet ? props.sandbox.reg.sets.find((s) => s.key
 
 let stop = () => {}
 let gone = false
+// A live tile never takes focus by itself: a field that autofocuses as its dialog opens would outline itself beside the
+// live ring. Focus moves in only after the person clicks inside the frame or tabs.
+let invited = false
+const onInput = (e: Event) => {
+  if (e.type === 'pointerdown') invited = !!el.value?.contains(e.target as Node)
+  else if ((e as KeyboardEvent).key === 'Tab') invited = true
+}
+const onFocusIn = (e: FocusEvent) => {
+  if (invited || !el.value?.contains(e.target as Node)) return
+  ;(e.target as HTMLElement).blur?.()
+  if (before?.isConnected) before.focus({ preventScroll: true })
+}
+// Where focus was as the tile went live (the tile itself, once clicked), and goes back to.
+const before = props.mode === 'live' ? (document.activeElement as HTMLElement | null) : null
+if (props.mode === 'live') {
+  document.addEventListener('pointerdown', onInput, true)
+  document.addEventListener('keydown', onInput, true)
+  document.addEventListener('focusin', onFocusIn, true)
+}
 onBeforeUnmount(() => {
   gone = true
   stop()
+  document.removeEventListener('pointerdown', onInput, true)
+  document.removeEventListener('keydown', onInput, true)
+  document.removeEventListener('focusin', onFocusIn, true)
 })
 onMounted(async () => {
   await nextFrames(2)
