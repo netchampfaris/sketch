@@ -166,6 +166,15 @@ class TestCanvasDialogTiles(IntegrationTestCase):
 			self.assertFalse(s["pageVisible"], self.say())
 			self.assertFalse(s["focusInFrame"], self.say())
 
+	def test_switching_never_paints_a_glitch(self):
+		# Sampled on every frame while switching: the new live tile never shows its whole page, no tile goes blank, and the
+		# tile handed back keeps the snapshot it had, so nothing in it replays.
+		paint = self.answer["paint"]
+		self.assertGreater(paint["frames"], 30, self.say())
+		self.assertEqual(paint["unlifted"], 0, self.say())
+		self.assertEqual(paint["blank"], 0, self.say())
+		self.assertEqual(paint["rebuilt"], 0, self.say())
+
 	def test_escape_still_reaches_the_canvas(self):
 		self.assertFalse(self.answer["liveAfterEscape"], self.say())
 		self.assertIn("canvas=", self.answer["hashAfterEscape"], self.say())

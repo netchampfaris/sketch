@@ -115,6 +115,40 @@ try {
   answer.liveState = await frame.evaluate(pageState)
   // Then each tile in turn, and back: every switch lifts the new live tile's dialog out of its page, and none takes focus.
   answer.switches = []
+  // On every frame, just before paint (a ResizeObserver callback runs after rAF and layout): a live frame that paints
+  // before it is lifted to its set (the whole page flashes), a tile that paints nothing, and a snapshot that is rebuilt
+  // (its opening animations replay as the tile is handed back). With the CPU slowed, so a slow frame shows.
+  await frame.evaluate(() => {
+    const seen = (window.__paint = { frames: 0, unlifted: 0, blank: 0, rebuilt: 0 })
+    const ids = new WeakMap()
+    const last = {}
+    let n = 0
+    const vis = (el) => !!el && el.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+    const paints = (d) => !!d && (d.hasAttribute('data-sketch-lift') ? [...d.querySelectorAll('[data-sketch-lift-show]')].some(vis) : vis(d))
+    const probe = document.body.appendChild(document.createElement('div'))
+    probe.style.cssText = 'position:fixed;left:0;top:0;height:1px;pointer-events:none'
+    new ResizeObserver(() => {
+      seen.frames++
+      document.querySelectorAll('[data-tile-id]').forEach((t, i) => {
+        const live = t.querySelector('[data-live] [data-tile-drawing]')
+        const snap = t.querySelector('[inert][data-tile-drawing]')
+        if (live && vis(live) && !live.hasAttribute('data-sketch-lift')) seen.unlifted++
+        if (!paints(live) && !paints(snap)) seen.blank++
+        if (snap) {
+          if (!ids.has(snap)) ids.set(snap, ++n)
+          if (last[i] && last[i] !== ids.get(snap)) seen.rebuilt++
+          last[i] = ids.get(snap)
+        }
+      })
+    }).observe(probe)
+    const tick = () => {
+      probe.style.width = (seen.frames % 2) + 1 + 'px'
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
   for (const i of [1, 2, 1, 2, 0]) {
     await frame.locator('[data-tile-id] [data-tile]').nth(i).click()
     await sleep(SETTLE_MS)
@@ -131,6 +165,8 @@ try {
       }
     }, i))
   }
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+  answer.paint = await frame.evaluate(() => window.__paint)
   // Escape reaches the canvas, which closes the live tile: the tile's dialog does not take it.
   await page.keyboard.press('Escape')
   await sleep(300)
