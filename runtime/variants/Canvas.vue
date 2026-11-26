@@ -13,7 +13,7 @@ import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { fullOptionId, layoutPick } from './layout'
 import type { PageModel, StateInfo, TileBox } from './layout'
-import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
+import { fallbackPick, foldRoutes, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { MIN_ZOOM, usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
@@ -217,7 +217,7 @@ async function discover() {
     return
   }
   const records = (router.options.routes as any[]).filter((r) => r.component && !r.path.includes(':'))
-  const pages: PageModel[] = []
+  let pages: PageModel[] = []
   const here = raw.value
   for (const r of records) {
     if (!alive) return
@@ -242,6 +242,8 @@ async function discover() {
     const last = pages[pages.length - 1]
     last.sets.sort((a, b) => (a.meta?.y ?? 1e9) - (b.meta?.y ?? 1e9) || (a.meta?.x ?? 0) - (b.meta?.x ?? 0))
   }
+  // One page per page component, however many routes render it.
+  pages = foldRoutes(pages, (p) => records.find((r) => r.path === p.path))
   session.model = pages
   session.modelKey = key
   pagesModel.value = pages
