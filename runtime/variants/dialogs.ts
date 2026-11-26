@@ -45,8 +45,9 @@ export function rootPanels(tree: VNode | null | undefined): Element[] {
   return panels
 }
 
-// Call in a frame's setup. `root` is the frame's element; `target` the set its tile shows.
-export function frameDialogs(root: () => HTMLElement | null, target: () => string | null | undefined) {
+// Call in a frame's setup. `root` is the frame's element; `target` the set its tile shows. `all` opens every Dialog, to
+// find the sets inside them (Discover.vue).
+export function frameDialogs(root: () => HTMLElement | null, target: () => string | null | undefined, all = false) {
   provide(PORTAL, undefined)
   // frappe-ui reads the key once, in each overlay's setup, so a getter in its place sees which component is asking.
   const own = (getCurrentInstance() as any).provides
@@ -54,18 +55,18 @@ export function frameDialogs(root: () => HTMLElement | null, target: () => strin
   Object.defineProperty(own, PORTAL, {
     configurable: true,
     enumerable: true,
-    get: () => tame(root, target) ?? outer?.[PORTAL],
+    get: () => tame(root, target, all) ?? outer?.[PORTAL],
   })
 }
 
 // A Dialog's portal target, after setting it up for the frame. Undefined for any other overlay: it gets what it would
 // have got without the frame.
-function tame(root: () => HTMLElement | null, target: () => string | null | undefined) {
+function tame(root: () => HTMLElement | null, target: () => string | null | undefined, all: boolean) {
   const dialog = getCurrentInstance()
   if (!dialog || dialog.type !== Dialog) return undefined
   // The target set's own dialog, at the top of its slot, shows open. Anything else stays as the page has it.
   const set = inject(frameSetKey, null)
-  const open = !!set && set.key === target() && rootDialogs(set.inst.subTree).includes(dialog)
+  const open = all || (!!set && set.key === target() && rootDialogs(set.inst.subTree).includes(dialog))
   // Before every render, after the page's own props land: `modal` falls through to reka's DialogRoot.
   const apply = () => {
     dialog.attrs.modal = false
@@ -74,4 +75,21 @@ function tame(root: () => HTMLElement | null, target: () => string | null | unde
   onBeforeMount(apply, dialog)
   onBeforeUpdate(apply, dialog)
   return () => root() ?? undefined
+}
+
+// Whether each frappe-ui Dialog in `tree` is open. A closed one has not mounted its content, so the sets inside it have
+// not either. Walks components, fragments and arrays; never into a closed Dialog, which has nothing below it.
+export function dialogsIn(tree: VNode | null | undefined, out: boolean[] = []): boolean[] {
+  if (!tree) return out
+  const c = tree.component
+  if (c) {
+    if (c.type === Dialog) {
+      const p = c.props as Record<string, unknown>
+      out.push(!!(p.open ?? p.modelValue))
+    }
+    return dialogsIn(c.subTree, out)
+  }
+  if (tree.suspense) return dialogsIn(tree.suspense.activeBranch, out)
+  if (Array.isArray(tree.children)) for (const x of tree.children) dialogsIn(x as VNode, out)
+  return out
 }
