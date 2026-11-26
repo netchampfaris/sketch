@@ -152,6 +152,19 @@ class TestCanvasDialogTiles(IntegrationTestCase):
 		self.assertEqual(len(live), 1, self.say())
 		self.assertTrue(live[0]["panelVisible"], self.say())
 		self.assertFalse(live[0]["pageVisible"], self.say())
+		# Going live does not move focus into the dialog.
+		self.assertFalse(self.answer["liveState"]["focusInFrame"], self.say())
+
+	def test_switching_the_live_tile_shows_each_dialog(self):
+		# Tile to tile and back: the page behind never shows, and the autofocused field does not take focus.
+		switches = self.answer["switches"]
+		self.assertEqual(len(switches), 5, self.say())
+		for s in switches:
+			self.assertTrue(s["live"], self.say())
+			self.assertTrue(s["lifted"], self.say())
+			self.assertTrue(s["panelVisible"], self.say())
+			self.assertFalse(s["pageVisible"], self.say())
+			self.assertFalse(s["focusInFrame"], self.say())
 
 	def test_escape_still_reaches_the_canvas(self):
 		self.assertFalse(self.answer["liveAfterEscape"], self.say())

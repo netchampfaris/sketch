@@ -46,6 +46,7 @@ const pageState = () => {
     scrollLocked: document.documentElement.style.getPropertyValue('--scrollbar-width') !== '',
     canvasHidden: hidden,
     focusInTile: !!active?.closest?.('[data-tile-id]'),
+    focusInFrame: !!active?.closest?.('[data-live]'),
     focusedInTiles: window.__focusedInTiles,
   }
 }
@@ -112,6 +113,24 @@ try {
   await sleep(SETTLE_MS)
   answer.liveTiles = await frame.evaluate(tiles)
   answer.liveState = await frame.evaluate(pageState)
+  // Then each tile in turn, and back: every switch lifts the new live tile's dialog out of its page, and none takes focus.
+  answer.switches = []
+  for (const i of [1, 2, 1, 2, 0]) {
+    await frame.locator('[data-tile-id] [data-tile]').nth(i).click()
+    await sleep(SETTLE_MS)
+    answer.switches.push(await frame.evaluate((i) => {
+      const live = document.querySelector('[data-live]')
+      const vis = (el) => !!el?.checkVisibility({ visibilityProperty: true })
+      return {
+        tile: i,
+        live: live?.closest('[data-tile-id]') === document.querySelectorAll('[data-tile-id]')[i],
+        lifted: !!live?.querySelector('[data-tile-drawing]')?.hasAttribute('data-sketch-lift'),
+        panelVisible: vis(live?.querySelector('[role="dialog"]')),
+        pageVisible: vis(live?.querySelector('h1')),
+        focusInFrame: !!document.activeElement?.closest('[data-live]'),
+      }
+    }, i))
+  }
   // Escape reaches the canvas, which closes the live tile: the tile's dialog does not take it.
   await page.keyboard.press('Escape')
   await sleep(300)
