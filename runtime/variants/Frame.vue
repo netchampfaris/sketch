@@ -23,7 +23,9 @@ const props = defineProps<{
   grow?: boolean
 }>()
 // `anchor`, live only: where the lifted set sits in the page each time it moves or resizes.
-const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null] }>()
+// `painted`, live only: the frame may show now. Until then the page inside is not lifted to its set, so the tile keeps its
+// snapshot over it: it is emitted once the set has a box, or at once for a tile that shows the whole page.
+const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null]; painted: [] }>()
 
 const router = useRouter()
 const resolved = router.resolve(props.path)
@@ -92,7 +94,19 @@ onMounted(async () => {
     // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
     // page shows the whole window.
     const t = target()
-    if (t && !t.page()) stop = follow(el.value, () => t.elements(), (box) => emit('anchor', box), props.grow)
+    if (!t || t.page()) return emit('painted')
+    let shown = false
+    const show = () => {
+      if (shown || gone) return
+      shown = true
+      emit('painted')
+    }
+    stop = follow(el.value, () => t.elements(), (box) => {
+      emit('anchor', box)
+      if (box) show()
+    }, props.grow)
+    // A set with no box of its own shows the whole page, as its snapshot does: shown once it has had time to find one.
+    setTimeout(show, 600)
     return
   }
   try {
