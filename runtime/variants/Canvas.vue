@@ -297,7 +297,14 @@ watch([() => layout.value.tiles.length, lensStr, pickValue], () => pump())
 // ---- Live tile
 const liveId = ref<string | null>(null)
 const liveTile = computed(() => layout.value.tiles.find((t) => t.id === liveId.value) ?? null)
-const liveSandbox = computed(() => (liveTile.value ? makeSandbox(liveTile.value, true) : undefined))
+// One sandbox per live tile, made when it goes live. The layout is rebuilt each time a live tile reports its size, which
+// gives the same tile a new object; a sandbox remade from that would leave the frame's sets registered in the old one.
+const liveSandbox = shallowRef<Sandbox>()
+watch(
+  () => liveTile.value?.id,
+  () => (liveSandbox.value = liveTile.value ? makeSandbox(liveTile.value, true) : undefined),
+  { immediate: true },
+)
 watch([lensStr, () => pickValue.value], () => (liveId.value = null))
 // A write that reloaded the page (Make default, Keep only this, Undo) leaves the option it landed on ringed once it is drawn.
 // Only once its own frame has measured it: until then the live tile shows the slice the default option measured, which on
