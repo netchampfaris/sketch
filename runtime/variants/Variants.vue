@@ -4,9 +4,10 @@
 // Options show in the order they first appeared (extras.ts mergeOptions), so making one the default never moves it.
 // Variants a teammate added for this set (extras.ts) join the options after the owner's own and render in an error
 // boundary, so a mistake in one never reaches the page.
-import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, onErrorCaptured, ref, watch } from 'vue'
+import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, onErrorCaptured, provide, ref, watch } from 'vue'
 import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { frameSetKey, rootPanels } from './dialogs'
 import { extraOf, failed, mergeOptions } from './extras'
 import { firstCopy } from './lift'
 import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
@@ -87,12 +88,13 @@ export default defineComponent({
 
     const own = () => Object.keys(slots).filter((k) => k !== 'default').map((value) => ({ value, label: humanise(value) }))
     const options = () => mergeOptions(own(), { name: props.name, wrapper: props.wrapper, file, default: props.default })
-    // This copy's elements sit between the Fragment's start and end anchors.
+    // This copy's elements sit between the Fragment's start and end anchors. A slot that renders only a dialog has none
+    // there: its elements are the open dialog's panel, wherever it was portalled.
     const mine = () => {
       const out: Element[] = []
       const end = inst.subTree?.anchor
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
-      return out
+      return out.length ? out : rootPanels(inst.subTree)
     }
     // The tag is the page: the root of the component a route renders.
     const page = () => {
@@ -117,6 +119,7 @@ export default defineComponent({
     // two options that render the same component would otherwise be patched in place, not swapped.
     if (sb) {
       if (!shared) sb.reg.sets.push(set)
+      provide(frameSetKey, { key: set.key, inst })
       return () => {
         const v = sb.variants[id]
         const o = options()

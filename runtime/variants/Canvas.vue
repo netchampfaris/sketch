@@ -422,7 +422,9 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     // A tool picking tiles takes its own Escape: it closes its box, then puts the tool down.
     if (e.defaultPrevented || bridge.tool) return
-    if (bridge.showOpen || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
+    // A page menu or dialog takes Escape first. What the canvas draws itself (its tiles, a frame drawing one) does not count.
+    const layer = [...document.querySelectorAll('.menu-content, [role="dialog"]')].some((el) => !el.closest('[data-sketch-ui="canvas"], [data-sketch-ui="canvas-frame"]'))
+    if (bridge.showOpen || layer) return
     if (liveId.value) liveId.value = null
     else if (optView.value) goUp()
     else closeCanvas(router)

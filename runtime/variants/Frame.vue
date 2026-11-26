@@ -6,6 +6,7 @@ import { routeLocationKey, routerKey, routerViewLocationKey, useRouter } from 'v
 import { Alert } from 'frappe-ui'
 import { sandboxKey } from './state'
 import type { Sandbox } from './state'
+import { frameDialogs } from './dialogs'
 import { follow } from './lift'
 import { capture, errorSnap, nextFrames } from './snapshot'
 import type { Crop, Snap } from './snapshot'
@@ -37,6 +38,8 @@ provide(routerKey, still)
 provide(sandboxKey, props.sandbox)
 
 const el = ref<HTMLElement | null>(null)
+// A page dialog draws in this frame, never over the canvas, and the target set's dialogs show open (dialogs.ts).
+frameDialogs(() => el.value, () => props.targetSet)
 const failed = ref('')
 let reported = false
 const firstLine = (e: unknown) => String((e as any)?.message ?? e).split('\n')[0]
@@ -86,6 +89,7 @@ onMounted(async () => {
       :data-sketch-ui="mode === 'offscreen' ? 'canvas-frame' : undefined"
       :data-tile-drawing="mode === 'live' ? '' : undefined"
       :aria-hidden="mode === 'offscreen' ? 'true' : undefined"
+      :inert="mode === 'offscreen' ? true : undefined"
       :style="
         mode === 'offscreen'
           ? { position: 'fixed', left: '-100000px', top: '0', width: w + 'px', height: h + 'px', overflow: 'hidden', contain: 'strict' }
