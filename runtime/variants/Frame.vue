@@ -1,12 +1,10 @@
 <script setup lang="ts">
 // One render of the whole app in a given page, state and variant. Offscreen, it is drawn, captured and
 // dropped. Live, it stays in a tile. `app` is App.vue's own component, handed over so there is no cycle.
-import { nextTick, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef } from 'vue'
-import { routeLocationKey, routerKey, routerViewLocationKey, useRouter } from 'vue-router'
+import { nextTick, onBeforeUnmount, onErrorCaptured, onMounted, ref } from 'vue'
 import { Alert } from 'frappe-ui'
-import { sandboxKey } from './state'
 import type { Sandbox } from './state'
-import { frameDialogs } from './dialogs'
+import { offscreen, useFrame } from './frame'
 import { follow } from './lift'
 import { capture, errorSnap, nextFrames } from './snapshot'
 import type { Crop, Snap } from './snapshot'
@@ -27,21 +25,10 @@ const props = defineProps<{
 // snapshot over it: it is emitted once the set has a box, or at once for a tile that shows the whole page.
 const emit = defineEmits<{ ready: [snap: Snap]; error: [message: string]; anchor: [box: Crop | null]; painted: [] }>()
 
-const router = useRouter()
-const resolved = router.resolve(props.path)
-// App's RouterView and RouterLink follow this page, not the live one.
-provide(routerViewLocationKey, shallowRef(resolved))
-provide(routeLocationKey, resolved as any)
-// A tile never moves the live page: a page that redirects as it mounts would drop `?canvas=` and close the canvas.
-// Navigating from a tile does nothing.
-const stay = () => Promise.resolve()
-const still = Object.assign(Object.create(router), { push: stay, replace: stay, go: () => {}, back: () => {}, forward: () => {} })
-provide(routerKey, still)
-provide(sandboxKey, props.sandbox)
-
 const el = ref<HTMLElement | null>(null)
-// A page dialog draws in this frame, never over the canvas, and the target set's dialogs show open (dialogs.ts).
-frameDialogs(() => el.value, () => props.targetSet)
+// The page at `path`, with the sandbox's picks. A page dialog draws in this frame, never over the canvas, and the target
+// set's dialogs show open (dialogs.ts).
+useFrame({ path: props.path, sandbox: props.sandbox, root: () => el.value, open: () => props.targetSet })
 const failed = ref('')
 let reported = false
 const firstLine = (e: unknown) => String((e as any)?.message ?? e).split('\n')[0]
@@ -128,7 +115,7 @@ onMounted(async () => {
       :inert="mode === 'offscreen' ? true : undefined"
       :style="
         mode === 'offscreen'
-          ? { position: 'fixed', left: '-100000px', top: '0', width: w + 'px', height: h + 'px', overflow: 'hidden', contain: 'strict' }
+          ? offscreen(w, h)
           : { position: 'relative', width: w + 'px', height: h + 'px', overflow: 'hidden', contain: 'layout paint' }
       "
     >
