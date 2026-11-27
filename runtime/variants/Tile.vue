@@ -89,9 +89,13 @@ function askMenu(e: MouseEvent) {
 // border. Its shadow bleeds outside the tile, and the hover and live ring follows the card's corners.
 const bare = computed(() => props.tile.card !== undefined)
 const margin = computed(() => (isSet.value && !bare.value ? MARGIN : 0))
+// The ring's width, in the canvas's own px: 1px on screen at any zoom, and 2px on the live tile, thinning to 1px as the
+// canvas zooms out.
+const ringWidth = computed(() => `calc(${props.live ? 'clamp(1px, 2px * var(--z), 2px)' : '1px'} * var(--inv))`)
 const ring = computed(() => {
   if (!bare.value) return {}
-  const bw = `calc(${props.live ? 2 : 1}px * var(--inv))`
+  // Outside the card by its own width.
+  const bw = ringWidth.value
   return {
     left: `calc(0px - ${bw})`,
     top: `calc(0px - ${bw})`,
@@ -180,7 +184,7 @@ watch(
           bare ? '' : 'inset-0 rounded-4',
           live ? 'border-outline-gray-9' : bare ? 'border-transparent group-hover:border-outline-gray-4' : 'border-outline-gray-2 group-hover:border-outline-gray-4',
         ]"
-        :style="{ borderWidth: live ? 'calc(clamp(1px, 2px * var(--z), 2px) * var(--inv))' : 'calc(1px * var(--inv))', ...ring }"
+        :style="{ borderWidth: ringWidth, ...ring }"
         aria-hidden="true"
       />
       <!-- Only the set's own box shows; the rest of the tile is the tile background. A card's shadow spills past its box, so
