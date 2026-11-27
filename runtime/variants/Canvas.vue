@@ -233,6 +233,7 @@ async function discover() {
       path: r.path,
       slug: slugOfRoute(r),
       title: titleOfRoute(r),
+      aliases: [],
       states: snap.reg.states
         .filter((s) => s.path === r.path && (!s.of || !lives(s.of)))
         .map((s) => ({ key: s.key, label: s.label, options: s.options, groups: s.groups, of: s.of })),

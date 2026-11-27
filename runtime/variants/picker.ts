@@ -38,17 +38,18 @@ export function foldRoutes(pages: PageModel[], recordOf: (p: PageModel) => { com
     const was = main.get(componentOf(p))
     if (!was || size(p) > size(was) || (size(p) === size(was) && plain(p) > plain(was))) main.set(componentOf(p), p)
   }
-  return pages.filter((p) => {
+  const kept: PageModel[] = []
+  const folded = new Map<PageModel, PageModel['aliases']>()
+  for (const p of pages) {
     const m = main.get(componentOf(p))!
-    if (m === p) return true
     const listed = new Set(keys(m))
-    if (!keys(p).every((k) => listed.has(k))) return true
-    m.aliases = [...(m.aliases ?? []), { path: p.path, slug: p.slug }]
-    return false
-  })
+    if (m === p || !keys(p).every((k) => listed.has(k))) kept.push(p)
+    else folded.set(m, [...(folded.get(m) ?? []), { path: p.path, slug: p.slug }])
+  }
+  return kept.map((p) => ({ ...p, aliases: [...p.aliases, ...(folded.get(p) ?? [])] }))
 }
-const bySlug = (pages: PageModel[], slug: string) => pages.find((p) => p.slug === slug) ?? pages.find((p) => p.aliases?.some((a) => a.slug === slug))
-const byPath = (pages: PageModel[], path: string) => pages.find((p) => p.path === path) ?? pages.find((p) => p.aliases?.some((a) => a.path === path))
+const bySlug = (pages: PageModel[], slug: string) => pages.find((p) => p.slug === slug) ?? pages.find((p) => p.aliases.some((a) => a.slug === slug))
+const byPath = (pages: PageModel[], path: string) => pages.find((p) => p.path === path) ?? pages.find((p) => p.aliases.some((a) => a.path === path))
 
 // A value that names nothing the canvas has (an old `state:` link) is no pick, and the canvas shows its default view.
 export function parsePick(raw: string, pages: PageModel[]): Pick | null {
