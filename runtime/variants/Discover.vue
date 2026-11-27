@@ -24,7 +24,7 @@ const sandbox: Sandbox = reactive({ states: { ...stateValues }, variants: { ...c
 provide(sandboxKey, sandbox)
 
 const el = ref<HTMLElement | null>(null)
-frameDialogs(() => el.value, () => null, true)
+frameDialogs(() => el.value, 'all')
 // A page that throws here throws on the page too, where it is reported.
 onErrorCaptured(() => false)
 

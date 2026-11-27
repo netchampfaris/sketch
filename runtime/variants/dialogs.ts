@@ -37,17 +37,21 @@ function panelOf(v: VNode | null | undefined): Element | null {
   return null
 }
 
-// The panels of the open Dialogs at the top of `tree`. A panel measures at its full size: its opening animation (a slight
-// scale) is finished first.
-export function rootPanels(tree: VNode | null | undefined): Element[] {
-  const panels = rootDialogs(tree).flatMap((d) => panelOf(d.subTree) ?? [])
+// The panels of the open Dialogs at the top of `tree`.
+export const rootPanels = (tree: VNode | null | undefined): Element[] => rootDialogs(tree).flatMap((d) => panelOf(d.subTree) ?? [])
+
+// Finish each panel's opening animation (a slight scale), so it measures at its full size. Gives the panels back.
+export function finishOpening(panels: Element[]): Element[] {
   for (const p of panels) for (const a of p.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) a.finish()
   return panels
 }
 
-// Call in a frame's setup. `root` is the frame's element; `target` the set its tile shows. `all` opens every Dialog, to
+// Which Dialogs a frame shows open: those of the set its tile shows (the set's key, none for a page tile), or 'all', to
 // find the sets inside them (Discover.vue).
-export function frameDialogs(root: () => HTMLElement | null, target: () => string | null | undefined, all = false) {
+export type OpenDialogs = 'all' | (() => string | null | undefined)
+
+// Call in a frame's setup. `root` is the frame's element.
+export function frameDialogs(root: () => HTMLElement | null, open: OpenDialogs) {
   provide(PORTAL, undefined)
   // frappe-ui reads the key once, in each overlay's setup, so a getter in its place sees which component is asking.
   const own = (getCurrentInstance() as any).provides
@@ -55,18 +59,18 @@ export function frameDialogs(root: () => HTMLElement | null, target: () => strin
   Object.defineProperty(own, PORTAL, {
     configurable: true,
     enumerable: true,
-    get: () => tame(root, target, all) ?? outer?.[PORTAL],
+    get: () => tame(root, open) ?? outer?.[PORTAL],
   })
 }
 
 // A Dialog's portal target, after setting it up for the frame. Undefined for any other overlay: it gets what it would
 // have got without the frame.
-function tame(root: () => HTMLElement | null, target: () => string | null | undefined, all: boolean) {
+function tame(root: () => HTMLElement | null, which: OpenDialogs) {
   const dialog = getCurrentInstance()
   if (!dialog || dialog.type !== Dialog) return undefined
   // The target set's own dialog, at the top of its slot, shows open. Anything else stays as the page has it.
   const set = inject(frameSetKey, null)
-  const open = all || (!!set && set.key === target() && rootDialogs(set.inst.subTree).includes(dialog))
+  const open = which === 'all' || (!!set && set.key === which() && rootDialogs(set.inst.subTree).includes(dialog))
   // Before every render, after the page's own props land: `modal` falls through to reka's DialogRoot.
   const apply = () => {
     dialog.attrs.modal = false

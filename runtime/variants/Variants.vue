@@ -7,7 +7,7 @@
 import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, onErrorCaptured, provide, ref, watch } from 'vue'
 import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { frameSetKey, rootPanels } from './dialogs'
+import { finishOpening, frameSetKey, rootPanels } from './dialogs'
 import { extraOf, failed, mergeOptions } from './extras'
 import { firstCopy } from './lift'
 import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
@@ -94,7 +94,7 @@ export default defineComponent({
       const out: Element[] = []
       const end = inst.subTree?.anchor
       for (let n = inst.subTree?.el?.nextSibling; n && n !== end; n = n.nextSibling) if (n.nodeType === 1) out.push(n as Element)
-      return out.length ? out : rootPanels(inst.subTree)
+      return out.length ? out : finishOpening(rootPanels(inst.subTree))
     }
     // The tag is the page: the root of the component a route renders.
     const page = () => {
