@@ -80,7 +80,9 @@ onMounted(async () => {
   await nextFrames(2)
   await nextTick()
   // A live tile closed during those frames must not start following a page that is already gone.
-  if (gone || !el.value || reported) return
+  if (gone || !el.value) return
+  // A page that threw as it mounted has nothing to lift or capture. Live, its alert shows.
+  if (reported) return props.mode === 'live' ? emit('painted') : undefined
   if (props.mode === 'live') {
     // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
     // page shows the whole window.
