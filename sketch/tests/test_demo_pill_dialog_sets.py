@@ -138,7 +138,9 @@ class TestDemoPillDialogSets(IntegrationTestCase):
 		self.assertEqual(self.answer["dialogShows"], "Style detailed", self.say())
 
 	def test_a_page_dialog_set_is_listed_on_its_page_only(self):
-		self.assertEqual(self.answer["reportsRows"], ["Summary style", "Report filters", "Account style"], self.say())
+		self.assertEqual(
+			self.answer["reportsRows"], ["Summary style", "Report filters", "Account style"], self.say()
+		)
 
 	def test_a_set_not_behind_a_dialog_leaves_the_pill_when_it_unmounts(self):
 		# The page has a closed dialog, so it is looked behind; the set in the section taken away is not one of its finds.
