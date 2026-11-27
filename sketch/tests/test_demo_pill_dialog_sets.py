@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Faris Ansari and contributors
 # For license information, please see license.txt
 
-"""The Demo pill lists a set inside a dialog, open or closed, and stays usable over the dialog.
+"""The Demo pill lists a set inside a dialog, open or closed, and under an open dialog it is as it was.
 
 `AccountContent.vue` holds `<Variants name="Account style">`. The `/account` page renders it, and so does
 `AccountDialog.vue`, a frappe-ui Dialog mounted in App.vue (outside RouterView) and opened from the sidebar on every
