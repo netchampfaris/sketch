@@ -5,8 +5,8 @@
 //   node canvas_dialog_tiles.mjs <playwright entry> <host> <port> <viewer path> <sid>
 //
 // Opens the canvas on the dialog set, reads what each tile shows and what the shell's Browse list holds, makes a tile
-// live, then presses Escape. Then opens the canvas from /demo/new and from a page: link to it. Last, the page itself: the
-// dialog its button opens is still a real modal one.
+// live, then presses Escape. Then a page tile, live, with the dialog its button opens. Then opens the canvas from
+// /demo/new and from a page: link to it. Last, the page itself: the dialog its button opens is still a real modal one.
 import { pathToFileURL } from 'node:url'
 
 const [, , playwrightEntry, host, port, viewerPath, sid] = process.argv
@@ -207,6 +207,26 @@ try {
     const active = document.activeElement
     return { menuOutsideTile, focusInFrame: !!active?.closest('[data-live]'), focusOn: active?.textContent?.trim().slice(0, 40) ?? '' }
   }, menuOutsideTile)
+
+  // A page tile, live: the dialog its button opens draws in the tile. It is the person's, so the first Escape closes it and
+  // the tile stays live; the second ends the live tile.
+  const states = await open('/?canvas=page:/', 2)
+  await states.frame.locator('[data-tile-id] [data-tile]').first().click()
+  await states.frame.locator('[data-live]').waitFor({ state: 'attached', timeout: BOOT_MS }).catch(states.why)
+  await sleep(SETTLE_MS)
+  await states.frame.locator('[data-live]').getByRole('button', { name: 'New prototype' }).click()
+  const opened = states.frame.locator('[data-live] [role="dialog"]')
+  await opened.waitFor({ state: 'visible', timeout: BOOT_MS }).catch(states.why)
+  await sleep(500)
+  answer.opened = { inTile: (await opened.count()) > 0 }
+  await page.keyboard.press('Escape')
+  await sleep(500)
+  answer.opened.openAfterEscape = (await states.frame.locator('[role="dialog"][data-state="open"]:not([data-sketch-ui])').count()) > 0
+  answer.opened.liveAfterEscape = (await states.frame.locator('[data-live]').count()) > 0
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  answer.opened.liveAfterSecond = (await states.frame.locator('[data-live]').count()) > 0
+  answer.opened.hashAfterSecond = await states.frame.evaluate(() => location.hash)
 
   // 3. The same set, from the route that opens the dialog as the page mounts, and the page's states from a link to it.
   const fromDemo = await open('/demo/new?canvas=set:gallery/new-prototype', 3)

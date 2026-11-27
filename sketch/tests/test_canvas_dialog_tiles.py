@@ -201,6 +201,16 @@ class TestCanvasDialogTiles(IntegrationTestCase):
 		self.assertFalse(self.answer["liveAfterEscape"], self.say())
 		self.assertIn("canvas=", self.answer["hashAfterEscape"], self.say())
 
+	def test_escape_closes_a_dialog_opened_in_a_live_tile_first(self):
+		# The dialog the person opened from the page in a live tile, not one the tile holds open: Escape closes it and the
+		# tile stays live. The next Escape ends the live tile, and the canvas stays.
+		opened = self.answer["opened"]
+		self.assertTrue(opened["inTile"], self.say())
+		self.assertFalse(opened["openAfterEscape"], self.say())
+		self.assertTrue(opened["liveAfterEscape"], self.say())
+		self.assertFalse(opened["liveAfterSecond"], self.say())
+		self.assertIn("canvas=", opened["hashAfterSecond"], self.say())
+
 	def test_the_page_dialog_is_still_modal(self):
 		dialog = self.answer["pageDialog"]
 		self.assertTrue(dialog["inBody"], self.say())
