@@ -47,11 +47,15 @@ const target = () => (props.targetSet ? props.sandbox.reg.sets.find((s) => s.key
 let stop = () => {}
 let gone = false
 // A live tile never takes focus by itself: a field that autofocuses as its dialog opens would outline itself beside the
-// live ring. Focus moves in only after the person clicks inside the frame or tabs.
+// live ring. Focus moves in only after the person clicks inside the frame or tabs, and until they click elsewhere on the
+// canvas. A click on anything else is on the page's own menu, list or popover, which draws outside the frame, on <body>:
+// picking from it hands focus back to its button in the frame.
 let invited = false
 const onInput = (e: Event) => {
-  if (e.type === 'pointerdown') invited = !!el.value?.contains(e.target as Node)
-  else if ((e as KeyboardEvent).key === 'Tab') invited = true
+  const t = e.target as Element
+  if (e.type !== 'pointerdown') invited ||= (e as KeyboardEvent).key === 'Tab'
+  else if (el.value?.contains(t)) invited = true
+  else if (t.closest?.('[data-sketch-ui="canvas"]')) invited = false
 }
 const onFocusIn = (e: FocusEvent) => {
   if (invited || !el.value?.contains(e.target as Node)) return
