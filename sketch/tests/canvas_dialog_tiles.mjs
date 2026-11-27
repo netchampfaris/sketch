@@ -167,11 +167,46 @@ try {
   }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
   answer.paint = await frame.evaluate(() => window.__paint)
+  // The live tile's ring, at the fit zoom and zoomed well out: its colour, its width, and how far outside the panel it sits.
+  const ring = () =>
+    frame.evaluate(() => {
+      const r = document.querySelector('[data-live]')?.closest('[data-tile]')?.querySelector(':scope > [aria-hidden="true"]')
+      if (!r) return null
+      const cs = getComputedStyle(r)
+      const dot = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d')
+      dot.fillStyle = cs.borderTopColor
+      dot.fillRect(0, 0, 1, 1)
+      return { rgb: [...dot.getImageData(0, 0, 1, 1).data.slice(0, 3)], width: parseFloat(cs.borderTopWidth), left: parseFloat(cs.left), top: parseFloat(cs.top), z: parseFloat(cs.getPropertyValue('--z')) }
+    })
+  answer.ring = await ring()
+  const world = await page.locator('iframe').first().boundingBox()
+  await page.mouse.move(world.x + world.width / 2, world.y + world.height / 2)
+  await page.keyboard.down('Control')
+  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100)
+  await page.keyboard.up('Control')
+  await sleep(300)
+  answer.ringZoomedOut = await ring()
   // Escape reaches the canvas, which closes the live tile: the tile's dialog does not take it.
   await page.keyboard.press('Escape')
   await sleep(300)
   answer.liveAfterEscape = (await frame.locator('[data-live]').count()) > 0
   answer.hashAfterEscape = await frame.evaluate(() => location.hash)
+
+  // A set with a menu in it, live: the menu's items portal to <body>. Picking one leaves focus on the menu's button, in the tile.
+  const body = await open('/?canvas=set:gallery/gallery-body', 2)
+  await body.frame.locator('[data-tile-id] [data-tile]').first().click()
+  await body.frame.locator('[data-live]').waitFor({ state: 'attached', timeout: BOOT_MS }).catch(body.why)
+  await sleep(SETTLE_MS)
+  await body.frame.locator('[data-live]').getByRole('button', { name: 'More' }).click()
+  const item = body.frame.getByRole('menuitem', { name: 'Rename' })
+  await item.waitFor({ timeout: BOOT_MS }).catch(body.why)
+  const menuOutsideTile = await item.evaluate((el) => !el.closest('[data-tile-id]'))
+  await item.click()
+  await sleep(500)
+  answer.menuPick = await body.frame.evaluate((menuOutsideTile) => {
+    const active = document.activeElement
+    return { menuOutsideTile, focusInFrame: !!active?.closest('[data-live]'), focusOn: active?.textContent?.trim().slice(0, 40) ?? '' }
+  }, menuOutsideTile)
 
   // 3. The same set, from the route that opens the dialog as the page mounts, and the page's states from a link to it.
   const fromDemo = await open('/demo/new?canvas=set:gallery/new-prototype', 3)

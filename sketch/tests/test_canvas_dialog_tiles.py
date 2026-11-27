@@ -50,7 +50,7 @@ TREE = {
 		"    <RouterView />\n  </div>\n</template>\n"
 	),
 	"src/pages/Gallery.vue": (
-		"<script setup>\nimport { onMounted, ref } from 'vue'\nimport { Button } from 'frappe-ui'\n"
+		"<script setup>\nimport { onMounted, ref } from 'vue'\nimport { Button, Dropdown } from 'frappe-ui'\n"
 		"import { Variants, useDemoState } from 'sketch:variants'\n"
 		"import NewPrototypeDialog from '../components/NewPrototypeDialog.vue'\n\n"
 		"const props = defineProps({ openNew: { type: Boolean, default: false } })\n"
@@ -59,7 +59,9 @@ TREE = {
 		"<template>\n  <div class='flex flex-col gap-4'>\n    <h1 class='text-2xl font-semibold'>Gallery page</h1>\n"
 		"    <Button label='New prototype' @click='newOpen = true' />\n"
 		"    <Variants name='Gallery body'>\n"
-		"      <template #grid><div class='rounded border p-4'>Grid of {{ data }}</div></template>\n"
+		# A menu in a live tile: its items portal to <body>, outside the tile.
+		"      <template #grid><div class='rounded border p-4'>Grid of {{ data }}"
+		"<Dropdown :options=\"[{ label: 'Rename', onClick: () => {} }]\"><Button label='More' /></Dropdown></div></template>\n"
 		"      <template #list><div class='rounded border p-4'>List of {{ data }}</div></template>\n"
 		"    </Variants>\n"
 		"    <NewPrototypeDialog v-model:open='newOpen' />\n  </div>\n</template>\n"
@@ -174,6 +176,26 @@ class TestCanvasDialogTiles(IntegrationTestCase):
 		self.assertEqual(paint["unlifted"], 0, self.say())
 		self.assertEqual(paint["blank"], 0, self.say())
 		self.assertEqual(paint["rebuilt"], 0, self.say())
+
+	def test_the_live_ring_is_neutral_and_hugs_the_panel_at_any_zoom(self):
+		for ring in (self.answer["ring"], self.answer["ringZoomedOut"]):
+			# The strongest neutral: black in the light theme, never the blue of a selection.
+			self.assertEqual(len(set(ring["rgb"])), 1, self.say())
+			self.assertLess(ring["rgb"][0], 64, self.say())
+			# 2px on screen, thinning to 1px as the canvas zooms out.
+			self.assertGreaterEqual(ring["width"] * ring["z"], 0.9, self.say())
+			self.assertLessEqual(ring["width"] * ring["z"], 2.1, self.say())
+			# It sits outside the panel by its own width, so no gap opens between them (a border snaps to whole pixels).
+			self.assertLess(abs(ring["left"] + ring["width"]), 1, self.say())
+			self.assertLess(abs(ring["top"] + ring["width"]), 1, self.say())
+		self.assertLess(self.answer["ringZoomedOut"]["z"], 0.6, self.say())
+
+	def test_a_menu_pick_in_a_live_tile_keeps_focus_in_it(self):
+		# The menu's items are outside the tile. Picking one hands focus back to the button that opened the menu.
+		pick = self.answer["menuPick"]
+		self.assertTrue(pick["menuOutsideTile"], self.say())
+		self.assertTrue(pick["focusInFrame"], self.say())
+		self.assertEqual(pick["focusOn"], "More", self.say())
 
 	def test_escape_still_reaches_the_canvas(self):
 		self.assertFalse(self.answer["liveAfterEscape"], self.say())
