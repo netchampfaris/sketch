@@ -81,13 +81,11 @@ onMounted(async () => {
   await nextTick()
   // A live tile closed during those frames must not start following a page that is already gone.
   if (gone || !el.value) return
-  // A page that threw as it mounted has nothing to lift or capture. Live, its alert shows.
-  if (reported) return props.mode === 'live' ? emit('painted') : undefined
   if (props.mode === 'live') {
     // The set lifted out of the page, as the snapshot drew it, and kept there while the page changes. A set that is the
-    // page shows the whole window.
+    // page shows the whole window, and a page that threw as it mounted shows its alert.
     const t = target()
-    if (!t || t.page()) return emit('painted')
+    if (reported || !t || t.page()) return emit('painted')
     let shown = false
     const show = () => {
       if (shown || gone) return
@@ -102,6 +100,8 @@ onMounted(async () => {
     setTimeout(show, 600)
     return
   }
+  // A page that threw as it mounted has nothing to capture.
+  if (reported) return
   try {
     reported = true
     emit('ready', capture(el.value, props.sandbox.reg, target(), props.grow))

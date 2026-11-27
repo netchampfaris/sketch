@@ -223,6 +223,7 @@ try {
   await sleep(500)
   answer.opened.openAfterEscape = (await states.frame.locator('[role="dialog"][data-state="open"]:not([data-sketch-ui])').count()) > 0
   answer.opened.liveAfterEscape = (await states.frame.locator('[data-live]').count()) > 0
+  await opened.waitFor({ state: 'detached', timeout: BOOT_MS }).catch(states.why)
   await page.keyboard.press('Escape')
   await sleep(300)
   answer.opened.liveAfterSecond = (await states.frame.locator('[data-live]').count()) > 0
