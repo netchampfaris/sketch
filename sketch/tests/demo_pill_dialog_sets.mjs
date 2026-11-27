@@ -114,6 +114,13 @@ try {
   await openCard()
   answer.reportsRows = await rows()
   await closeCard()
+  // The page takes its summary section away: its set is not behind a dialog, so its row goes.
+  await frame.getByRole('button', { name: 'Hide summary' }).click()
+  await sleep(SETTLE_MS)
+  await openCard()
+  answer.reportsRowsHidden = await rows()
+  answer.reportsHashHidden = await frame.evaluate(() => location.hash)
+  await closeCard()
 
   // 4. /account, with the dialog open over the page's own copy.
   await frame.getByRole('link', { name: 'Account page' }).click()
@@ -135,6 +142,34 @@ try {
   await sleep(400)
   both.shown = await frame.evaluate(() => [...document.querySelectorAll('.account-style')].filter((d) => !d.closest('[data-sketch-ui]')).map((d) => d.textContent))
   answer.accountBoth = both
+
+  // Open page from a canvas tile is one pick too. Both copies are put on Tabs; the page's Compact tile, opened as a page,
+  // puts both on Compact, the default, so the link names no option.
+  await frame.locator('[role="dialog"][data-state="open"]').press('Escape')
+  await frame.locator('[role="dialog"][data-state="open"]').waitFor({ state: 'detached', timeout: BOOT_MS })
+  await sleep(SETTLE_MS)
+  await openCard()
+  await pick('Account style', 'Tabs')
+  await card.getByRole('button', { name: 'Open canvas' }).click()
+  await frame.waitForFunction(() => document.querySelectorAll('[data-tile-id] [inert]').length >= 3, null, { timeout: BOOT_MS })
+  await sleep(SETTLE_MS)
+  await frame.locator('[data-tile-id] [data-tile]').first().click()
+  await frame.locator('[data-live]').waitFor({ state: 'attached', timeout: BOOT_MS })
+  await frame.getByRole('button', { name: 'Actions for this variant' }).click()
+  // The shell's tile menu takes no press that began as it opened.
+  await page.getByRole('menuitem', { name: 'Open page' }).waitFor({ timeout: BOOT_MS })
+  await sleep(500)
+  await page.getByRole('menuitem', { name: 'Open page' }).click()
+  await frame.locator('[data-sketch-ui="canvas"]').waitFor({ state: 'detached', timeout: BOOT_MS })
+  await sleep(SETTLE_MS)
+  const texts = () => frame.evaluate(() => [...document.querySelectorAll('.account-style')].filter((d) => !d.closest('[data-sketch-ui]')).map((d) => d.textContent))
+  const opened = { page: await texts() }
+  await frame.getByRole('button', { name: 'Account settings' }).click()
+  await frame.locator('[role="dialog"] .account-style').waitFor({ timeout: BOOT_MS })
+  await sleep(400)
+  opened.shown = await texts()
+  opened.hash = await frame.evaluate(() => location.hash)
+  answer.openedPage = opened
   answer.errors = logs
 } finally {
   await context.close()

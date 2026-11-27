@@ -73,8 +73,12 @@ TREE = {
 	# A dialog mounted in one page: its set is listed there, and nowhere else.
 	"src/pages/Reports.vue": (
 		"<script setup>\nimport { ref } from 'vue'\nimport { Button, Dialog } from 'frappe-ui'\nimport { Variants } from 'sketch:variants'\n"
-		"const open = ref(false)\n</script>\n\n"
+		"const open = ref(false)\nconst summary = ref(true)\n</script>\n\n"
 		"<template>\n  <h1 class='text-2xl font-semibold'>Reports</h1>\n  <Button label='Filters' @click='open = true' />\n"
+		# A set in a section the page can take away: not behind a dialog, so it is listed only while it is drawn.
+		"  <Button label='Hide summary' @click='summary = false' />\n"
+		"  <Variants v-if='summary' name='Summary style'>\n"
+		"    <template #short><p>Short summary</p></template><template #long><p>Long summary</p></template>\n  </Variants>\n"
 		"  <Dialog v-model:open='open' title='Filters'>\n    <Variants name='Report filters'>\n"
 		"      <template #simple><p>Simple filters</p></template><template #advanced><p>Advanced filters</p></template>\n"
 		"    </Variants>\n  </Dialog>\n</template>\n"
@@ -134,7 +138,12 @@ class TestDemoPillDialogSets(IntegrationTestCase):
 		self.assertEqual(self.answer["dialogShows"], "Style detailed", self.say())
 
 	def test_a_page_dialog_set_is_listed_on_its_page_only(self):
-		self.assertEqual(self.answer["reportsRows"], ["Report filters", "Account style"], self.say())
+		self.assertEqual(self.answer["reportsRows"], ["Summary style", "Report filters", "Account style"], self.say())
+
+	def test_a_set_not_behind_a_dialog_leaves_the_pill_when_it_unmounts(self):
+		# The page has a closed dialog, so it is looked behind; the set in the section taken away is not one of its finds.
+		self.assertEqual(self.answer["reportsRowsHidden"], ["Report filters", "Account style"], self.say())
+		self.assertNotIn("summary-style", self.answer["reportsHashHidden"], self.say())
 
 	# ---- The pill over an open dialog, as before
 
@@ -159,6 +168,14 @@ class TestDemoPillDialogSets(IntegrationTestCase):
 		self.assertEqual(both["rowsClosed"], ["Account style"], self.say())
 		# One pick, both copies.
 		self.assertEqual(both["shown"], ["Style compact", "Style compact"], self.say())
+
+	def test_open_page_from_a_canvas_tile_picks_both_copies(self):
+		# Both copies were on Tabs; the page's tile for Compact, the default, was opened as a page.
+		opened = self.answer["openedPage"]
+		self.assertEqual(opened["page"], ["Style compact"], self.say())
+		self.assertEqual(opened["shown"], ["Style compact", "Style compact"], self.say())
+		# The link names no option: the dialog copy is not left on Tabs.
+		self.assertNotIn("account-style.", opened["hash"], self.say())
 
 	def test_no_errors(self):
 		self.assertEqual(self.answer["errors"], [], self.say())
