@@ -8,7 +8,6 @@ import { pagesModel } from './snapshot'
 import {
   choices,
   currentOf,
-  found,
   idOf,
   isChoice,
   mirrorSets,
@@ -16,6 +15,7 @@ import {
   onPage,
   setId,
   sets,
+  setsOn,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -42,11 +42,9 @@ let sortedFor = ''
 // own first, so the row keeps its id while the dialog opens and closes.
 type Row = { lead: VSet; copies: VSet[] }
 const here = (route: any): Row[] => {
-  const mounted = sets.filter((s) => onPage(route, s.path) && isChoice(s.options()))
-  // Behind a closed dialog: listed on every page the dialog opens from, after the sets on screen.
-  const hidden = found.value.filter((s) => onPage(route, s.path) && isChoice(s.options()) && !mounted.some((m) => setId(m) === setId(s)))
   const rows = new Map<string, VSet[]>()
-  for (const s of [...mounted, ...hidden]) {
+  // Those behind a closed dialog come after the sets on screen.
+  for (const s of setsOn(route).filter((x) => isChoice(x.options()))) {
     const k = s.file ? `${s.file}::${s.key}` : setId(s)
     rows.set(k, [...(rows.get(k) ?? []), s])
   }

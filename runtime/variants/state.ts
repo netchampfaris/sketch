@@ -130,10 +130,8 @@ export function mirrorStates(router: any) {
   mirrorParam(router, 's', knownS, chosen)
 }
 export function mirrorSets(router: any) {
-  const route = router.currentRoute.value
-  const mounted = sets.filter((s) => onPage(route, s.path))
   // A set behind a closed dialog is mirrored too, so a link opens the dialog on the option picked for it.
-  const mine = [...mounted, ...found.value.filter((s) => onPage(route, s.path) && !mounted.some((m) => setId(m) === setId(s)))]
+  const mine = setsOn(router.currentRoute.value)
   mine.forEach((s) => knownV.add(s.key))
   const chosen = mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
   // One set mounted twice (on the page and in a dialog over it) is one pick: once in the link.
@@ -143,6 +141,11 @@ export function mirrorSets(router: any) {
 // The sets on this page behind a closed dialog, as Discover.vue last found them. They are not drawn: no elements, so
 // the Demo pill outlines nothing for them. A link that names an option for one is its pick, as it is for a mounted set.
 export const found = shallowRef<VSet[]>([])
+// The sets of the page `route` shows: those on screen, then those behind a closed dialog, on every page it opens from.
+export function setsOn(route: any): VSet[] {
+  const mounted = sets.filter((s) => onPage(route, s.path))
+  return [...mounted, ...found.value.filter((s) => onPage(route, s.path) && !mounted.some((m) => setId(m) === setId(s)))]
+}
 export function setFound(list: VSet[], router: any) {
   const route = router.currentRoute.value
   found.value = list.map((s) => {
