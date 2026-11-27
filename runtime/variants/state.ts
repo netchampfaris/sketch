@@ -35,7 +35,8 @@ export type DGroup = { title: string; options: string[] }
 export type DState = { key: string; label: string; path: string; options: string[]; count: number; groups?: DGroup[]; of?: string }
 
 // What a frame (an offscreen or live render of a page) is told, and where it reports.
-export type Reg = { states: DState[]; sets: VSet[] }
+// `inDialogs`, only where a frame asks for it (Discover.vue): the sets with a copy inside a frappe-ui Dialog.
+export type Reg = { states: DState[]; sets: VSet[]; inDialogs?: VSet[] }
 export type Sandbox = {
   states: Record<string, string>
   variants: Record<string, string>

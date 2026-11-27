@@ -25,6 +25,12 @@ export function rootDialogs(tree: VNode | null | undefined, out: ComponentIntern
   return out
 }
 
+// True for a component drawn inside a frappe-ui Dialog: in its content, however deep.
+export function inDialog(inst: ComponentInternalInstance) {
+  for (let p = inst.parent; p; p = p.parent) if (p.type === Dialog) return true
+  return false
+}
+
 // An open Dialog's panel: the element reka marks `role="dialog"`, wherever it was portalled. Null while it is closed.
 function panelOf(v: VNode | null | undefined): Element | null {
   if (!v) return null

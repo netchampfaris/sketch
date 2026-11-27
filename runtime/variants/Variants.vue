@@ -7,7 +7,7 @@
 import { Fragment, defineComponent, getCurrentInstance, h, inject, onBeforeUnmount, onErrorCaptured, provide, ref, watch } from 'vue'
 import type { PropType, VNodeChild } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { finishOpening, frameSetKey, rootPanels } from './dialogs'
+import { finishOpening, frameSetKey, inDialog, rootPanels } from './dialogs'
 import { extraOf, failed, mergeOptions } from './extras'
 import { firstCopy } from './lift'
 import { choices, currentOf, defaultOf, fromQuery, hookRouter, humanise, mirrorSets, pageKeyOf, sandboxKey, setId, sets, slugOf, type VSet } from './state'
@@ -119,6 +119,7 @@ export default defineComponent({
     // two options that render the same component would otherwise be patched in place, not swapped.
     if (sb) {
       if (!shared) sb.reg.sets.push(set)
+      if (sb.reg.inDialogs && inDialog(inst) && !sb.reg.inDialogs.includes(set)) sb.reg.inDialogs.push(set)
       provide(frameSetKey, { key: set.key, inst })
       return () => {
         const v = sb.variants[id]
