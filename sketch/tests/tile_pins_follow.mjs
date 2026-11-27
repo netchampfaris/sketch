@@ -21,6 +21,52 @@ const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${host
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 await context.addCookies([{ name: 'sid', value: sid, url: ORIGIN }])
 
+// A tile made live, with no tool in hand, and its More opened, so Submit sits lower than in the tile's snapshot. The
+// frame is asked where Submit is, as the shell asks for a pin's element (`tile:track`): where the frame says, and where
+// the live render and the snapshot each draw it, all from the tile's top left in the canvas's own px.
+async function liveTile() {
+	const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+	await fresh.addCookies([{ name: 'sid', value: sid, url: ORIGIN }])
+	await fresh.addInitScript(() => {
+		if (window.top !== window) return
+		window.__rects = {}
+		window.addEventListener('message', (e) => {
+			if (e.data?.channel) window.__channel = e.data.channel
+			if (e.data?.type === 'tile:rects') window.__rects[e.data.data.req] = e.data.data.list
+		})
+	})
+	try {
+		const page = await fresh.newPage()
+		await page.goto(`${ORIGIN}${viewerPath}#/?canvas=set:home/card`, { waitUntil: 'load', timeout: BOOT_MS })
+		let frame = null
+		for (const deadline = Date.now() + BOOT_MS; !frame && Date.now() < deadline; await sleep(100)) frame = page.frames().find((x) => x.url().includes('frame=1'))
+		if (!frame) throw new Error('the shell never framed the Prototype')
+		await frame.waitForFunction(() => document.querySelectorAll('[data-tile-id] [inert]').length >= 2, null, { timeout: BOOT_MS })
+		await sleep(1000)
+		await frame.locator('[data-tile-id] [data-tile]').first().click()
+		await frame.locator('[data-live] summary').click({ timeout: BOOT_MS })
+		await sleep(1000)
+		const tile = await frame.locator('[data-tile-id]').first().getAttribute('data-tile-id')
+		const target = { selector: '', x: 0.5, y: 0.5, tag: 'button', text: 'Submit', label: '' }
+		await page.evaluate((list) => document.querySelector('iframe').contentWindow.postMessage({ channel: window.__channel, type: 'tile:track', data: { req: 9001, list } }, '*'), [{ tile, fx: 0.5, fy: 0.5, target }])
+		await sleep(500)
+		const tracked = await page.evaluate(() => window.__rects[9001]?.[0] ?? null)
+		const drawn = await frame.evaluate(() => {
+			const tile = document.querySelector('[data-tile-id]')
+			const t = tile.getBoundingClientRect()
+			const k = tile.offsetWidth ? t.width / tile.offsetWidth : 1
+			const at = (drawing) => {
+				const r = [...drawing.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Submit').getBoundingClientRect()
+				return { x: (r.left - t.left) / k, y: (r.top - t.top) / k }
+			}
+			return { render: at(tile.querySelector('[data-live] [data-tile-drawing]')), snapshot: at(tile.querySelector('[inert][data-tile-drawing]')) }
+		})
+		return { tracked, ...drawn }
+	} finally {
+		await fresh.close()
+	}
+}
+
 try {
 	const page = await context.newPage()
 	const logs = []
@@ -84,6 +130,7 @@ try {
 		else answer.pins.no = await tipOf('comment on no')
 	}
 	if (evidence) await page.screenshot({ path: evidence })
+	if (mode === 'measure') answer.live = await liveTile()
 	answer.errors = logs
 } finally {
 	await context.close()
