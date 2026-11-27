@@ -19,13 +19,13 @@ import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
   belongsTo,
-  choices,
   closeCanvas,
   idOf,
   isChoice,
   mirrorSets,
   mirrorStates,
   nav,
+  pickSet,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -364,8 +364,10 @@ function openPage(t: TileBox) {
   // so nothing rewrites the URL while the navigation is pending.
   router.push({ path: t.path }).then(() => {
     if (t.kind === 'state') stateValues[idOf(t.path, t.stateKey!)] = t.option!
-    if (t.kind === 'set') choices[idOf(t.path, t.setKey!)] = t.option!
-    if (t.setOption) choices[idOf(t.path, t.setKey!)] = t.setOption
+    // The set's copy in a dialog over that page follows the same pick.
+    const set = { path: t.path, key: t.setKey!, file: t.setFile }
+    if (t.kind === 'set') pickSet(router.currentRoute.value, set, t.option!)
+    if (t.setOption) pickSet(router.currentRoute.value, set, t.setOption)
     mirrorStates(router)
     mirrorSets(router)
   })

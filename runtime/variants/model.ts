@@ -6,13 +6,14 @@ import { shallowRef } from 'vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
 import {
-  choices,
   currentOf,
   idOf,
   isChoice,
   mirrorSets,
   mirrorStates,
   onPage,
+  pickSet,
+  rowOf,
   setId,
   sets,
   setsOn,
@@ -45,8 +46,7 @@ const here = (route: any): Row[] => {
   const rows = new Map<string, VSet[]>()
   // Those behind a closed dialog come after the sets on screen.
   for (const s of setsOn(route).filter((x) => isChoice(x.options()))) {
-    const k = s.file ? `${s.file}::${s.key}` : setId(s)
-    rows.set(k, [...(rows.get(k) ?? []), s])
+    rows.set(rowOf(s), [...(rows.get(rowOf(s)) ?? []), s])
   }
   return [...rows.values()].map((copies) => ({ lead: copies.find((s) => s.path !== '') ?? copies[0], copies }))
 }
@@ -112,7 +112,7 @@ export function setDemo(id: string, value: string, router: any) {
   if (id.startsWith('set:')) {
     const row = here(route).find((r) => r.copies.some((x) => setId(x) === id.slice(4)))
     if (!row || !row.lead.options().some((o) => o.value === value)) return
-    for (const s of row.copies) choices[setId(s)] = value
+    pickSet(route, row.lead, value)
     mirrorSets(router)
   } else if (id.startsWith('state:')) {
     const s = states[id.slice(6)]

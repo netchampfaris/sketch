@@ -142,6 +142,17 @@ export function mirrorSets(router: any) {
 // The sets on this page behind a closed dialog, as Discover.vue last found them. They are not drawn: no elements, so
 // the Demo pill outlines nothing for them. A link that names an option for one is its pick, as it is for a mounted set.
 export const found = shallowRef<VSet[]>([])
+// One set drawn under two page keys (a component used on a page and in an app-wide dialog over it) is one row of the Demo
+// pill, with one pick.
+export const rowOf = (s: { path: string; key: string; file?: string }) => (s.file ? `${s.file}::${s.key}` : setId(s))
+// Pick an option of a set on the page `route` shows. Every copy of its row follows, on screen or behind a closed dialog.
+// `set` needs its `file` only while it is not on the page yet (Open page, from a canvas tile).
+export function pickSet(route: any, set: { path: string; key: string; file?: string }, value: string) {
+  const all = setsOn(route)
+  const row = rowOf(all.find((s) => setId(s) === setId(set)) ?? set)
+  choices[setId(set)] = value
+  for (const s of all) if (rowOf(s) === row) choices[setId(s)] = value
+}
 // The sets of the page `route` shows: those on screen, then those behind a closed dialog, on every page it opens from.
 export function setsOn(route: any): VSet[] {
   const mounted = sets.filter((s) => onPage(route, s.path))
