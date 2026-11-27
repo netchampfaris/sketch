@@ -366,6 +366,11 @@ import { Variants } from 'sketch:variants'
   (`src/components/DealCard.vue`), so every copy follows the pick: Sketch counts
   every copy of one `<Variants>` tag as one set. Never wrap a single copy in the
   page: the others would stay on the old design.
+- For options of a dialog, put the set inside the dialog's component and make
+  each slot a frappe-ui `Dialog`. The canvas shows each one as a tile, and the
+  pill lists the set while the dialog is closed. A `Popover`, a `Dropdown` or a
+  hand-made overlay does not show in a tile. Never put the dialog behind a
+  `v-if` that starts false: toggle `v-model:open` instead.
 - When a note says "Keep …", replace the `<Variants>` block with the kept
   slot's content, delete the other slots and any code only they used, then
   commit.
