@@ -172,7 +172,7 @@ watch(
       @click="emit('activate', $event)"
       @keydown.enter.self="emit('activate', $event)"
     >
-      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live. A set that draws its own
+      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live, and thins to 1px as the tile shrinks. A set that draws its own
            card has none until hovered or live. -->
       <div
         class="pointer-events-none absolute z-10 border-solid"
@@ -180,7 +180,7 @@ watch(
           bare ? '' : 'inset-0 rounded-4',
           live ? 'border-outline-gray-9' : bare ? 'border-transparent group-hover:border-outline-gray-4' : 'border-outline-gray-2 group-hover:border-outline-gray-4',
         ]"
-        :style="{ borderWidth: `calc(${live ? 2 : 1}px * var(--inv))`, ...ring }"
+        :style="{ borderWidth: live ? 'calc(clamp(1px, 2px * var(--z), 2px) * var(--inv))' : 'calc(1px * var(--inv))', ...ring }"
         aria-hidden="true"
       />
       <!-- Only the set's own box shows; the rest of the tile is the tile background. A card's shadow spills past its box, so
