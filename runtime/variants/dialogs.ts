@@ -3,7 +3,7 @@
 // Dialog portals into the frame and is never modal, so a tile can draw it and the canvas around stays usable. A set whose
 // options are dialogs (each slot renders a Dialog at its root) shows them open in its own tiles, whatever the page's state.
 // Other overlays (Popover, Dropdown, Tooltip) are left as they were.
-import { Fragment, getCurrentInstance, inject, onBeforeMount, onBeforeUpdate, provide } from 'vue'
+import { Fragment, getCurrentInstance, inject, onBeforeMount, onBeforeUnmount, onBeforeUpdate, provide } from 'vue'
 import type { ComponentInternalInstance, InjectionKey, VNode } from 'vue'
 import { Dialog } from 'frappe-ui'
 
@@ -52,6 +52,11 @@ export function finishOpening(panels: Element[]): Element[] {
   return panels
 }
 
+// The Dialogs a frame holds open. Any other open Dialog in a frame is one the person opened from the page.
+const held = new Set<ComponentInternalInstance>()
+// True for the panel of a Dialog its frame holds open: Escape cannot close it.
+export const heldOpen = (panel: Element) => [...held].some((d) => panelOf(d.subTree) === panel)
+
 // Which Dialogs a frame shows open: those of the set its tile shows (the set's key, none for a page tile), or 'all', to
 // find the sets inside them (Discover.vue).
 export type OpenDialogs = 'all' | (() => string | null | undefined)
@@ -81,6 +86,10 @@ function tame(root: () => HTMLElement | null, which: OpenDialogs) {
   const apply = () => {
     dialog.attrs.modal = false
     if (open) (dialog.props as Record<string, unknown>).open = true
+  }
+  if (open) {
+    held.add(dialog)
+    onBeforeUnmount(() => held.delete(dialog), dialog)
   }
   onBeforeMount(apply, dialog)
   onBeforeUpdate(apply, dialog)

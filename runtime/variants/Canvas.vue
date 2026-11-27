@@ -8,6 +8,7 @@ import { Button, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
+import { heldOpen } from './dialogs'
 import { tileExists } from '../shared/tiles'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
@@ -434,8 +435,11 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     // A tool picking tiles takes its own Escape: it closes its box, then puts the tool down.
     if (e.defaultPrevented || bridge.tool) return
-    // A page menu or dialog takes Escape first. What the canvas draws itself (its tiles, a frame drawing one) does not count.
-    const layer = [...document.querySelectorAll('.menu-content, [role="dialog"]')].some((el) => !el.closest('[data-sketch-ui="canvas"], [data-sketch-ui="canvas-frame"]'))
+    // A page menu or dialog takes Escape first. What the canvas draws itself (its tiles, a frame drawing one) does not count,
+    // but a dialog the person opened in the live tile does: only one the tile holds open stays.
+    const layer = [...document.querySelectorAll('.menu-content, [role="dialog"]')].some((el) =>
+      el.closest('[data-live]') ? !heldOpen(el) : !el.closest('[data-sketch-ui="canvas"], [data-sketch-ui="canvas-frame"]'),
+    )
     if (bridge.showOpen || layer) return
     if (liveId.value) liveId.value = null
     else if (optView.value) goUp()
