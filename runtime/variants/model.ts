@@ -6,15 +6,17 @@ import { shallowRef } from 'vue'
 import { hasItems } from './picker'
 import { pagesModel } from './snapshot'
 import {
-  choices,
   currentOf,
   idOf,
   isChoice,
   mirrorSets,
   mirrorStates,
   onPage,
+  pickSet,
+  rowOf,
   setId,
   sets,
+  setsOn,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -36,16 +38,33 @@ const order = shallowRef<string[]>([])
 const boxes = shallowRef<Record<string, Rect | null>>({})
 let sortedFor = ''
 
-const here = (route: any) => sets.filter((s) => onPage(route, s.path) && isChoice(s.options()))
+// One row of the pill: a set, or the copies of one set that are on this page under two page keys (a component used on
+// the page and in an app-wide dialog over it). One pick drives every copy. The lead names the row: a copy of the page's
+// own first, so the row keeps its id while the dialog opens and closes.
+type Row = { lead: VSet; copies: VSet[] }
+const here = (route: any): Row[] => {
+  const rows = new Map<string, VSet[]>()
+  // Those behind a closed dialog come after the sets on screen.
+  for (const s of setsOn(route).filter((x) => isChoice(x.options()))) {
+    rows.set(rowOf(s), [...(rows.get(rowOf(s)) ?? []), s])
+  }
+  return [...rows.values()].map((copies) => ({ lead: copies.find((s) => s.path !== '') ?? copies[0], copies }))
+}
+const rowId = (r: Row) => setId(r.lead)
+// Where a row's set sits on screen: its first copy that is drawn. Null for one behind a closed dialog.
+const rectOfRow = (r: Row) => r.copies.map(rectOf).find(Boolean) ?? null
 
-// Sort the rows by where their sets sit, and measure them for the outline.
+// Sort the rows by where their sets sit, and measure them for the outline. A row not on screen sorts last.
 export function measureDemo(route: any) {
   const list = here(route)
-  const at = (s: VSet) => rectOf(s) ?? { x: 0, y: 1e9, w: 0, h: 0 }
-  order.value = [...list].sort((a, b) => at(a).y - at(b).y || at(a).x - at(b).x).map(setId)
-  boxes.value = Object.fromEntries(list.map((s) => [setId(s), rectOf(s)]))
-  sortedFor = `${route.path}|${list.length}`
+  const rects = new Map(list.map((r) => [rowId(r), rectOfRow(r)]))
+  const at = (r: Row) => rects.get(rowId(r)) ?? { x: 0, y: 1e9, w: 0, h: 0 }
+  order.value = [...list].sort((a, b) => at(a).y - at(b).y || at(a).x - at(b).x).map(rowId)
+  boxes.value = Object.fromEntries(rects)
+  sortedFor = sortKey(route, list)
 }
+// The rows' make-up: a set that came or went, or a dialog that opened over the page, sorts them again.
+const sortKey = (route: any, list: Row[]) => `${route.path}|${list.map((r) => r.copies.map((s) => `${setId(s)}${sets.includes(s) ? '' : '?'}`).join('+')).join(',')}`
 
 // The canvas view that shows this set, as the Demo card's foot opens it: `set:<page slug>/<key>`.
 function viewOf(router: any, s: VSet) {
@@ -57,13 +76,13 @@ export function demoModel(router: any) {
   const route = router.currentRoute.value
   const list = here(route)
   // A new page, or a set that came or went: sort again once the page has drawn it.
-  if (`${route.path}|${list.length}` !== sortedFor) queueMicrotask(() => requestAnimationFrame(() => measureDemo(router.currentRoute.value)))
+  if (sortKey(route, list) !== sortedFor) queueMicrotask(() => requestAnimationFrame(() => measureDemo(router.currentRoute.value)))
   const o = order.value
-  const rows = [...list].sort((a, b) => (o.indexOf(setId(a)) + 1 || 99) - (o.indexOf(setId(b)) + 1 || 99))
+  const rows = [...list].sort((a, b) => (o.indexOf(rowId(a)) + 1 || 999) - (o.indexOf(rowId(b)) + 1 || 999))
   const pageStates = Object.values(states).filter((s) => onPage(route, s.path))
-  const canOpen = rows.some((s) => s.path !== '') || pageStates.some((s) => s.path !== '') || !pagesModel.value || pagesModel.value.some(hasItems)
+  const canOpen = rows.some((r) => r.lead.path !== '') || pageStates.some((s) => s.path !== '') || !pagesModel.value || pagesModel.value.some(hasItems)
   return {
-    sets: rows.map((s) => ({
+    sets: rows.map(({ lead: s }) => ({
       id: `set:${setId(s)}`,
       key: s.key,
       name: s.name,
@@ -91,9 +110,9 @@ export function demoModel(router: any) {
 export function setDemo(id: string, value: string, router: any) {
   const route = router.currentRoute.value
   if (id.startsWith('set:')) {
-    const s = here(route).find((x) => setId(x) === id.slice(4))
-    if (!s || !s.options().some((o) => o.value === value)) return
-    choices[setId(s)] = value
+    const row = here(route).find((r) => r.copies.some((x) => setId(x) === id.slice(4)))
+    if (!row || !row.lead.options().some((o) => o.value === value)) return
+    pickSet(route, row.lead, value)
     mirrorSets(router)
   } else if (id.startsWith('state:')) {
     const s = states[id.slice(6)]

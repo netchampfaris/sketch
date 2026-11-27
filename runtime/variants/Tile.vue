@@ -57,11 +57,14 @@ const isSet = computed(() => !!props.tile.setKey)
 // The part of the page this tile shows: the set lifted out of its page (lift.ts), or the whole window. Live, the frame
 // reports where the set is each time it moves or resizes.
 const liveBox = ref<Crop | null>(null)
+// The live frame paints only once it is lifted to its set (Frame `painted`); until then the snapshot stays on show.
+const painted = ref(false)
 watch(
   () => props.live,
   (live) => {
     if (live) return
     liveBox.value = null
+    painted.value = false
     emit('resize', null)
   },
 )
@@ -86,9 +89,13 @@ function askMenu(e: MouseEvent) {
 // border. Its shadow bleeds outside the tile, and the hover and live ring follows the card's corners.
 const bare = computed(() => props.tile.card !== undefined)
 const margin = computed(() => (isSet.value && !bare.value ? MARGIN : 0))
+// The ring's width, in the canvas's own px: 1px on screen at any zoom, and 2px on the live tile, thinning to 1px as the
+// canvas zooms out.
+const ringWidth = computed(() => `calc(${props.live ? 'clamp(1px, 2px * var(--z), 2px)' : '1px'} * var(--inv))`)
 const ring = computed(() => {
   if (!bare.value) return {}
-  const bw = `calc(${props.live ? 2 : 1}px * var(--inv))`
+  // Outside the card by its own width.
+  const bw = ringWidth.value
   return {
     left: `calc(0px - ${bw})`,
     top: `calc(0px - ${bw})`,
@@ -99,6 +106,12 @@ const ring = computed(() => {
 })
 const clip = computed(() => ({ left: margin.value + 'px', top: margin.value + 'px', width: rect.value.w + 'px', height: rect.value.h + 'px' }))
 const shift = computed(() => ({ transform: `translate(${-rect.value.x}px, ${-rect.value.y}px)` }))
+// The snapshot sits where it was drawn, whatever the live set does meanwhile.
+const snapShift = computed(() => {
+  if (!isSet.value || !props.snap || props.snap.error) return shift.value
+  const own = props.snap.sets.find((s) => s.key === props.tile.setKey) ?? props.tile.meta
+  return own ? { transform: `translate(${-own.x}px, ${-own.y}px)` } : shift.value
+})
 
 watch(
   [snapEl, () => props.snap],
@@ -163,24 +176,28 @@ watch(
       @click="emit('activate', $event)"
       @keydown.enter.self="emit('activate', $event)"
     >
-      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live. A set that draws its own
+      <!-- The ring is a counter-scaled border, so it stays visible when zoomed out. It means live, and thins to 1px as the tile shrinks. A set that draws its own
            card has none until hovered or live. -->
       <div
         class="pointer-events-none absolute z-10 border-solid"
         :class="[
           bare ? '' : 'inset-0 rounded-4',
-          live ? 'border-outline-blue-6' : bare ? 'border-transparent group-hover:border-outline-gray-4' : 'border-outline-gray-2 group-hover:border-outline-gray-4',
+          live ? 'border-outline-gray-9' : bare ? 'border-transparent group-hover:border-outline-gray-4' : 'border-outline-gray-2 group-hover:border-outline-gray-4',
         ]"
-        :style="{ borderWidth: `calc(${live ? 2 : 1}px * var(--inv))`, ...ring }"
+        :style="{ borderWidth: ringWidth, ...ring }"
         aria-hidden="true"
       />
       <!-- Only the set's own box shows; the rest of the tile is the tile background. A card's shadow spills past its box, so
            the drawing's own box is empty (size-0): the rest of the page, hidden, must not catch the pointer over the next tile. -->
       <div class="absolute" :class="bare ? '' : 'overflow-hidden'" :style="clip">
-        <div v-if="live && sandbox" data-live class="absolute left-0 top-0 size-0 cursor-auto" :style="shift">
-          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" :grow="!!tile.setOption" @anchor="onAnchor" />
-        </div>
-        <div v-else-if="snap && !snap.error && near" class="absolute left-0 top-0 size-0" :style="shift">
+        <!-- The snapshot stays in place under a live frame, unseen once the frame paints, so handing the tile back shows the
+             very same drawing: rebuilt, it would replay its opening animations. Opacity, as the lift's shown parts override
+             visibility. -->
+        <div
+          v-if="snap && !snap.error && near"
+          class="absolute left-0 top-0 size-0"
+          :style="{ ...snapShift, opacity: live && sandbox && painted ? 0 : undefined }"
+        >
           <div
             ref="snapEl"
             data-tile-drawing
@@ -190,6 +207,14 @@ watch(
             :style="{ width: win.w + 'px', height: win.h + 'px' }"
             v-html="snap.html"
           />
+        </div>
+        <div
+          v-if="live && sandbox"
+          data-live
+          class="absolute left-0 top-0 size-0 cursor-auto"
+          :style="{ ...shift, opacity: painted ? undefined : 0, pointerEvents: painted ? undefined : 'none' }"
+        >
+          <Frame mode="live" :app="app" :path="tile.path" :w="win.w" :h="win.h" :sandbox="sandbox" :target-set="tile.setKey" :grow="!!tile.setOption" @anchor="onAnchor" @painted="painted = true" />
         </div>
       </div>
       <template v-if="!(live && sandbox)">

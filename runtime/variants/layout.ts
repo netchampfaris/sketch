@@ -25,6 +25,8 @@ export type PageModel = {
   path: string
   slug: string
   title: string
+  // Other routes of the same page component that list nothing more (picker.ts foldRoutes). Their links open this page.
+  aliases: { path: string; slug: string }[]
   states: StateInfo[]
   sets: { key: string; label: string; name: string; file: string; options: Opt[]; meta: Crop | null }[]
 }

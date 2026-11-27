@@ -261,8 +261,10 @@ function startCanvas({ bridge, canvasReport, findTile }: Variants) {
 	}
 }
 
-// The tile's drawing: its snapshot, or its live render.
-const drawingOf = (box: Element | null) => box?.querySelector<HTMLElement>('[data-tile-drawing]') ?? null
+// The tile's drawing: its live render while it is live, else its snapshot. A live tile keeps its snapshot too, unseen
+// under the live render (Tile.vue).
+const drawingOf = (box: Element | null) =>
+	box?.querySelector<HTMLElement>('[data-live] [data-tile-drawing]') ?? box?.querySelector<HTMLElement>('[data-tile-drawing]') ?? null
 // Where an element sits in its tile, in the canvas's own px from the tile's top left (the canvas may be zoomed). Null when
 // the tile does not draw it now: far from the view, or the element gone or hidden.
 function boxInTile({ tile: tileId, fx, fy, target }: TileTracked): Rect | null {

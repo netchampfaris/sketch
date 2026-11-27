@@ -4,6 +4,7 @@
 //   node canvas_live_tile.mjs <playwright entry> <host> <port> <viewer path> <sid>
 //
 // Opens the canvas on Layout's set, waits for both tiles, clicks the first one and reads what the live tile shows.
+// Then opens the states of Broken, a page that throws in one of them, and makes that tile live.
 import { pathToFileURL } from 'node:url'
 
 const [, , playwrightEntry, host, port, viewerPath, sid] = process.argv
@@ -50,6 +51,23 @@ try {
 	answer.live = (await frame.locator('[data-live]').count()) > 0
 	answer.liveText = await frame.locator('[data-live]').innerText()
 	answer.headingVisible = await frame.evaluate(() => document.querySelector('[data-live] h1')?.checkVisibility({ visibilityProperty: true }) ?? false)
+
+	// A page that throws as it mounts, made live: the tile says so, as it did before it was clicked.
+	await page.goto(`${ORIGIN}${viewerPath}#/broken?canvas=page:/broken`, { waitUntil: 'load', timeout: BOOT_MS })
+	const thrown = frame.locator('[data-tile-id]').filter({ hasText: 'Could not draw this' })
+	await thrown.waitFor({ timeout: BOOT_MS }).catch(why)
+	await thrown.locator('[data-tile]').click()
+	await frame.locator('[data-live]').waitFor({ state: 'attached', timeout: BOOT_MS }).catch(why)
+	await sleep(SETTLE_MS)
+	answer.thrown = await frame.evaluate(() => {
+		const live = document.querySelector('[data-live]')
+		const alert = live?.querySelector('[role="alert"]') ?? live?.firstElementChild?.firstElementChild
+		return {
+			text: live?.innerText ?? '',
+			visible: alert?.checkVisibility({ visibilityProperty: true, opacityProperty: true }) ?? false,
+			pointer: live ? getComputedStyle(live).pointerEvents : '',
+		}
+	})
 	answer.errors = logs
 } finally {
 	await context.close()

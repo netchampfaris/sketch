@@ -35,7 +35,8 @@ export type DGroup = { title: string; options: string[] }
 export type DState = { key: string; label: string; path: string; options: string[]; count: number; groups?: DGroup[]; of?: string }
 
 // What a frame (an offscreen or live render of a page) is told, and where it reports.
-export type Reg = { states: DState[]; sets: VSet[] }
+// `inDialogs`, only where a frame asks for it (Discover.vue): the sets with a copy inside a frappe-ui Dialog.
+export type Reg = { states: DState[]; sets: VSet[]; inDialogs?: VSet[] }
 export type Sandbox = {
   states: Record<string, string>
   variants: Record<string, string>
@@ -130,11 +131,44 @@ export function mirrorStates(router: any) {
   mirrorParam(router, 's', knownS, chosen)
 }
 export function mirrorSets(router: any) {
-  const route = router.currentRoute.value
-  const mine = sets.filter((s) => onPage(route, s.path))
+  // A set behind a closed dialog is mirrored too, so a link opens the dialog on the option picked for it.
+  const mine = setsOn(router.currentRoute.value)
   mine.forEach((s) => knownV.add(s.key))
   const chosen = mine.filter((s) => currentOf(s) !== defaultOf(s.options())).map((s) => `${s.key}.${currentOf(s)}`)
-  mirrorParam(router, 'v', knownV, chosen)
+  // One set mounted twice (on the page and in a dialog over it) is one pick: once in the link.
+  mirrorParam(router, 'v', knownV, [...new Set(chosen)])
+}
+
+// The sets on this page behind a closed dialog, as Discover.vue last found them. They are not drawn: no elements, so
+// the Demo pill outlines nothing for them. A link that names an option for one is its pick, as it is for a mounted set.
+export const found = shallowRef<VSet[]>([])
+// One set drawn under two page keys (a component used on a page and in an app-wide dialog over it) is one row of the Demo
+// pill, with one pick.
+export const rowOf = (s: { path: string; key: string; file?: string }) => (s.file ? `${s.file}::${s.key}` : setId(s))
+// Pick an option of a set on the page `route` shows. Every copy of its row follows, on screen or behind a closed dialog.
+// `set` needs its `file` only while it is not on the page yet (Open page, from a canvas tile).
+export function pickSet(route: any, set: { path: string; key: string; file?: string }, value: string) {
+  const all = setsOn(route)
+  const row = rowOf(all.find((s) => setId(s) === setId(set)) ?? set)
+  choices[setId(set)] = value
+  for (const s of all) if (rowOf(s) === row) choices[setId(s)] = value
+}
+// The sets of the page `route` shows: those on screen, then those behind a closed dialog, on every page it opens from.
+export function setsOn(route: any): VSet[] {
+  const mounted = sets.filter((s) => onPage(route, s.path))
+  return [...mounted, ...found.value.filter((s) => onPage(route, s.path) && !mounted.some((m) => setId(m) === setId(s)))]
+}
+export function setFound(list: VSet[], router: any) {
+  const route = router.currentRoute.value
+  found.value = list.map((s) => {
+    const o = s.options()
+    return { key: s.key, label: s.label, name: s.name, file: s.file, path: s.path, options: () => o, elements: () => [], copies: [], page: () => false }
+  })
+  for (const s of found.value) {
+    const opt = fromQuery(route, 'v', s.key)
+    if (opt && !choices[setId(s)] && s.options().some((o) => o.value === opt)) choices[setId(s)] = opt
+  }
+  mirrorSets(router)
 }
 
 // Opening a link like #/requests?s=requests.loading: the name's slug picks the state, the option's slug

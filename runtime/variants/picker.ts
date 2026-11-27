@@ -24,6 +24,33 @@ export function pickItems(pages: PageModel[]): PickItem[] {
   return [...sets, ...pg]
 }
 
+// Two routes that render one page component (`/`, and a `/demo/new` that opens a dialog as the page mounts) are one page.
+// It renders from the route that lists the most; on a tie, from a route that passes the page no props (the plain one, not
+// a demo of it), then the first in the router. Another route of it folds in when everything it lists is listed there, and
+// its path and slug then open that page. A route that lists something more stays a page of its own.
+export function foldRoutes(pages: PageModel[], recordOf: (p: PageModel) => { component?: unknown; props?: unknown } | undefined): PageModel[] {
+  const size = (p: PageModel) => p.sets.length + p.states.length
+  const plain = (p: PageModel) => (recordOf(p)?.props ? 0 : 1)
+  const keys = (p: PageModel) => [...p.sets.map((s) => `v:${s.key}`), ...p.states.map((s) => `s:${s.key}`)]
+  const componentOf = (p: PageModel) => recordOf(p)?.component
+  const main = new Map<unknown, PageModel>()
+  for (const p of pages) {
+    const was = main.get(componentOf(p))
+    if (!was || size(p) > size(was) || (size(p) === size(was) && plain(p) > plain(was))) main.set(componentOf(p), p)
+  }
+  const kept: PageModel[] = []
+  const folded = new Map<PageModel, PageModel['aliases']>()
+  for (const p of pages) {
+    const m = main.get(componentOf(p))!
+    const listed = new Set(keys(m))
+    if (m === p || !keys(p).every((k) => listed.has(k))) kept.push(p)
+    else folded.set(m, [...(folded.get(m) ?? []), { path: p.path, slug: p.slug }])
+  }
+  return kept.map((p) => ({ ...p, aliases: [...p.aliases, ...(folded.get(p) ?? [])] }))
+}
+const bySlug = (pages: PageModel[], slug: string) => pages.find((p) => p.slug === slug) ?? pages.find((p) => p.aliases.some((a) => a.slug === slug))
+const byPath = (pages: PageModel[], path: string) => pages.find((p) => p.path === path) ?? pages.find((p) => p.aliases.some((a) => a.path === path))
+
 // A value that names nothing the canvas has (an old `state:` link) is no pick, and the canvas shows its default view.
 export function parsePick(raw: string, pages: PageModel[]): Pick | null {
   const i = raw.indexOf(':')
@@ -31,17 +58,17 @@ export function parsePick(raw: string, pages: PageModel[]): Pick | null {
   const kind = raw.slice(0, i), rest = raw.slice(i + 1)
   if (kind === 'set') {
     const [slug, key] = rest.split('/')
-    const page = pages.find((p) => p.slug === slug)
+    const page = bySlug(pages, slug)
     return page?.sets.some((s) => s.key === key) ? { kind: 'set', page, key } : null
   }
   if (kind === 'opt') {
     const [slug, key, ...value] = rest.split('/')
-    const page = pages.find((p) => p.slug === slug)
+    const page = bySlug(pages, slug)
     const v = value.join('/')
     return page?.sets.find((s) => s.key === key)?.options.some((o) => o.value === v) ? { kind: 'opt', page, key, value: v } : null
   }
   if (kind === 'page') {
-    const page = pages.find((p) => p.path === rest)
+    const page = byPath(pages, rest)
     return page?.states.length ? { kind: 'page', page } : null
   }
   return null
@@ -49,7 +76,7 @@ export function parsePick(raw: string, pages: PageModel[]): Pick | null {
 
 // First open with nothing remembered: the current page's first set, else the current page, else the first item.
 export function fallbackPick(pages: PageModel[], path: string): string | null {
-  const here = pages.find((p) => p.path === path)
+  const here = byPath(pages, path)
   if (here?.sets.length) return `set:${here.slug}/${here.sets[0].key}`
   if (here?.states.length) return `page:${here.path}`
   return pickItems(pages)[0]?.value ?? null

@@ -55,6 +55,8 @@ def home(width: int, extra: str = "") -> str:
 		"          <div class='flex items-center gap-3'><h2 class='text-lg font-semibold'>Priya Nair</h2></div>\n"
 		"          <div class='mt-3'><div class='text-p-sm text-ink-gray-5'>Your verdict</div>"
 		f"<div class='mt-2 flex gap-2'>{verdict}</div></div>\n"
+		# Opened in a live tile, it pushes Submit down, away from where the tile's snapshot has it.
+		"          <details class='mt-3'><summary>More</summary><p class='text-p-base'>One<br>Two<br>Three</p></details>\n"
 		"          <div class='my-4'><button class='rounded bg-surface-gray-7 px-3 py-1 text-ink-white'>Submit</button></div>\n"
 		"          <p class='text-p-base text-ink-gray-6'>Walked through the pricing page.</p>\n"
 		"        </div>"
@@ -198,6 +200,14 @@ class TestTilePinsFollowTheirElement(IntegrationTestCase):
 			self.assertIsNotNone(pin, self.say(run))
 			self.assertAlmostEqual(pin["x"], tile["x"] + OLD[0] * tile["w"], delta=1.5)
 			self.assertAlmostEqual(pin["y"], tile["y"] + OLD[1] * tile["h"], delta=1.5)
+
+	def test_an_element_in_a_live_tile_is_found_in_its_live_render(self):
+		"""A live tile keeps its snapshot under the live render, unseen. The element is where the live render draws it."""
+		live = self.wide["live"]
+		self.assertGreater(live["render"]["y"] - live["snapshot"]["y"], 10, self.say(live))
+		self.assertIsNotNone(live["tracked"], self.say(live))
+		self.assertAlmostEqual(live["tracked"]["x"], live["render"]["x"], delta=1, msg=self.say(live))
+		self.assertAlmostEqual(live["tracked"]["y"], live["render"]["y"], delta=1, msg=self.say(live))
 
 
 class TestTileTargetIsChecked(IntegrationTestCase):

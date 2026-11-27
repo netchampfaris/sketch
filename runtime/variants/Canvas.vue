@@ -8,24 +8,25 @@ import { Button, Tooltip } from 'frappe-ui'
 import Frame from './Frame.vue'
 import Tile from './Tile.vue'
 import { bridge, findTile, landed, pagesOf, spotOf } from './bridge'
+import { heldOpen } from './dialogs'
 import { tileExists } from '../shared/tiles'
 import { placeToasts } from './toasts'
 import type { TileHit, TileSpot } from './bridge'
 import { fullOptionId, layoutPick } from './layout'
 import type { PageModel, StateInfo, TileBox } from './layout'
-import { fallbackPick, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
+import { fallbackPick, foldRoutes, parsePick, pickItems, pickLabel, pickSummary, valueOfPick } from './picker'
 import { MIN_ZOOM, usePanZoom } from './panzoom'
 import { cache, errorSnap, nextFrames, pagesModel, session } from './snapshot'
 import type { Snap } from './snapshot'
 import {
   belongsTo,
-  choices,
   closeCanvas,
   idOf,
   isChoice,
   mirrorSets,
   mirrorStates,
   nav,
+  pickSet,
   slugOfRoute,
   stateOf,
   stateValues,
@@ -217,7 +218,7 @@ async function discover() {
     return
   }
   const records = (router.options.routes as any[]).filter((r) => r.component && !r.path.includes(':'))
-  const pages: PageModel[] = []
+  let pages: PageModel[] = []
   const here = raw.value
   for (const r of records) {
     if (!alive) return
@@ -233,6 +234,7 @@ async function discover() {
       path: r.path,
       slug: slugOfRoute(r),
       title: titleOfRoute(r),
+      aliases: [],
       states: snap.reg.states
         .filter((s) => s.path === r.path && (!s.of || !lives(s.of)))
         .map((s) => ({ key: s.key, label: s.label, options: s.options, groups: s.groups, of: s.of })),
@@ -242,6 +244,8 @@ async function discover() {
     const last = pages[pages.length - 1]
     last.sets.sort((a, b) => (a.meta?.y ?? 1e9) - (b.meta?.y ?? 1e9) || (a.meta?.x ?? 0) - (b.meta?.x ?? 0))
   }
+  // One page per page component, however many routes render it.
+  pages = foldRoutes(pages, (p) => records.find((r) => r.path === p.path))
   session.model = pages
   session.modelKey = key
   pagesModel.value = pages
@@ -295,7 +299,14 @@ watch([() => layout.value.tiles.length, lensStr, pickValue], () => pump())
 // ---- Live tile
 const liveId = ref<string | null>(null)
 const liveTile = computed(() => layout.value.tiles.find((t) => t.id === liveId.value) ?? null)
-const liveSandbox = computed(() => (liveTile.value ? makeSandbox(liveTile.value, true) : undefined))
+// One sandbox per live tile, made when it goes live. The layout is rebuilt each time a live tile reports its size, which
+// gives the same tile a new object; a sandbox remade from that would leave the frame's sets registered in the old one.
+const liveSandbox = shallowRef<Sandbox>()
+watch(
+  () => liveTile.value?.id,
+  () => (liveSandbox.value = liveTile.value ? makeSandbox(liveTile.value, true) : undefined),
+  { immediate: true },
+)
 watch([lensStr, () => pickValue.value], () => (liveId.value = null))
 // A write that reloaded the page (Make default, Keep only this, Undo) leaves the option it landed on ringed once it is drawn.
 // Only once its own frame has measured it: until then the live tile shows the slice the default option measured, which on
@@ -354,8 +365,10 @@ function openPage(t: TileBox) {
   // so nothing rewrites the URL while the navigation is pending.
   router.push({ path: t.path }).then(() => {
     if (t.kind === 'state') stateValues[idOf(t.path, t.stateKey!)] = t.option!
-    if (t.kind === 'set') choices[idOf(t.path, t.setKey!)] = t.option!
-    if (t.setOption) choices[idOf(t.path, t.setKey!)] = t.setOption
+    // The set's copy in a dialog over that page follows the same pick.
+    const set = { path: t.path, key: t.setKey!, file: t.setFile }
+    if (t.kind === 'set') pickSet(router.currentRoute.value, set, t.option!)
+    if (t.setOption) pickSet(router.currentRoute.value, set, t.setOption)
     mirrorStates(router)
     mirrorSets(router)
   })
@@ -422,7 +435,12 @@ useEventListener(document, 'keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     // A tool picking tiles takes its own Escape: it closes its box, then puts the tool down.
     if (e.defaultPrevented || bridge.tool) return
-    if (bridge.showOpen || document.querySelector('.menu-content, [role="dialog"]:not([data-sketch-ui="canvas"])')) return
+    // A page menu or dialog takes Escape first. What the canvas draws itself (its tiles, a frame drawing one) does not count,
+    // but a dialog the person opened in the live tile does: only one the tile holds open stays.
+    const layer = [...document.querySelectorAll('.menu-content, [role="dialog"]')].some((el) =>
+      el.closest('[data-live]') ? !heldOpen(el) : !el.closest('[data-sketch-ui="canvas"], [data-sketch-ui="canvas-frame"]'),
+    )
+    if (bridge.showOpen || layer) return
     if (liveId.value) liveId.value = null
     else if (optView.value) goUp()
     else closeCanvas(router)
